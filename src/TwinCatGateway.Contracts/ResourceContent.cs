@@ -8,5 +8,9 @@ public sealed class ResourceContent
 
     public string Content { get; set; } = string.Empty;
 
+    public long Offset { get; set; }
+
+    public long? NextOffset { get; set; }
+
     public bool Truncated { get; set; }
 }
