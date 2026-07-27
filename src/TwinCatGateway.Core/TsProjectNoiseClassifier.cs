@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Xml;
 using System.Xml.Linq;
+using System.Xml.Schema;
 using TwinCatGateway.Contracts;
 
 namespace TwinCatGateway.Core;
@@ -34,34 +36,11 @@ public sealed class TsProjectClassificationResult
 
 public static class TsProjectNoiseClassifier
 {
-    private const long MaximumXmlCharacters = 32L * 1024L * 1024L;
-
-    private static readonly HashSet<string> ReorderableContainers =
-        new(StringComparer.Ordinal)
-        {
-            "Contexts",
-            "Plc",
-            "TaskPouOids",
-            "Tasks",
-        };
-
-    private static readonly string[] IdentityAttributes =
-    {
-        "GUID",
-        "Id",
-        "Name",
-        "OTCID",
-        "ObjectId",
-        "Path",
-        "PrjFilePath",
-    };
-
-    private static readonly string[] IdentityElements =
-    {
-        "Name",
-        "Id",
-        "OTCID",
-    };
+    private const long MaximumXmlCharacters =
+        32L * 1024L * 1024L;
+    private const string TcSmProjectElement = "TcSmProject";
+    private const string TcSmVersionAttribute = "TcSmVersion";
+    private const string TcVersionAttribute = "TcVersion";
 
     public static TsProjectClassificationResult Classify(
         byte[] baseline,
@@ -77,56 +56,125 @@ public static class TsProjectNoiseClassifier
             throw new ArgumentNullException(nameof(current));
         }
 
-        XDocument baselineDocument;
-        XDocument currentDocument;
         try
         {
-            baselineDocument = Parse(baseline);
-            currentDocument = Parse(current);
-        }
-        catch (XmlException exception)
-        {
-            return Unknown(
-                "The project XML is invalid: " + exception.Message);
-        }
+            XDocument baselineDocument = Parse(baseline);
+            XDocument currentDocument = Parse(current);
+            XElement? baselineRoot = baselineDocument.Root;
+            XElement? currentRoot = currentDocument.Root;
+            if (baselineRoot is null || currentRoot is null)
+            {
+                return Unknown(
+                    "The TwinCAT project XML has no root element.");
+            }
 
-        XElement? baselineRoot = baselineDocument.Root;
-        XElement? currentRoot = currentDocument.Root;
-        if (baselineRoot is null || currentRoot is null)
-        {
-            return Unknown("The project XML has no root element.");
-        }
+            if (baselineRoot.Name.NamespaceName.Length != 0
+                || currentRoot.Name.NamespaceName.Length != 0
+                || baselineRoot.Name.LocalName
+                    != TcSmProjectElement
+                || currentRoot.Name.LocalName
+                    != TcSmProjectElement)
+            {
+                return Unknown(
+                    "The XML root is not a supported TcSmProject.");
+            }
 
-        string baselineOrdered = Canonicalize(
-            baselineRoot,
-            reorderKnownContainers: false);
-        string currentOrdered = Canonicalize(
-            currentRoot,
-            reorderKnownContainers: false);
-        if (string.Equals(
-            baselineOrdered,
-            currentOrdered,
-            StringComparison.Ordinal))
-        {
-            return new TsProjectClassificationResult(
-                ProjectChangeClassification.WhitespaceOnly,
-                movedBlocks: 0,
-                contentChanges: 0,
-                "Only insignificant XML formatting changed.");
-        }
+            string? baselineTcSmVersion =
+                AttributeValue(
+                    baselineRoot,
+                    TcSmVersionAttribute);
+            string? baselineTcVersion =
+                AttributeValue(
+                    baselineRoot,
+                    TcVersionAttribute);
+            string? currentTcSmVersion =
+                AttributeValue(
+                    currentRoot,
+                    TcSmVersionAttribute);
+            string? currentTcVersion =
+                AttributeValue(
+                    currentRoot,
+                    TcVersionAttribute);
+            if (baselineTcSmVersion is null
+                || baselineTcVersion is null
+                || currentTcSmVersion is null
+                || currentTcVersion is null)
+            {
+                return Unknown(
+                    "TwinCAT project version metadata is missing.");
+            }
 
-        try
-        {
-            string baselineReordered = Canonicalize(
+            if (!string.Equals(
+                    baselineTcSmVersion,
+                    currentTcSmVersion,
+                    StringComparison.Ordinal)
+                || !string.Equals(
+                    baselineTcVersion,
+                    currentTcVersion,
+                    StringComparison.Ordinal))
+            {
+                return Unknown(
+                    "TwinCAT project version metadata changed, so one "
+                    + "pinned schema cannot classify both files.");
+            }
+
+            TwinCatSchemaBundle bundle =
+                TwinCatSchemaCatalog.GetMvpBundle();
+            if (!bundle.SupportsTcSmProject(
+                baselineTcSmVersion,
+                baselineTcVersion))
+            {
+                return Unknown(
+                    "No pinned TwinCAT project schema supports "
+                    + $"TcSmVersion '{baselineTcSmVersion}' and "
+                    + $"TcVersion '{baselineTcVersion}'.");
+            }
+
+            XmlSchemaSet schemas = bundle.CreateSchemaSet(
+                TwinCatSchemaDocumentKind.TcSmProject);
+            string? baselineValidationError =
+                Validate(baselineDocument, schemas);
+            if (baselineValidationError is not null)
+            {
+                return Unknown(
+                    "The baseline TwinCAT project is not valid against "
+                    + "the pinned schema: "
+                    + baselineValidationError);
+            }
+
+            string? currentValidationError =
+                Validate(currentDocument, schemas);
+            if (currentValidationError is not null)
+            {
+                return Unknown(
+                    "The current TwinCAT project is not valid against "
+                    + "the pinned schema: "
+                    + currentValidationError);
+            }
+
+            byte[] baselineOrdered = CanonicalHash(
                 baselineRoot,
-                reorderKnownContainers: true);
-            string currentReordered = Canonicalize(
+                allowSiblingPermutation: false);
+            byte[] currentOrdered = CanonicalHash(
                 currentRoot,
-                reorderKnownContainers: true);
-            if (string.Equals(
-                baselineReordered,
-                currentReordered,
-                StringComparison.Ordinal))
+                allowSiblingPermutation: false);
+            if (baselineOrdered.SequenceEqual(currentOrdered))
+            {
+                return new TsProjectClassificationResult(
+                    ProjectChangeClassification.WhitespaceOnly,
+                    movedBlocks: 0,
+                    contentChanges: 0,
+                    "Only insignificant XML formatting changed.");
+            }
+
+            byte[] baselinePermutation = CanonicalHash(
+                baselineRoot,
+                allowSiblingPermutation: true);
+            byte[] currentPermutation = CanonicalHash(
+                currentRoot,
+                allowSiblingPermutation: true);
+            if (baselinePermutation.SequenceEqual(
+                currentPermutation))
             {
                 return new TsProjectClassificationResult(
                     ProjectChangeClassification.ExpectedReorderOnly,
@@ -134,35 +182,34 @@ public static class TsProjectNoiseClassifier
                         baselineRoot,
                         currentRoot),
                     contentChanges: 0,
-                    "Only known TwinCAT project blocks were reordered.");
-            }
-
-            string baselineBoundary =
-                CanonicalizeKnownContainerBoundaries(baselineRoot);
-            string currentBoundary =
-                CanonicalizeKnownContainerBoundaries(currentRoot);
-            if (!string.Equals(
-                baselineBoundary,
-                currentBoundary,
-                StringComparison.Ordinal))
-            {
-                return Unknown(
-                    "The change is outside a recognized reorderable "
-                    + "TwinCAT project container.");
+                    "Only unchanged XML subtrees were reordered in "
+                    + "schema-valid TwinCAT projects.");
             }
 
             return new TsProjectClassificationResult(
                 ProjectChangeClassification.ContentChanged,
                 movedBlocks: 0,
-                CountContentChanges(
-                    baselineRoot,
-                    currentRoot),
-                "Content changed inside a recognized TwinCAT "
-                + "project container.");
+                contentChanges: 1,
+                "The schema-valid TwinCAT project contains a content "
+                + "or structural change other than subtree reordering.");
         }
-        catch (AmbiguousProjectStructureException exception)
+        catch (XmlException exception)
         {
-            return Unknown(exception.Message);
+            return Unknown(
+                "The TwinCAT project XML is invalid: "
+                + exception.Message);
+        }
+        catch (XmlSchemaException exception)
+        {
+            return Unknown(
+                "The pinned TwinCAT project schema could not be used: "
+                + exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Unknown(
+                "The pinned TwinCAT project schema is unavailable: "
+                + exception.Message);
         }
     }
 
@@ -177,423 +224,259 @@ public static class TsProjectNoiseClassifier
         };
         using MemoryStream stream = new(content, writable: false);
         using XmlReader reader = XmlReader.Create(stream, settings);
-        return XDocument.Load(reader, LoadOptions.None);
+        return XDocument.Load(
+            reader,
+            LoadOptions.SetLineInfo);
     }
 
-    private static string Canonicalize(
-        XElement element,
-        bool reorderKnownContainers)
+    private static string? Validate(
+        XDocument document,
+        XmlSchemaSet schemas)
     {
-        StringBuilder text = new();
-        AppendCanonicalElement(
-            text,
-            element,
-            reorderKnownContainers);
-        return text.ToString();
+        string? firstError = null;
+        document.Validate(
+            schemas,
+            (_, args) =>
+            {
+                firstError ??= args.Message;
+            },
+            addSchemaInfo: false);
+        return firstError;
     }
 
-    private static void AppendCanonicalElement(
-        StringBuilder text,
+    private static string? AttributeValue(
         XElement element,
-        bool reorderKnownContainers)
+        string localName)
     {
-        AppendToken(text, "E");
-        AppendToken(text, element.Name.NamespaceName);
-        AppendToken(text, element.Name.LocalName);
-        foreach (XAttribute attribute in element.Attributes()
-            .OrderBy(
-                item => item.Name.NamespaceName,
-                StringComparer.Ordinal)
-            .ThenBy(
-                item => item.Name.LocalName,
-                StringComparer.Ordinal))
-        {
-            AppendToken(text, "A");
-            AppendToken(text, attribute.Name.NamespaceName);
-            AppendToken(text, attribute.Name.LocalName);
-            AppendToken(text, attribute.Value);
-        }
+        return element
+            .Attributes()
+            .FirstOrDefault(attribute =>
+                attribute.Name.NamespaceName.Length == 0
+                && attribute.Name.LocalName == localName)
+            ?.Value;
+    }
 
-        XNode[] nodes = OrderChildNodes(
-            element,
-            reorderKnownContainers);
-        foreach (XNode node in nodes)
+    private static byte[] CanonicalHash(
+        XNode node,
+        bool allowSiblingPermutation)
+    {
+        using MemoryStream canonical = new();
+        using (BinaryWriter writer = new(
+            canonical,
+            new UTF8Encoding(
+                encoderShouldEmitUTF8Identifier: false,
+                throwOnInvalidBytes: true),
+            leaveOpen: true))
         {
             AppendCanonicalNode(
-                text,
+                writer,
                 node,
-                reorderKnownContainers);
+                allowSiblingPermutation);
         }
 
-        AppendToken(text, "/E");
-    }
-
-    private static XNode[] OrderChildNodes(
-        XElement element,
-        bool reorderKnownContainers)
-    {
-        XNode[] nodes = element.Nodes().ToArray();
-        if (!reorderKnownContainers
-            || !ReorderableContainers.Contains(
-                element.Name.LocalName)
-            || nodes.Length < 2)
-        {
-            return nodes;
-        }
-
-        if (nodes.Any(node => node is not XElement))
-        {
-            throw new AmbiguousProjectStructureException(
-                $"The recognized container '{element.Name.LocalName}' "
-                + "contains non-element content.");
-        }
-
-        List<KeyValuePair<string, XNode>> identified = nodes
-            .Cast<XElement>()
-            .Select(child =>
-                new KeyValuePair<string, XNode>(
-                    GetIdentity(child),
-                    child))
-            .ToList();
-        EnsureUniqueIdentities(
-            element.Name.LocalName,
-            identified.Select(item => item.Key));
-        return identified
-            .OrderBy(item => item.Key, StringComparer.Ordinal)
-            .Select(item => item.Value)
-            .ToArray();
+        canonical.Position = 0;
+        using SHA256 sha256 = SHA256.Create();
+        return sha256.ComputeHash(canonical);
     }
 
     private static void AppendCanonicalNode(
-        StringBuilder text,
+        BinaryWriter writer,
         XNode node,
-        bool reorderKnownContainers)
+        bool allowSiblingPermutation)
     {
-        switch (node)
+        if (node is XElement element)
         {
-            case XElement child:
-                AppendCanonicalElement(
-                    text,
-                    child,
-                    reorderKnownContainers);
-                break;
-            case XCData value:
-                AppendToken(text, "C");
-                AppendToken(text, value.Value);
-                break;
-            case XText value:
-                AppendToken(text, "T");
-                AppendToken(text, value.Value);
-                break;
-            case XComment value:
-                AppendToken(text, "M");
-                AppendToken(text, value.Value);
-                break;
-            case XProcessingInstruction value:
-                AppendToken(text, "P");
-                AppendToken(text, value.Target);
-                AppendToken(text, value.Data);
-                break;
-            default:
-                throw new AmbiguousProjectStructureException(
-                    $"Unsupported XML node '{node.NodeType}'.");
+            AppendElement(
+                writer,
+                element,
+                allowSiblingPermutation);
+            return;
         }
+
+        if (node is XText text)
+        {
+            WriteToken(writer, "text");
+            WriteToken(writer, text.Value);
+            return;
+        }
+
+        if (node is XComment comment)
+        {
+            WriteToken(writer, "comment");
+            WriteToken(writer, comment.Value);
+            return;
+        }
+
+        if (node is XProcessingInstruction instruction)
+        {
+            WriteToken(writer, "processing-instruction");
+            WriteToken(writer, instruction.Target);
+            WriteToken(writer, instruction.Data);
+            return;
+        }
+
+        throw new InvalidOperationException(
+            $"Unsupported XML node type '{node.NodeType}'.");
     }
 
-    private static string CanonicalizeKnownContainerBoundaries(
-        XElement root)
+    private static void AppendElement(
+        BinaryWriter writer,
+        XElement element,
+        bool allowSiblingPermutation)
     {
-        StringBuilder text = new();
-        AppendBoundaryElement(text, root);
-        return text.ToString();
-    }
+        WriteToken(writer, "element");
+        WriteExpandedName(writer, element.Name);
 
-    private static void AppendBoundaryElement(
-        StringBuilder text,
-        XElement element)
-    {
-        AppendToken(text, "E");
-        AppendToken(text, element.Name.NamespaceName);
-        AppendToken(text, element.Name.LocalName);
-        foreach (XAttribute attribute in element.Attributes()
+        XAttribute[] attributes = element
+            .Attributes()
+            .Where(attribute =>
+                !attribute.IsNamespaceDeclaration)
             .OrderBy(
-                item => item.Name.NamespaceName,
+                attribute => attribute.Name.NamespaceName,
                 StringComparer.Ordinal)
             .ThenBy(
-                item => item.Name.LocalName,
-                StringComparer.Ordinal))
+                attribute => attribute.Name.LocalName,
+                StringComparer.Ordinal)
+            .ToArray();
+        writer.Write(attributes.Length);
+        foreach (XAttribute attribute in attributes)
         {
-            AppendToken(text, "A");
-            AppendToken(text, attribute.Name.NamespaceName);
-            AppendToken(text, attribute.Name.LocalName);
-            AppendToken(text, attribute.Value);
+            WriteExpandedName(writer, attribute.Name);
+            WriteToken(writer, attribute.Value);
         }
 
-        if (ReorderableContainers.Contains(element.Name.LocalName))
+        XNode[] nodes = element.Nodes().ToArray();
+        byte[][] childHashes = nodes
+            .Select(node => CanonicalHash(
+                node,
+                allowSiblingPermutation))
+            .ToArray();
+        if (allowSiblingPermutation
+            && nodes.All(node => node is XElement))
         {
-            AppendToken(text, "KNOWN-CONTENT");
-        }
-        else
-        {
-            foreach (XNode node in element.Nodes())
-            {
-                if (node is XElement child)
-                {
-                    AppendBoundaryElement(text, child);
-                }
-                else
-                {
-                    AppendCanonicalNode(
-                        text,
-                        node,
-                        reorderKnownContainers: false);
-                }
-            }
+            Array.Sort(
+                childHashes,
+                ByteArrayComparer.Instance);
         }
 
-        AppendToken(text, "/E");
+        writer.Write(childHashes.Length);
+        foreach (byte[] childHash in childHashes)
+        {
+            writer.Write(childHash.Length);
+            writer.Write(childHash);
+        }
+    }
+
+    private static void WriteExpandedName(
+        BinaryWriter writer,
+        XName name)
+    {
+        WriteToken(writer, name.NamespaceName);
+        WriteToken(writer, name.LocalName);
+    }
+
+    private static void WriteToken(
+        BinaryWriter writer,
+        string value)
+    {
+        byte[] bytes = Encoding.UTF8.GetBytes(value);
+        writer.Write(bytes.Length);
+        writer.Write(bytes);
     }
 
     private static int CountMovedBlocks(
         XElement baseline,
         XElement current)
     {
-        if (ReorderableContainers.Contains(
-            baseline.Name.LocalName))
+        XNode[] baselineNodes = baseline.Nodes().ToArray();
+        XNode[] currentNodes = current.Nodes().ToArray();
+        if (baselineNodes.All(node => node is XElement)
+            && currentNodes.All(node => node is XElement))
         {
-            IReadOnlyList<XElement> baselineChildren =
-                baseline.Elements().ToArray();
-            IReadOnlyList<XElement> currentChildren =
-                current.Elements().ToArray();
-            string[] baselineIdentities =
-                GetUniqueIdentities(baseline);
-            string[] currentIdentities =
-                GetUniqueIdentities(current);
-            Dictionary<string, XElement> currentByIdentity =
-                currentChildren
-                    .Select((child, index) =>
-                        new
-                        {
-                            Identity = currentIdentities[index],
-                            Child = child,
-                        })
-                    .ToDictionary(
-                        item => item.Identity,
-                        item => item.Child,
-                        StringComparer.Ordinal);
-            int moved = baselineIdentities
-                .Where((identity, index) =>
-                    !string.Equals(
-                        identity,
-                        currentIdentities[index],
-                        StringComparison.Ordinal))
-                .Count();
-            for (int index = 0;
-                index < baselineChildren.Count;
-                index++)
+            return CountMovedElementChildren(
+                baselineNodes.Cast<XElement>().ToArray(),
+                currentNodes.Cast<XElement>().ToArray());
+        }
+
+        int moved = 0;
+        int count = Math.Min(
+            baselineNodes.Length,
+            currentNodes.Length);
+        for (int index = 0; index < count; index++)
+        {
+            if (baselineNodes[index] is XElement baselineChild
+                && currentNodes[index] is XElement currentChild)
             {
                 moved += CountMovedBlocks(
-                    baselineChildren[index],
-                    currentByIdentity[
-                        baselineIdentities[index]]);
+                    baselineChild,
+                    currentChild);
             }
-
-            return moved;
         }
 
-        XElement[] baselineElements =
-            baseline.Elements().ToArray();
-        XElement[] currentElements =
-            current.Elements().ToArray();
-        int count = Math.Min(
-            baselineElements.Length,
-            currentElements.Length);
-        int total = 0;
-        for (int index = 0; index < count; index++)
-        {
-            total += CountMovedBlocks(
-                baselineElements[index],
-                currentElements[index]);
-        }
-
-        return total;
+        return moved;
     }
 
-    private static int CountContentChanges(
-        XElement baseline,
-        XElement current)
+    private static int CountMovedElementChildren(
+        IReadOnlyList<XElement> baseline,
+        IReadOnlyList<XElement> current)
     {
-        if (string.Equals(
-            Canonicalize(
-                baseline,
-                reorderKnownContainers: true),
-            Canonicalize(
-                current,
-                reorderKnownContainers: true),
-            StringComparison.Ordinal))
+        Dictionary<string, Queue<int>> currentPositions =
+            new(StringComparer.Ordinal);
+        for (int index = 0; index < current.Count; index++)
         {
-            return 0;
-        }
-
-        if (ReorderableContainers.Contains(
-            baseline.Name.LocalName))
-        {
-            Dictionary<string, XElement> baselineChildren =
-                CreateIdentityMap(baseline);
-            Dictionary<string, XElement> currentChildren =
-                CreateIdentityMap(current);
-            int changes = baselineChildren.Keys
-                .Union(
-                    currentChildren.Keys,
-                    StringComparer.Ordinal)
-                .Count(identity =>
-                    !baselineChildren.TryGetValue(
-                        identity,
-                        out XElement? baselineChild)
-                    || !currentChildren.TryGetValue(
-                        identity,
-                        out XElement? currentChild)
-                    || !string.Equals(
-                        Canonicalize(
-                            baselineChild,
-                            reorderKnownContainers: true),
-                        Canonicalize(
-                            currentChild,
-                            reorderKnownContainers: true),
-                        StringComparison.Ordinal));
-            return Math.Max(1, changes);
-        }
-
-        XElement[] baselineElements =
-            baseline.Elements().ToArray();
-        XElement[] currentElements =
-            current.Elements().ToArray();
-        int count = Math.Min(
-            baselineElements.Length,
-            currentElements.Length);
-        int total = 0;
-        for (int index = 0; index < count; index++)
-        {
-            total += CountContentChanges(
-                baselineElements[index],
-                currentElements[index]);
-        }
-
-        return Math.Max(1, total);
-    }
-
-    private static Dictionary<string, XElement> CreateIdentityMap(
-        XElement container)
-    {
-        IReadOnlyList<XElement> children =
-            container.Elements().ToArray();
-        string[] identities =
-            GetUniqueIdentities(container);
-        return children
-            .Select((child, index) =>
-                new
-                {
-                    Identity = identities[index],
-                    Child = child,
-                })
-            .ToDictionary(
-                item => item.Identity,
-                item => item.Child,
-                StringComparer.Ordinal);
-    }
-
-    private static string[] GetUniqueIdentities(
-        XElement container)
-    {
-        string[] identities = container
-            .Elements()
-            .Select(GetIdentity)
-            .ToArray();
-        EnsureUniqueIdentities(
-            container.Name.LocalName,
-            identities);
-        return identities;
-    }
-
-    private static string GetIdentity(XElement element)
-    {
-        List<string> parts = new()
-        {
-            element.Name.NamespaceName,
-            element.Name.LocalName,
-        };
-        foreach (string attributeName in IdentityAttributes)
-        {
-            XAttribute? attribute = element.Attributes()
-                .FirstOrDefault(item =>
-                    string.Equals(
-                        item.Name.LocalName,
-                        attributeName,
-                        StringComparison.Ordinal));
-            if (attribute is not null)
+            string hash = HashKey(CanonicalHash(
+                current[index],
+                allowSiblingPermutation: true));
+            if (!currentPositions.TryGetValue(
+                hash,
+                out Queue<int>? positions))
             {
-                parts.Add(attributeName);
-                parts.Add(attribute.Value);
+                positions = new Queue<int>();
+                currentPositions.Add(hash, positions);
             }
+
+            positions.Enqueue(index);
         }
 
-        if (parts.Count == 2)
+        int moved = 0;
+        for (int baselineIndex = 0;
+             baselineIndex < baseline.Count;
+             baselineIndex++)
         {
-            XElement? identityElement = element.Elements()
-                .FirstOrDefault(child =>
-                    IdentityElements.Contains(
-                        child.Name.LocalName,
-                        StringComparer.Ordinal));
-            if (identityElement is not null
-                && !identityElement.HasElements)
+            string hash = HashKey(CanonicalHash(
+                baseline[baselineIndex],
+                allowSiblingPermutation: true));
+            if (!currentPositions.TryGetValue(
+                    hash,
+                    out Queue<int>? positions)
+                || positions.Count == 0)
             {
-                parts.Add(identityElement.Name.LocalName);
-                parts.Add(identityElement.Value);
+                continue;
             }
-        }
 
-        if (parts.Count == 2)
-        {
-            throw new AmbiguousProjectStructureException(
-                $"The block '{element.Name.LocalName}' in a recognized "
-                + "reorderable container has no stable identity.");
-        }
-
-        StringBuilder identity = new();
-        foreach (string part in parts)
-        {
-            AppendToken(identity, part);
-        }
-
-        return identity.ToString();
-    }
-
-    private static void EnsureUniqueIdentities(
-        string containerName,
-        IEnumerable<string> identities)
-    {
-        HashSet<string> seen = new(StringComparer.Ordinal);
-        foreach (string identity in identities)
-        {
-            if (!seen.Add(identity))
+            int currentIndex = positions.Dequeue();
+            if (baselineIndex != currentIndex)
             {
-                throw new AmbiguousProjectStructureException(
-                    $"The recognized container '{containerName}' "
-                    + "contains duplicate block identities.");
+                moved++;
             }
+
+            moved += CountMovedBlocks(
+                baseline[baselineIndex],
+                current[currentIndex]);
         }
+
+        return moved;
     }
 
-    private static void AppendToken(
-        StringBuilder target,
-        string value)
+    private static string HashKey(byte[] hash)
     {
-        target.Append(value.Length);
-        target.Append(':');
-        target.Append(value);
+        return BitConverter
+            .ToString(hash)
+            .Replace("-", string.Empty);
     }
 
-    private static TsProjectClassificationResult Unknown(string reason)
+    private static TsProjectClassificationResult Unknown(
+        string reason)
     {
         return new TsProjectClassificationResult(
             ProjectChangeClassification.Unknown,
@@ -602,11 +485,39 @@ public static class TsProjectNoiseClassifier
             reason);
     }
 
-    private sealed class AmbiguousProjectStructureException : Exception
+    private sealed class ByteArrayComparer :
+        IComparer<byte[]>
     {
-        public AmbiguousProjectStructureException(string message)
-            : base(message)
+        public static ByteArrayComparer Instance { get; } = new();
+
+        public int Compare(byte[]? left, byte[]? right)
         {
+            if (ReferenceEquals(left, right))
+            {
+                return 0;
+            }
+
+            if (left is null)
+            {
+                return -1;
+            }
+
+            if (right is null)
+            {
+                return 1;
+            }
+
+            int count = Math.Min(left.Length, right.Length);
+            for (int index = 0; index < count; index++)
+            {
+                int comparison = left[index].CompareTo(right[index]);
+                if (comparison != 0)
+                {
+                    return comparison;
+                }
+            }
+
+            return left.Length.CompareTo(right.Length);
         }
     }
 }

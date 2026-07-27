@@ -1,5 +1,8 @@
+using System;
+using System.IO;
 using System.Linq;
 using System.Text;
+using System.Xml.Linq;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using Xunit;
@@ -9,19 +12,15 @@ namespace TwinCatGateway.UnitTests;
 public sealed class TsProjectNoiseClassifierTests
 {
     [Fact]
-    public void ClassifiesKnownBlockReordering()
+    public void ClassifiesSchemaValidProjectReordering()
     {
+        XDocument baseline = LoadProject();
+        XDocument current = new(baseline);
+        ReversePlcProjects(current);
+
         TsProjectClassificationResult result = Classify(
-            Project(
-                """
-                <Project GUID="{A}" Name="First"><Value>1</Value></Project>
-                <Project GUID="{B}" Name="Second"><Value>2</Value></Project>
-                """),
-            Project(
-                """
-                <Project GUID="{B}" Name="Second"><Value>2</Value></Project>
-                <Project GUID="{A}" Name="First"><Value>1</Value></Project>
-                """));
+            baseline,
+            current);
 
         Assert.Equal(
             ProjectChangeClassification.ExpectedReorderOnly,
@@ -31,13 +30,27 @@ public sealed class TsProjectNoiseClassifierTests
     }
 
     [Fact]
-    public void ClassifiesLargeKnownBlockReordering()
+    public void ClassifiesLargeSchemaValidProjectReordering()
     {
-        string[] blocks = CreateBlocks(40);
+        XDocument baseline = LoadProject();
+        XElement plc = Plc(baseline);
+        XElement template = plc.Elements("Project").First();
+        XElement[] projects = Enumerable
+            .Range(0, 40)
+            .Select(index =>
+                CreateProjectClone(template, index))
+            .ToArray();
+        plc.ReplaceNodes(projects);
+        XDocument current = new(baseline);
+        Plc(current).ReplaceNodes(
+            Plc(current)
+                .Elements("Project")
+                .Reverse()
+                .Select(project => new XElement(project)));
 
         TsProjectClassificationResult result = Classify(
-            Project(string.Concat(blocks)),
-            Project(string.Concat(blocks.Reverse())));
+            baseline,
+            current);
 
         Assert.Equal(
             ProjectChangeClassification.ExpectedReorderOnly,
@@ -46,21 +59,16 @@ public sealed class TsProjectNoiseClassifierTests
     }
 
     [Fact]
-    public void ClassifiesInsignificantFormattingOnly()
+    public void ClassifiesFormattingOnly()
     {
-        TsProjectClassificationResult result = Classify(
-            "<TcSmProject><Project><Plc>"
-                + "<Project GUID=\"{A}\" Name=\"First\" />"
-                + "</Plc></Project></TcSmProject>",
-            """
-            <TcSmProject>
-              <Project>
-                <Plc>
-                  <Project Name="First" GUID="{A}" />
-                </Plc>
-              </Project>
-            </TcSmProject>
-            """);
+        XDocument baseline = LoadProject();
+        string reformatted = baseline.ToString(
+            SaveOptions.DisableFormatting);
+
+        TsProjectClassificationResult result =
+            TsProjectNoiseClassifier.Classify(
+                Serialize(baseline),
+                Encoding.UTF8.GetBytes(reformatted));
 
         Assert.Equal(
             ProjectChangeClassification.WhitespaceOnly,
@@ -68,19 +76,19 @@ public sealed class TsProjectNoiseClassifierTests
     }
 
     [Fact]
-    public void DetectsContentChangeInsideMovedBlock()
+    public void DetectsAttributeChangeInsideMovedBlock()
     {
+        XDocument baseline = LoadProject();
+        XDocument current = new(baseline);
+        ReversePlcProjects(current);
+        Plc(current)
+            .Elements("Project")
+            .First()
+            .SetAttributeValue("Name", "ChangedName");
+
         TsProjectClassificationResult result = Classify(
-            Project(
-                """
-                <Project GUID="{A}" Name="First"><Value>1</Value></Project>
-                <Project GUID="{B}" Name="Second"><Value>2</Value></Project>
-                """),
-            Project(
-                """
-                <Project GUID="{B}" Name="Second"><Value>changed</Value></Project>
-                <Project GUID="{A}" Name="First"><Value>1</Value></Project>
-                """));
+            baseline,
+            current);
 
         Assert.Equal(
             ProjectChangeClassification.ContentChanged,
@@ -89,18 +97,15 @@ public sealed class TsProjectNoiseClassifierTests
     }
 
     [Fact]
-    public void DetectsAddedOrRemovedKnownBlock()
+    public void DetectsRemovedBlock()
     {
+        XDocument baseline = LoadProject();
+        XDocument current = new(baseline);
+        Plc(current).Elements("Project").Last().Remove();
+
         TsProjectClassificationResult result = Classify(
-            Project(
-                """
-                <Project GUID="{A}" Name="First" />
-                <Project GUID="{B}" Name="Second" />
-                """),
-            Project(
-                """
-                <Project GUID="{A}" Name="First" />
-                """));
+            baseline,
+            current);
 
         Assert.Equal(
             ProjectChangeClassification.ContentChanged,
@@ -108,31 +113,64 @@ public sealed class TsProjectNoiseClassifierTests
     }
 
     [Fact]
-    public void ReturnsUnknownForDuplicateIdentity()
+    public void SupportsDuplicateCanonicalSubtreesAsMultiset()
     {
+        XDocument baseline = LoadProject();
+        XElement baselinePlc = Plc(baseline);
+        XElement first =
+            new(baselinePlc.Elements("Project").First());
+        XElement second =
+            new(baselinePlc.Elements("Project").Last());
+        baselinePlc.ReplaceNodes(
+            new XElement(first),
+            new XElement(first),
+            new XElement(second));
+        XDocument current = new(baseline);
+        Plc(current).ReplaceNodes(
+            new XElement(first),
+            new XElement(second),
+            new XElement(first));
+
         TsProjectClassificationResult result = Classify(
-            Project(
-                """
-                <Project GUID="{A}" Name="Same"><Value>1</Value></Project>
-                <Project GUID="{A}" Name="Same"><Value>2</Value></Project>
-                """),
-            Project(
-                """
-                <Project GUID="{A}" Name="Same"><Value>2</Value></Project>
-                <Project GUID="{A}" Name="Same"><Value>1</Value></Project>
-                """));
+            baseline,
+            current);
 
         Assert.Equal(
-            ProjectChangeClassification.Unknown,
+            ProjectChangeClassification.ExpectedReorderOnly,
+            result.Classification);
+        Assert.Equal(2, result.MovedBlocks);
+    }
+
+    [Fact]
+    public void DoesNotTreatCrossParentMoveAsReorderOnly()
+    {
+        XDocument baseline = LoadProject();
+        XDocument current = new(baseline);
+        XElement moved =
+            Plc(current).Elements("Project").Last();
+        moved.Remove();
+        current.Root!
+            .Element("Project")!
+            .Element("System")!
+            .Add(moved);
+
+        TsProjectClassificationResult result = Classify(
+            baseline,
+            current);
+
+        Assert.NotEqual(
+            ProjectChangeClassification.ExpectedReorderOnly,
             result.Classification);
     }
 
     [Fact]
     public void ReturnsUnknownForInvalidXml()
     {
-        TsProjectClassificationResult result = Classify(
-            Project("<Project GUID=\"{A}\" />"),
-            "<TcSmProject><Project>");
+        TsProjectClassificationResult result =
+            TsProjectNoiseClassifier.Classify(
+                Serialize(LoadProject()),
+                Encoding.UTF8.GetBytes(
+                    "<TcSmProject><Project>"));
 
         Assert.Equal(
             ProjectChangeClassification.Unknown,
@@ -140,19 +178,33 @@ public sealed class TsProjectNoiseClassifierTests
     }
 
     [Fact]
-    public void ReturnsUnknownForChangeOutsideKnownContainer()
+    public void ReturnsUnknownForSchemaInvalidProject()
     {
+        XDocument baseline = LoadProject();
+        XDocument current = new(baseline);
+        current.Root!.Add(new XElement("Unexpected"));
+
         TsProjectClassificationResult result = Classify(
-            """
-            <TcSmProject TcVersion="3.1">
-              <Project><System /></Project>
-            </TcSmProject>
-            """,
-            """
-            <TcSmProject TcVersion="3.2">
-              <Project><System /></Project>
-            </TcSmProject>
-            """);
+            baseline,
+            current);
+
+        Assert.Equal(
+            ProjectChangeClassification.Unknown,
+            result.Classification);
+    }
+
+    [Fact]
+    public void ReturnsUnknownForUnsupportedVersion()
+    {
+        XDocument baseline = LoadProject();
+        XDocument current = new(baseline);
+        current.Root!.SetAttributeValue(
+            "TcVersion",
+            "3.1.4024.18");
+
+        TsProjectClassificationResult result = Classify(
+            baseline,
+            current);
 
         Assert.Equal(
             ProjectChangeClassification.Unknown,
@@ -162,12 +214,16 @@ public sealed class TsProjectNoiseClassifierTests
     [Fact]
     public void RejectsDtdProcessing()
     {
-        TsProjectClassificationResult result = Classify(
-            Project("<Project GUID=\"{A}\" />"),
-            """
-            <!DOCTYPE TcSmProject [<!ENTITY value "unsafe">]>
-            <TcSmProject><Project><Plc>&value;</Plc></Project></TcSmProject>
-            """);
+        XDocument baseline = LoadProject();
+        string current =
+            "<!DOCTYPE TcSmProject "
+            + "[<!ENTITY value \"unsafe\">]>"
+            + baseline.ToString(SaveOptions.DisableFormatting);
+
+        TsProjectClassificationResult result =
+            TsProjectNoiseClassifier.Classify(
+                Serialize(baseline),
+                Encoding.UTF8.GetBytes(current));
 
         Assert.Equal(
             ProjectChangeClassification.Unknown,
@@ -175,28 +231,65 @@ public sealed class TsProjectNoiseClassifierTests
     }
 
     private static TsProjectClassificationResult Classify(
-        string baseline,
-        string current)
+        XDocument baseline,
+        XDocument current)
     {
         return TsProjectNoiseClassifier.Classify(
-            Encoding.UTF8.GetBytes(baseline),
-            Encoding.UTF8.GetBytes(current));
+            Serialize(baseline),
+            Serialize(current));
     }
 
-    private static string Project(string content)
+    private static byte[] Serialize(XDocument document)
     {
-        return "<TcSmProject><Project><Plc>"
-            + content
-            + "</Plc></Project></TcSmProject>";
+        return Encoding.UTF8.GetBytes(
+            document.ToString());
     }
 
-    private static string[] CreateBlocks(int count)
+    private static XDocument LoadProject()
     {
-        return Enumerable
-            .Range(0, count)
-            .Select(index =>
-                $"<Project GUID=\"{{{index}}}\" "
-                + $"Name=\"Project{index}\" />")
-            .ToArray();
+        return XDocument.Load(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "Fixtures",
+                "TC3_SimpleProject.tsproj"),
+            LoadOptions.PreserveWhitespace);
+    }
+
+    private static XElement Plc(XDocument document)
+    {
+        return document.Root!
+            .Element("Project")!
+            .Element("Plc")!;
+    }
+
+    private static void ReversePlcProjects(
+        XDocument document)
+    {
+        XElement plc = Plc(document);
+        plc.ReplaceNodes(
+            plc.Elements("Project")
+                .Reverse()
+                .Select(project => new XElement(project)));
+    }
+
+    private static XElement CreateProjectClone(
+        XElement template,
+        int index)
+    {
+        XElement project = new(template);
+        project.SetAttributeValue(
+            "GUID",
+            $"{{00000000-0000-0000-0000-{index:000000000000}}}");
+        project.SetAttributeValue("Name", $"PlcProject{index}");
+        project.SetAttributeValue(
+            "PrjFilePath",
+            $"PlcProject{index}\\PlcProject{index}.plcproj");
+        project.SetAttributeValue(
+            "TmcFilePath",
+            $"PlcProject{index}\\PlcProject{index}.tmc");
+        project.SetAttributeValue(
+            "AmsPort",
+            851 + index);
+        return project;
     }
 }
