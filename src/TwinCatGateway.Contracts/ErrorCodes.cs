@@ -22,6 +22,7 @@ public static class ErrorCodes
     public const string SolutionNotFound = "SOLUTION_NOT_FOUND";
     public const string SolutionMismatch = "SOLUTION_MISMATCH";
     public const string SysManagerNotAvailable = "SYSMANAGER_NOT_AVAILABLE";
+    public const string XaeBusy = "XAE_BUSY";
     public const string ComCallRejected = "COM_CALL_REJECTED";
     public const string ComCallTimeout = "COM_CALL_TIMEOUT";
     public const string BuildFailed = "BUILD_FAILED";

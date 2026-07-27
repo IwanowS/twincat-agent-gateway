@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell.Interop;
+using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using TwinCatGateway.Xae;
 using Xunit;
@@ -16,6 +17,63 @@ namespace TwinCatGateway.IntegrationTests;
 
 public sealed class XaeExternalEditTests
 {
+    [XaeLaunchFact]
+    public async Task BuildActionsCompleteFromTypedEvents()
+    {
+        string sourceSolution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        using TemporarySolution copy =
+            TemporarySolution.Create(sourceSolution);
+        XaeSession session = new();
+        try
+        {
+            XaeSessionSnapshot snapshot = await session.LaunchAsync(
+                copy.SolutionPath,
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_XAE_PROGID"),
+                TimeSpan.FromSeconds(60),
+                CancellationToken.None);
+            int processId = Assert.IsType<int>(
+                snapshot.SelectedInstance?.ProcessId);
+            BuildAction[] actions =
+            {
+                BuildAction.Build,
+                BuildAction.Clean,
+                BuildAction.Rebuild,
+            };
+            foreach (BuildAction action in actions)
+            {
+                XaeBuildExecutionResult build =
+                    await session.ExecuteBuildAsync(
+                        action,
+                        changedPaths: null,
+                        TimeSpan.FromSeconds(60),
+                        CancellationToken.None);
+
+                Assert.Equal(action, build.Action);
+                Assert.Equal(0, build.FailedProjects);
+                Assert.Equal(
+                    vsBuildState.vsBuildStateDone,
+                    build.BuildState);
+                Assert.Equal(
+                    action == BuildAction.Clean
+                        ? vsBuildAction.vsBuildActionClean
+                        : vsBuildAction.vsBuildActionBuild,
+                    build.EventAction);
+                Assert.Empty(
+                    XaeWindowProbe.FindModalDialogs(processId));
+            }
+        }
+        finally
+        {
+            await session.CloseGatewayLaunchedAsync(
+                TimeSpan.FromSeconds(15),
+                CancellationToken.None);
+            session.Dispose();
+        }
+    }
+
     [XaeLaunchFact]
     public async Task FingerprintChangesAreSynchronizedBeforeBuild()
     {
@@ -51,10 +109,11 @@ public sealed class XaeExternalEditTests
                 source.Replace(
                     "bToggle := NOT bToggle;",
                     "bToggle := ;"));
-            ExternalChangeSynchronizationResult synchronization =
-                await session.SynchronizeExternalChangesAsync(
+            XaeBuildExecutionResult build =
+                await session.ExecuteBuildAsync(
+                    BuildAction.Build,
                     changedPaths: null,
-                    TimeSpan.FromSeconds(15),
+                    TimeSpan.FromSeconds(60),
                     CancellationToken.None);
             Assert.False(
                 await IsDocumentOpenAsync(
@@ -62,21 +121,20 @@ public sealed class XaeExternalEditTests
                     processId,
                     documentPath));
             ProjectFileChange change = Assert.Single(
-                synchronization.DetectedChanges);
+                build.Synchronization.DetectedChanges);
             Assert.Equal(
                 ProjectFileChangeKind.Modified,
                 change.Kind);
             Assert.Equal(documentPath, change.Path);
             Assert.Contains(
                 documentPath,
-                synchronization.SynchronizedDocuments,
+                build.Synchronization.SynchronizedDocuments,
                 StringComparer.OrdinalIgnoreCase);
 
-            int buildErrors = await BuildSolutionAsync(
-                dispatcher,
-                processId);
-
-            Assert.True(buildErrors > 0);
+            Assert.True(build.FailedProjects > 0);
+            Assert.Equal(
+                vsBuildState.vsBuildStateDone,
+                build.BuildState);
             Assert.Empty(
                 XaeWindowProbe.FindModalDialogs(processId));
         }

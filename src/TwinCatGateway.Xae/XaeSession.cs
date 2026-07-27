@@ -24,6 +24,7 @@ public sealed class XaeSession : IDisposable
     private readonly object _fingerprintSync = new();
     private readonly bool _ownsDispatcher;
     private DTE2? _dte;
+    private XaeBuildEventLease? _activeBuild;
     private ProjectFileFingerprintSnapshot? _fingerprintBaseline;
     private string? _fingerprintSolution;
     private ITcSysManager? _sysManager;
@@ -299,6 +300,51 @@ public sealed class XaeSession : IDisposable
             detected,
             synchronized.SynchronizedDocuments,
             synchronized.DiscardedDocuments);
+    }
+
+    public async Task<XaeBuildExecutionResult> ExecuteBuildAsync(
+        BuildAction action,
+        IEnumerable<string>? changedPaths,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        DateTimeOffset deadlineUtc = CreateDeadline(timeout);
+        ExternalChangeSynchronizationResult synchronization =
+            await SynchronizeExternalChangesAsync(
+                changedPaths,
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.build.synchronize"),
+                cancellationToken).ConfigureAwait(false);
+        Task<XaeBuildEventEvidence> completion =
+            await _dispatcher.InvokeAsync(
+                () => StartBuildOnSta(action),
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.build.start"),
+                cancellationToken).ConfigureAwait(false);
+        try
+        {
+            XaeBuildEventEvidence evidence =
+                await WaitForBuildEventAsync(
+                    completion,
+                    deadlineUtc,
+                    cancellationToken).ConfigureAwait(false);
+            return await _dispatcher.InvokeAsync(
+                () => CompleteBuildOnSta(
+                    evidence,
+                    synchronization),
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.build.verify"),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await TryAbortActiveBuildAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     public ComDiagnostics GetComDiagnostics()
@@ -964,6 +1010,93 @@ public sealed class XaeSession : IDisposable
         }
     }
 
+    private Task<XaeBuildEventEvidence> StartBuildOnSta(
+        BuildAction action)
+    {
+        if (_activeBuild is not null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeBusy,
+                "An XAE build operation is already active.",
+                retryable: true,
+                stage: "xae.build.start");
+        }
+
+        DTE2 dte = _dte
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: "xae.build.start");
+        _activeBuild = XaeBuildEventLease.Start(
+            dte,
+            action);
+        return _activeBuild.Completion;
+    }
+
+    private XaeBuildExecutionResult CompleteBuildOnSta(
+        XaeBuildEventEvidence evidence,
+        ExternalChangeSynchronizationResult synchronization)
+    {
+        XaeBuildEventLease lease = _activeBuild
+            ?? throw new GatewayOperationException(
+                ErrorCodes.BuildResultInconsistent,
+                "The XAE build event lease is no longer active.",
+                retryable: true,
+                stage: "xae.build.verify");
+        try
+        {
+            return lease.Complete(
+                evidence,
+                synchronization);
+        }
+        finally
+        {
+            _activeBuild = null;
+            lease.Dispose();
+        }
+    }
+
+    private async Task TryAbortActiveBuildAsync()
+    {
+        try
+        {
+            await _dispatcher.InvokeAsync(
+                () =>
+                {
+                    AbortActiveBuildOnSta();
+                    return true;
+                },
+                TimeSpan.FromSeconds(5),
+                CancellationToken.None).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            Trace.TraceWarning(
+                "XAE build cleanup did not complete: {0}",
+                exception);
+        }
+    }
+
+    private void AbortActiveBuildOnSta()
+    {
+        XaeBuildEventLease? lease = _activeBuild;
+        _activeBuild = null;
+        if (lease is null)
+        {
+            return;
+        }
+
+        try
+        {
+            lease.Cancel();
+        }
+        finally
+        {
+            lease.Dispose();
+        }
+    }
+
     private void InitializeFingerprintBaseline(
         string solutionPath,
         CancellationToken cancellationToken)
@@ -1146,14 +1279,27 @@ public sealed class XaeSession : IDisposable
 
     private void ReleaseSessionOnSta()
     {
-        Exception? silentModeException = null;
+        Exception? cleanupException = null;
+        try
+        {
+            AbortActiveBuildOnSta();
+        }
+        catch (Exception exception)
+        {
+            cleanupException = exception;
+        }
+
         try
         {
             ReleaseSilentModeLeaseOnSta();
         }
         catch (Exception exception)
         {
-            silentModeException = exception;
+            cleanupException = cleanupException is null
+                ? exception
+                : new AggregateException(
+                    cleanupException,
+                    exception);
         }
         finally
         {
@@ -1164,9 +1310,9 @@ public sealed class XaeSession : IDisposable
             _snapshot = new XaeSessionSnapshot();
         }
 
-        if (silentModeException is not null)
+        if (cleanupException is not null)
         {
-            ExceptionDispatchInfo.Capture(silentModeException).Throw();
+            ExceptionDispatchInfo.Capture(cleanupException).Throw();
         }
     }
 
@@ -1273,6 +1419,34 @@ public sealed class XaeSession : IDisposable
         return delay <= TimeSpan.Zero
             ? Task.CompletedTask
             : Task.Delay(delay, cancellationToken);
+    }
+
+    private static async Task<XaeBuildEventEvidence>
+        WaitForBuildEventAsync(
+            Task<XaeBuildEventEvidence> completion,
+            DateTimeOffset deadlineUtc,
+            CancellationToken cancellationToken)
+    {
+        TimeSpan remaining = GetRemaining(
+            deadlineUtc,
+            "xae.build.wait");
+        Task delay = Task.Delay(
+            remaining,
+            cancellationToken);
+        Task completed = await Task.WhenAny(
+            completion,
+            delay).ConfigureAwait(false);
+        if (completed == completion)
+        {
+            return await completion.ConfigureAwait(false);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        throw new GatewayOperationException(
+            ErrorCodes.OperationTimeout,
+            "XAE did not raise OnBuildDone before the deadline.",
+            retryable: true,
+            stage: "xae.build.wait");
     }
 
     private static XaeSessionSnapshot CloneSnapshot(
