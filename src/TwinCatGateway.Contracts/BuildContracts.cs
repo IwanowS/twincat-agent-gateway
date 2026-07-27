@@ -27,6 +27,8 @@ public sealed class BuildParameters
 
     public string? Platform { get; set; }
 
+    public List<string> ChangedPaths { get; set; } = new();
+
     public DetailLevel Detail { get; set; } = DetailLevel.Compact;
 
     public int? TimeoutSeconds { get; set; }

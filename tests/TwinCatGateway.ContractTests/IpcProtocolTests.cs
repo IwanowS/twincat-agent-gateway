@@ -72,6 +72,9 @@ public sealed class IpcProtocolTests
                 BuildParameters parameters =
                     request.DeserializeParameters<BuildParameters>(
                         GatewayJson.CreateSerializerOptions());
+                Assert.Equal(
+                    "TC3_SimpleProject/PlcProject1/POUs/MAIN.TcPOU",
+                    Assert.Single(parameters.ChangedPaths));
                 return Task.FromResult(
                     GatewayDispatchResult.Success(
                         new BuildSummary
@@ -89,7 +92,10 @@ public sealed class IpcProtocolTests
               "method": "build",
               "params": {
                 "profile": "bench",
-                "action": "clean"
+                "action": "clean",
+                "changedPaths": [
+                  "TC3_SimpleProject/PlcProject1/POUs/MAIN.TcPOU"
+                ]
               },
               "wait": true
             }
