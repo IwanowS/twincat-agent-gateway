@@ -16,6 +16,126 @@ namespace TwinCatGateway.IntegrationTests;
 public sealed class XaeExternalEditTests
 {
     [XaeLaunchFact]
+    public async Task ClosedDocumentCanBeRefreshedWithoutLeavingEditorOpen()
+    {
+        string sourceSolution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        using TemporarySolution copy =
+            TemporarySolution.Create(sourceSolution);
+        string documentPath = Path.Combine(
+            Path.GetDirectoryName(copy.SolutionPath)!,
+            "TC3_SimpleProject",
+            "PlcProject1",
+            "POUs",
+            "MAIN.TcPOU");
+        using ComStaDispatcher dispatcher = new();
+        XaeSession session = new(dispatcher);
+        try
+        {
+            XaeSessionSnapshot snapshot = await session.LaunchAsync(
+                copy.SolutionPath,
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_XAE_PROGID"),
+                TimeSpan.FromSeconds(60),
+                CancellationToken.None);
+            int processId = Assert.IsType<int>(
+                snapshot.SelectedInstance?.ProcessId);
+            string source = File.ReadAllText(documentPath);
+            Assert.Contains(
+                "bToggle := NOT bToggle;",
+                source);
+            File.WriteAllText(
+                documentPath,
+                source.Replace(
+                    "bToggle := NOT bToggle;",
+                    "bToggle := ;"));
+            await ReadDocumentSavedAsync(
+                dispatcher,
+                processId,
+                documentPath,
+                openIfMissing: true);
+            await ReloadDocumentAsync(
+                dispatcher,
+                processId,
+                documentPath);
+            Assert.False(
+                await IsDocumentOpenAsync(
+                    dispatcher,
+                    processId,
+                    documentPath));
+
+            int buildErrors = await BuildSolutionAsync(
+                dispatcher,
+                processId);
+
+            Assert.True(buildErrors > 0);
+            Assert.Empty(
+                XaeWindowProbe.FindModalDialogs(processId));
+        }
+        finally
+        {
+            await session.CloseGatewayLaunchedAsync(
+                TimeSpan.FromSeconds(15),
+                CancellationToken.None);
+            session.Dispose();
+        }
+    }
+
+    private static Task<bool> IsDocumentOpenAsync(
+        ComStaDispatcher dispatcher,
+        int processId,
+        string documentPath)
+    {
+        return dispatcher.InvokeAsync(
+            () =>
+            {
+                using RotScanResult scan =
+                    RunningObjectTableScanner.Scan(
+                        requiredProcessId: processId);
+                RunningXaeCandidate candidate =
+                    Assert.Single(
+                        scan.Candidates,
+                        item => item.Info.ProcessId == processId);
+                DTE2 dte = candidate.TakeDte();
+                Documents? documents = null;
+                try
+                {
+                    documents = dte.Documents;
+                    int count = documents.Count;
+                    for (int index = 1; index <= count; index++)
+                    {
+                        Document? document = null;
+                        try
+                        {
+                            document = documents.Item(index);
+                            if (string.Equals(
+                                Path.GetFullPath(document.FullName),
+                                documentPath,
+                                StringComparison.OrdinalIgnoreCase))
+                            {
+                                return true;
+                            }
+                        }
+                        finally
+                        {
+                            ComObject.Release(document);
+                        }
+                    }
+
+                    return false;
+                }
+                finally
+                {
+                    ComObject.Release(documents);
+                    ComObject.Release(dte);
+                }
+            },
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+    }
+
+    [XaeLaunchFact]
     public async Task OpenSavedDocumentCanBeReloadedWithoutModal()
     {
         string sourceSolution = Path.GetFullPath(
