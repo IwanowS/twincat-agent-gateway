@@ -580,7 +580,7 @@ public sealed class GatewayApplicationService
                                 preparation,
                                 testCancellation),
                         TimeSpan.FromSeconds(
-                            timeoutSeconds));
+                            timeoutSeconds + 5d));
                 result.TestOperationId =
                     test.OperationId;
             }

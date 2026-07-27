@@ -71,6 +71,15 @@ public sealed class GatewayDesktopHost : IDisposable
             _xaeCoordinator is null
                 ? null
                 : _xaeCoordinator.ExecuteActivationAsync;
+        TcUnitPreparationExecutor?
+            tcUnitPreparationExecutor =
+                _xaeCoordinator is null
+                    ? null
+                    : _xaeCoordinator.PrepareTcUnitRun;
+        TcUnitOperationExecutor? tcUnitExecutor =
+            _xaeCoordinator is null
+                ? null
+                : _xaeCoordinator.ExecuteTcUnitAsync;
         ApplicationService = new GatewayApplicationService(
             version,
             _status,
@@ -81,7 +90,11 @@ public sealed class GatewayDesktopHost : IDisposable
             diagnosticsProvider,
             buildExecutor,
             activationExecutor,
-            ActiveProfile);
+            ActiveProfile,
+            clock: null,
+            tcUnitPreparationExecutor:
+                tcUnitPreparationExecutor,
+            tcUnitExecutor: tcUnitExecutor);
         GatewayRequestDispatcher dispatcher = new(ApplicationService);
         GatewayProtocolHandler protocol = new(
             dispatcher.DispatchAsync,

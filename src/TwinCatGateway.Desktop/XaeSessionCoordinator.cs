@@ -30,6 +30,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly LocalLogStore _logs;
     private readonly IGatewayEventSink _events;
     private readonly XaeSession _session = new();
+    private readonly TcUnitRunExecutor _tcUnit;
     private XaeSessionSnapshot _lastSnapshot = new();
     private ComDiagnostics _lastComDiagnostics = new();
     private AdsRuntimeDiagnostics _lastRuntimeDiagnostics = new();
@@ -58,6 +59,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ?? throw new ArgumentNullException(nameof(logs));
         _events = events
             ?? throw new ArgumentNullException(nameof(events));
+        _tcUnit = new TcUnitRunExecutor(
+            _profile,
+            _logs,
+            _logger,
+            _events);
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -332,16 +338,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 ErrorCodes.ProfileInvalid,
                 "The activation profile has no expected AMS NetId.",
                 stage: "activation.validate");
-        bool waitForTcUnit = parameters.WaitForTcUnit
-            ?? _profile.AutoWaitForTcUnit;
-        if (waitForTcUnit)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.GatewayNotReady,
-                "Linked TcUnit execution is not available yet.",
-                stage: "activation.tcunit");
-        }
-
         DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
         DateTimeOffset deadlineUtc = startedAtUtc.AddSeconds(
             parameters.TimeoutSeconds ?? 120);
@@ -512,6 +508,35 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     CultureInfo.InvariantCulture),
             });
         return result;
+    }
+
+    public TcUnitRunPreparation PrepareTcUnitRun(
+        string activationOperationId)
+    {
+        return _tcUnit.Prepare(
+            activationOperationId);
+    }
+
+    public async Task<TestResult> ExecuteTcUnitAsync(
+        string operationId,
+        string activationOperationId,
+        TcUnitRunPreparation preparation,
+        CancellationToken cancellationToken)
+    {
+        XaeSessionSnapshot snapshot =
+            await _session.VerifyAttachedAsync(
+                _profile.Solution,
+                HealthTimeout,
+                cancellationToken).ConfigureAwait(false);
+        VerifyTarget(
+            snapshot,
+            preparation.ExpectedAmsNetId,
+            "tcunit.preflight");
+        return await _tcUnit.ExecuteAsync(
+            operationId,
+            activationOperationId,
+            preparation,
+            cancellationToken).ConfigureAwait(false);
     }
 
     private static string FormatBuildOutput(

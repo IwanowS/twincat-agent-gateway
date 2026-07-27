@@ -107,4 +107,13 @@ public static class GatewayEventTypes
     public const string TcUnitTimedOut = "tcunit.timedOut";
 
     public const string TcUnitCancelled = "tcunit.cancelled";
+
+    public const string TcUnitCompletionObserved =
+        "tcunit.completionObserved";
+
+    public const string TcUnitReportProduced =
+        "tcunit.reportProduced";
+
+    public const string TcUnitZeroTests =
+        "tcunit.zeroTests";
 }
