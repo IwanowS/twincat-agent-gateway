@@ -398,7 +398,10 @@ docs/
 - read-only ADS System Service runtime state;
 - `GetLastErrorMessages()`;
 - COM retry/error statistics;
-- немутирующий монотонный error cursor с независимым paging для каждого клиента;
+- единая bounded event stream для gateway/XAE/runtime/operation lifecycle и
+  ошибок;
+- пара `eventStreamId`/монотонный cursor с независимым paging и severity
+  filtering для каждого клиента;
 - CLI `status` и `diagnostics`;
 - UI diagnostics page.
 
@@ -407,7 +410,13 @@ docs/
 - compact status мал и стабилен;
 - detailed status объясняет выбор XAE instance;
 - `unknown` используется вместо догадки о runtime mode;
-- последняя ошибка не теряется при следующем успешном status call;
+- retained события не теряются при следующем успешном status call;
+- фильтр `minimumSeverity=error` использует общий cursor и продвигается через
+  несовпавшие события без отдельного мутирующего error state;
+- gateway restart обнаруживается по смене `eventStreamId`, retention gap
+  возвращается как `eventHistoryTruncated`;
+- последние 1000 событий хранятся в памяти; долговременная история остаётся
+  в локальных structured logs;
 - raw stack trace не передаётся по умолчанию.
 
 ## 10. Milestone 7 — activation
@@ -427,7 +436,7 @@ docs/
 - `StartRestartTwinCAT()`;
 - postcondition checks;
 - error collection;
-- operation timeline;
+- события activation/restart/postcondition в общей event stream;
 - UI confirmation policy;
 - CLI command;
 - integration tests на отдельном удалённом стенде; локальная activation/restart запрещена.

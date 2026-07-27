@@ -241,7 +241,7 @@ OperationStore хранит structured metadata. LogStore хранит боль�
 - build output;
 - XAE activity/diagnostic log, если доступен;
 - Error List snapshot/delta;
-- activation timeline;
+- retained gateway event stream slice for the operation;
 - TcUnit xUnit XML;
 - summary `.tsproj` noise.
 
@@ -508,7 +508,8 @@ Target identity следует показывать и сохранять в aud
   "lastActivation": {
     "ok": true
   },
-  "latestErrorCursor": 42
+  "eventStreamId": "887c1e5c1c8e4c889510cf4c612ce5bb",
+  "latestEventCursor": 42
 }
 ```
 
@@ -527,20 +528,45 @@ Target identity следует показывать и сохранять в aud
 - `GetLastErrorMessages()`;
 - последний HRESULT;
 - COM retry counts и latency;
-- operation timeline;
+- retained gateway events;
 - ссылки на raw logs;
 - build diagnostics;
 - `.tsproj` noise classification;
 - IPC/log-store health.
 
-Ошибки читаются немутирующим cursor protocol:
+Gateway использует одну немутирующую ленту событий для lifecycle,
+состояний и ошибок. Примеры типов: `gateway.started`, `xae.connected`,
+`runtime.stateChanged`, `build.queued`, `build.started`,
+`build.succeeded`, `build.failed`. Ошибка является терминальным событием с
+`severity=error` и вложенным `error`, а не записью во втором журнале.
 
-- compact status возвращает монотонный `latestErrorCursor`;
-- `getDiagnostics(afterErrorCursor, maximumErrors)` возвращает только более новые retained errors;
-- `nextErrorCursor` передаётся следующим вызовом того же клиента;
-- чтение не меняет глобальное состояние, поэтому WPF, CLI и MCP не конкурируют за признак «прочитано»;
-- `moreErrorsAvailable` означает, что страницу нужно продолжить;
-- `errorHistoryTruncated` означает retention gap или cursor от предыдущего gateway process; клиент продолжает с возвращённого `nextErrorCursor`.
+Cursor protocol:
+
+- desktop process создаёт новый `eventStreamId`, а события внутри него
+  получают монотонный числовой cursor;
+- compact status возвращает `eventStreamId` и `latestEventCursor`;
+- первый вызов использует
+  `getDiagnostics(afterEventCursor=0, maximumEvents, minimumSeverity?)`;
+- для продолжения клиент передаёт пару `eventStreamId` и
+  `afterEventCursor`; cursor без stream ID недопустим;
+- ответ содержит `events`, `nextScanCursor`, `latestEventCursor`,
+  `moreMatchingEventsAvailable` и `eventHistoryTruncated`;
+- чтение не меняет глобальное состояние: WPF, CLI, MCP и отдельные UI views
+  хранят собственную пару stream/cursor;
+- фильтр severity использует ту же систему координат. Если после страницы
+  больше совпадений нет, `nextScanCursor` продвигается также через
+  отфильтрованные события. Поэтому запрос только ошибок не перечитывает
+  информационные события;
+- `eventHistoryTruncated` означает retention gap, cursor из другого
+  `eventStreamId` или cursor впереди текущей ленты. Клиент принимает
+  возвращённые stream ID и scan cursor.
+
+MVP хранит последние 1000 событий только в памяти desktop gateway.
+Перезапуск gateway начинает новую ленту; CLI/MCP/WPF restart её не сбрасывает.
+Долговременная подробная история остаётся в локальных structured logs, но
+они не объявляются replayable event journal в MVP. Получение только ошибок
+задаёт `minimumSeverity=error` и сканирует не более bounded retained window,
+поэтому отдельный error index для MVP не нужен.
 
 ### 12.3 Runtime status
 
@@ -774,7 +800,7 @@ contract. Например, `TcModuleClass.xsd` не нужен MVP, пока ge
 - использовать NetId только из выбранного activation profile/XAE target;
 - дождаться доступности двух фиксированных TcUnit symbols;
 - получить `AllTestSuitesFinished=TRUE` в пределах deadline;
-- сохранить ADS evidence и suite count в operation timeline;
+- сохранить ADS evidence и suite count в событиях test operation;
 - дождаться нового изменения;
 - дождаться стабильного размера;
 - успешно распарсить XML;
