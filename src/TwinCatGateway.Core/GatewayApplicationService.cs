@@ -22,6 +22,7 @@ public sealed class GatewayApplicationService
     private readonly LocalLogStore _logs;
     private readonly Func<GatewayDiagnosticsResult>? _diagnosticsProvider;
     private readonly BuildOperationExecutor? _buildExecutor;
+    private readonly GatewayErrorJournal _errorJournal;
 
     public GatewayApplicationService(
         string version,
@@ -29,6 +30,7 @@ public sealed class GatewayApplicationService
         OperationStore operations,
         OperationQueue queue,
         LocalLogStore logs,
+        GatewayErrorJournal errorJournal,
         Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
         BuildOperationExecutor? buildExecutor = null)
     {
@@ -44,6 +46,9 @@ public sealed class GatewayApplicationService
             ?? throw new ArgumentNullException(nameof(logs));
         _diagnosticsProvider = diagnosticsProvider;
         _buildExecutor = buildExecutor;
+        _errorJournal = errorJournal
+            ?? throw new ArgumentNullException(
+                nameof(errorJournal));
     }
 
     public HealthResult GetHealth()
@@ -65,8 +70,30 @@ public sealed class GatewayApplicationService
         return _status.Read();
     }
 
-    public GatewayDiagnosticsResult GetDiagnostics()
+    public GatewayDiagnosticsResult GetDiagnostics(
+        GetDiagnosticsParameters? parameters = null)
     {
+        parameters ??= new GetDiagnosticsParameters();
+        if (parameters.AfterErrorCursor < 0)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "The error cursor cannot be negative.",
+                stage: "diagnostics.validate");
+        }
+
+        if (parameters.MaximumErrors <= 0
+            || parameters.MaximumErrors > 200)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Maximum errors must be between 1 and 200.",
+                stage: "diagnostics.validate");
+        }
+
+        GatewayErrorPage errors = _errorJournal.ReadAfter(
+            parameters.AfterErrorCursor,
+            parameters.MaximumErrors);
         GatewayDiagnosticsResult result =
             _diagnosticsProvider?.Invoke()
             ?? new GatewayDiagnosticsResult();
@@ -80,6 +107,11 @@ public sealed class GatewayApplicationService
             Healthy = true,
             Message = _logs.RootDirectory,
         };
+        result.Errors = errors.Errors.ToList();
+        result.NextErrorCursor = errors.NextCursor;
+        result.MoreErrorsAvailable = errors.MoreAvailable;
+        result.ErrorHistoryTruncated =
+            errors.HistoryTruncated;
         return result;
     }
 

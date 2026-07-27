@@ -66,11 +66,25 @@ public sealed class DesktopGatewayHostTests
             host,
             GatewayState.Disconnected,
             TimeSpan.FromSeconds(10));
+        await WaitForErrorCursorAsync(
+            host,
+            TimeSpan.FromSeconds(10));
 
         GatewayResponse<GatewayStatusResult> response =
             await client.SendAsync<EmptyParameters, GatewayStatusResult>(
                 GatewayMethods.Status,
                 new EmptyParameters(),
+                wait: true,
+                CancellationToken.None);
+        GatewayResponse<GatewayDiagnosticsResult> diagnostics =
+            await client.SendAsync<
+                GetDiagnosticsParameters,
+                GatewayDiagnosticsResult>(
+                GatewayMethods.GetDiagnostics,
+                new GetDiagnosticsParameters
+                {
+                    AfterErrorCursor = 0,
+                },
                 wait: true,
                 CancellationToken.None);
 
@@ -80,6 +94,14 @@ public sealed class DesktopGatewayHostTests
         Assert.Equal(GatewayState.Disconnected, response.Result?.Gateway.State);
         Assert.Equal("fixture", host.ActiveProfile?.Name);
         Assert.Null(host.StartupError);
+        Assert.True(response.Result?.LatestErrorCursor > 0);
+        Assert.True(diagnostics.Ok);
+        Assert.Equal(
+            response.Result?.LatestErrorCursor,
+            diagnostics.Result?.NextErrorCursor);
+        Assert.Contains(
+            diagnostics.Result!.Errors,
+            entry => entry.Error.Code == ErrorCodes.XaeNotFound);
     }
 
     [XaeFact]
@@ -307,6 +329,28 @@ public sealed class DesktopGatewayHostTests
 
         throw new TimeoutException(
             $"Operation '{operationId}' did not complete.");
+    }
+
+    private static async Task WaitForErrorCursorAsync(
+        GatewayDesktopHost host,
+        TimeSpan timeout)
+    {
+        DateTimeOffset deadline =
+            DateTimeOffset.UtcNow.Add(timeout);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (host.ApplicationService
+                    .GetStatus()
+                    .LatestErrorCursor > 0)
+            {
+                return;
+            }
+
+            await Task.Delay(50);
+        }
+
+        throw new TimeoutException(
+            "Gateway did not publish an error cursor.");
     }
 
     private static async Task WaitForStateAsync(

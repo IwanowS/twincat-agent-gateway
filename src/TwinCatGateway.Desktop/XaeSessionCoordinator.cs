@@ -28,6 +28,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly GatewayStatusSnapshotStore _status;
     private readonly StructuredFileLogger _logger;
     private readonly LocalLogStore _logs;
+    private readonly IGatewayErrorSink _errors;
     private readonly XaeSession _session = new();
     private XaeSessionSnapshot _lastSnapshot = new();
     private ComDiagnostics _lastComDiagnostics = new();
@@ -43,7 +44,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         ProjectProfile profile,
         GatewayStatusSnapshotStore status,
         StructuredFileLogger logger,
-        LocalLogStore logs)
+        LocalLogStore logs,
+        IGatewayErrorSink errors)
     {
         _profile = profile
             ?? throw new ArgumentNullException(nameof(profile));
@@ -53,6 +55,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ?? throw new ArgumentNullException(nameof(logger));
         _logs = logs
             ?? throw new ArgumentNullException(nameof(logs));
+        _errors = errors
+            ?? throw new ArgumentNullException(nameof(errors));
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -466,6 +470,16 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         ?? "UNKNOWN",
                 },
                 exception: runtime.Failure);
+            _errors.Record(
+                new GatewayError
+                {
+                    Code = ErrorCodes.TwinCatStateUnknown,
+                    Message =
+                        "Could not read the selected target runtime state.",
+                    Retryable = true,
+                    Stage = "ads.runtimeStatus",
+                },
+                DateTimeOffset.UtcNow);
         }
     }
 
@@ -510,11 +524,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             status.Xae.AgentWorkspaceOwned = false;
             status.TwinCat.Started = null;
             status.TwinCat.Mode = RuntimeMode.Unknown;
-            if (newFailure)
-            {
-                status.UnreadErrors++;
-            }
-
             return status;
         });
         if (newFailure)
@@ -534,6 +543,19 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         : $"0x{hResult.Value:X8}",
                 },
                 exception: exception);
+            _errors.Record(
+                new GatewayError
+                {
+                    Code = code ?? ErrorCodes.OperationFailed,
+                    Message = exception.Message,
+                    Retryable =
+                        (exception as GatewayOperationException)?.Retryable
+                        ?? true,
+                    Stage =
+                        (exception as GatewayOperationException)?.Stage
+                        ?? "xae.coordinator",
+                },
+                DateTimeOffset.UtcNow);
         }
     }
 

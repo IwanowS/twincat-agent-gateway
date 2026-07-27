@@ -40,9 +40,22 @@ public sealed class TwinCatGatewayClient
     public Task<GatewayResponse<GatewayDiagnosticsResult>> GetDiagnosticsAsync(
         CancellationToken cancellationToken = default)
     {
-        return _client.SendAsync<EmptyParameters, GatewayDiagnosticsResult>(
+        return GetDiagnosticsAsync(
+            new GetDiagnosticsParameters(),
+            cancellationToken);
+    }
+
+    public Task<GatewayResponse<GatewayDiagnosticsResult>> GetDiagnosticsAsync(
+        GetDiagnosticsParameters parameters,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        return _client.SendAsync<
+            GetDiagnosticsParameters,
+            GatewayDiagnosticsResult>(
             GatewayMethods.GetDiagnostics,
-            new EmptyParameters(),
+            parameters,
             wait: true,
             cancellationToken);
     }

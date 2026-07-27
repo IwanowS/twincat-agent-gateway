@@ -88,6 +88,7 @@ public sealed class MvpContractSerializationTests
                 Started = null,
                 Mode = RuntimeMode.Unknown,
             },
+            LatestErrorCursor = 42,
         };
 
         string json = JsonSerializer.Serialize(status, ContractJson.SerializerOptions);
@@ -98,7 +99,9 @@ public sealed class MvpContractSerializationTests
         Assert.Null(result.TwinCat.Started);
         Assert.Equal(RuntimeMode.Unknown, result.TwinCat.Mode);
         Assert.True(result.Xae.AgentWorkspaceOwned);
+        Assert.Equal(42, result.LatestErrorCursor);
         Assert.Contains("\"mode\":\"unknown\"", json);
+        Assert.DoesNotContain("unreadErrors", json);
     }
 
     [Fact]
@@ -242,5 +245,53 @@ public sealed class MvpContractSerializationTests
         Assert.Equal("Exception", result.AdsState);
         Assert.Equal((short)7, result.DeviceState);
         Assert.Null(result.ErrorCode);
+    }
+
+    [Fact]
+    public void DiagnosticsErrorCursorRoundTripsWithoutReadMutation()
+    {
+        GatewayDiagnosticsResult diagnostics = new()
+        {
+            NextErrorCursor = 8,
+            MoreErrorsAvailable = true,
+            ErrorHistoryTruncated = false,
+            Errors =
+            {
+                new GatewayErrorEntry
+                {
+                    Cursor = 8,
+                    OccurredAtUtc = new DateTimeOffset(
+                        2026,
+                        7,
+                        28,
+                        1,
+                        2,
+                        3,
+                        TimeSpan.Zero),
+                    Error = new GatewayError
+                    {
+                        Code = ErrorCodes.BuildFailed,
+                        Message = "Build failed.",
+                        OperationId = "operation-8",
+                    },
+                },
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            diagnostics,
+            ContractJson.SerializerOptions);
+        GatewayDiagnosticsResult? result =
+            JsonSerializer.Deserialize<GatewayDiagnosticsResult>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(8, result.NextErrorCursor);
+        Assert.True(result.MoreErrorsAvailable);
+        GatewayErrorEntry entry = Assert.Single(result.Errors);
+        Assert.Equal(8, entry.Cursor);
+        Assert.Equal(ErrorCodes.BuildFailed, entry.Error.Code);
+        Assert.DoesNotContain("stackTrace", json);
     }
 }

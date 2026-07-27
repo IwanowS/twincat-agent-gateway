@@ -133,6 +133,29 @@ public sealed class GatewayApplicationServiceTests
         Assert.True(diagnostics.LogStore.Healthy);
     }
 
+    [Theory]
+    [InlineData(-1, 50)]
+    [InlineData(0, 0)]
+    [InlineData(0, 201)]
+    public void DiagnosticsRejectInvalidErrorCursorRequests(
+        long afterErrorCursor,
+        int maximumErrors)
+    {
+        using ServiceFixture fixture = new();
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.GetDiagnostics(
+                    new GetDiagnosticsParameters
+                    {
+                        AfterErrorCursor = afterErrorCursor,
+                        MaximumErrors = maximumErrors,
+                    }));
+
+        Assert.Equal(ErrorCodes.RequestInvalid, exception.Code);
+        Assert.Equal("diagnostics.validate", exception.Stage);
+    }
+
     [Fact]
     public async Task BuildUsesStableOperationIdAndCapturedPaths()
     {
@@ -280,6 +303,17 @@ public sealed class GatewayApplicationServiceTests
         Assert.False(fixture.Service.GetStatus().LastBuild?.Ok);
         Assert.Null(fixture.Service.GetStatus().CurrentOperation);
         Assert.Equal(
+            1,
+            fixture.Service.GetStatus().LatestErrorCursor);
+        GatewayErrorEntry error = Assert.Single(
+            fixture.Service.GetDiagnostics(
+                new GetDiagnosticsParameters
+                {
+                    AfterErrorCursor = 0,
+                }).Errors);
+        Assert.Equal(ErrorCodes.BuildFailed, error.Error.Code);
+        Assert.Equal(accepted.OperationId, error.Error.OperationId);
+        Assert.Equal(
             GatewayState.Ready,
             fixture.Service.GetStatus().Gateway.State);
     }
@@ -316,15 +350,19 @@ public sealed class GatewayApplicationServiceTests
             Directory.CreateDirectory(_temporaryDirectory);
             Status = new GatewayStatusSnapshotStore(
                 GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
+            Errors = new GatewayErrorJournal(Status);
             Operations = new OperationStore();
             Logs = new LocalLogStore(_temporaryDirectory);
-            Queue = new OperationQueue(Operations);
+            Queue = new OperationQueue(
+                Operations,
+                gatewayErrorSink: Errors);
             Service = new GatewayApplicationService(
                 "0.1.0",
                 Status,
                 Operations,
                 Queue,
                 Logs,
+                Errors,
                 diagnosticsProvider,
                 buildExecutor);
         }
@@ -332,6 +370,8 @@ public sealed class GatewayApplicationServiceTests
         public GatewayStatusSnapshotStore Status { get; }
 
         public OperationStore Operations { get; }
+
+        public GatewayErrorJournal Errors { get; }
 
         public LocalLogStore Logs { get; }
 

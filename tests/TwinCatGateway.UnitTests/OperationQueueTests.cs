@@ -116,7 +116,12 @@ public sealed class OperationQueueTests
     public async Task DeadlineCancelsCooperativeOperationAndMarksTimeout()
     {
         OperationStore store = new();
-        using OperationQueue queue = new(store);
+        GatewayStatusSnapshotStore status =
+            new(GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
+        GatewayErrorJournal errors = new(status);
+        using OperationQueue queue = new(
+            store,
+            gatewayErrorSink: errors);
 
         OperationAccepted accepted = queue.Enqueue(
             OperationKind.Build,
@@ -133,6 +138,12 @@ public sealed class OperationQueueTests
 
         Assert.Equal(ErrorCodes.OperationTimeout, operation.Summary.Error?.Code);
         Assert.True(operation.Summary.Error?.Retryable);
+        Assert.Equal(1, status.Read().LatestErrorCursor);
+        Assert.Equal(
+            ErrorCodes.OperationTimeout,
+            Assert.Single(
+                errors.ReadAfter(0, 50).Errors)
+                .Error.Code);
     }
 
     [Fact]

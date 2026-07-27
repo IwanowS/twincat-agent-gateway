@@ -53,7 +53,23 @@ public sealed class GatewayStatusResult
 
     public TestSummary? LastTest { get; set; }
 
-    public int UnreadErrors { get; set; }
+    public long LatestErrorCursor { get; set; }
+}
+
+public sealed class GetDiagnosticsParameters
+{
+    public long AfterErrorCursor { get; set; }
+
+    public int MaximumErrors { get; set; } = 50;
+}
+
+public sealed class GatewayErrorEntry
+{
+    public long Cursor { get; set; }
+
+    public DateTimeOffset OccurredAtUtc { get; set; }
+
+    public GatewayError Error { get; set; } = new();
 }
 
 public sealed class DteInstanceInfo
@@ -141,4 +157,12 @@ public sealed class GatewayDiagnosticsResult
     public ComponentHealth LogStore { get; set; } = new();
 
     public List<ResourceReference> Resources { get; set; } = new();
+
+    public List<GatewayErrorEntry> Errors { get; set; } = new();
+
+    public long NextErrorCursor { get; set; }
+
+    public bool MoreErrorsAvailable { get; set; }
+
+    public bool ErrorHistoryTruncated { get; set; }
 }

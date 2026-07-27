@@ -94,7 +94,7 @@ public sealed class GatewayStatusSnapshotStore
             LastBuild = CloneBuild(source.LastBuild),
             LastActivation = CloneActivation(source.LastActivation),
             LastTest = CloneTest(source.LastTest),
-            UnreadErrors = source.UnreadErrors,
+            LatestErrorCursor = source.LatestErrorCursor,
         };
     }
 

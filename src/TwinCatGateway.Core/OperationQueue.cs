@@ -30,6 +30,7 @@ public sealed class OperationQueue : IDisposable
     private readonly IClock _clock;
     private readonly IOperationIdGenerator _idGenerator;
     private readonly IOperationExceptionSink _exceptionSink;
+    private readonly IGatewayErrorSink? _gatewayErrorSink;
     private readonly Task _processor;
     private int _stopped;
 
@@ -37,12 +38,14 @@ public sealed class OperationQueue : IDisposable
         OperationStore store,
         IClock? clock = null,
         IOperationIdGenerator? idGenerator = null,
-        IOperationExceptionSink? exceptionSink = null)
+        IOperationExceptionSink? exceptionSink = null,
+        IGatewayErrorSink? gatewayErrorSink = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _clock = clock ?? SystemClock.Instance;
         _idGenerator = idGenerator ?? GuidOperationIdGenerator.Instance;
         _exceptionSink = exceptionSink ?? TraceOperationExceptionSink.Instance;
+        _gatewayErrorSink = gatewayErrorSink;
         _processor = Task.Run(ProcessQueueAsync);
     }
 
@@ -208,28 +211,43 @@ public sealed class OperationQueue : IDisposable
                 : OperationState.Failed;
             GatewayError? error = WithOperationId(result.Error, item.OperationId);
 
-            _store.TryComplete(
+            DateTimeOffset completedAtUtc = _clock.UtcNow;
+            bool completed = _store.TryComplete(
                 item.OperationId,
                 state,
-                _clock.UtcNow,
+                completedAtUtc,
                 result.Result,
                 error,
                 result.Resources);
+            if (completed && error is not null)
+            {
+                _gatewayErrorSink?.Record(
+                    error,
+                    completedAtUtc);
+            }
         }
         catch (OperationCanceledException) when (
             timeout is not null
             && timeout.IsCancellationRequested
             && !_shutdown.IsCancellationRequested)
         {
-            _store.TryComplete(
+            DateTimeOffset completedAtUtc = _clock.UtcNow;
+            GatewayError error = CreateError(
+                ErrorCodes.OperationTimeout,
+                "The operation exceeded its deadline.",
+                item.OperationId,
+                retryable: true);
+            bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.TimedOut,
-                _clock.UtcNow,
-                error: CreateError(
-                    ErrorCodes.OperationTimeout,
-                    "The operation exceeded its deadline.",
-                    item.OperationId,
-                    retryable: true));
+                completedAtUtc,
+                error: error);
+            if (completed)
+            {
+                _gatewayErrorSink?.Record(
+                    error,
+                    completedAtUtc);
+            }
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
         {
@@ -241,30 +259,46 @@ public sealed class OperationQueue : IDisposable
         catch (GatewayOperationException exception)
         {
             _exceptionSink.Record(item.OperationId, exception);
-            _store.TryComplete(
+            DateTimeOffset completedAtUtc = _clock.UtcNow;
+            GatewayError error = CreateError(
+                exception.Code,
+                exception.Message,
+                item.OperationId,
+                exception.Retryable,
+                exception.Stage,
+                exception.RawLogRef);
+            bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.Failed,
-                _clock.UtcNow,
-                error: CreateError(
-                    exception.Code,
-                    exception.Message,
-                    item.OperationId,
-                    exception.Retryable,
-                    exception.Stage,
-                    exception.RawLogRef));
+                completedAtUtc,
+                error: error);
+            if (completed)
+            {
+                _gatewayErrorSink?.Record(
+                    error,
+                    completedAtUtc);
+            }
         }
         catch (Exception exception)
         {
             _exceptionSink.Record(item.OperationId, exception);
-            _store.TryComplete(
+            DateTimeOffset completedAtUtc = _clock.UtcNow;
+            GatewayError error = CreateError(
+                ErrorCodes.OperationFailed,
+                "The operation failed unexpectedly. See the local log for details.",
+                item.OperationId,
+                retryable: false);
+            bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.Failed,
-                _clock.UtcNow,
-                error: CreateError(
-                    ErrorCodes.OperationFailed,
-                    "The operation failed unexpectedly. See the local log for details.",
-                    item.OperationId,
-                    retryable: false));
+                completedAtUtc,
+                error: error);
+            if (completed)
+            {
+                _gatewayErrorSink?.Record(
+                    error,
+                    completedAtUtc);
+            }
         }
         finally
         {

@@ -18,6 +18,7 @@ public sealed class GatewayDesktopHost : IDisposable
     private readonly OperationQueue _queue;
     private readonly NamedPipeGatewayServer _server;
     private readonly GatewayStatusSnapshotStore _status;
+    private readonly GatewayErrorJournal _errors;
     private readonly XaeSessionCoordinator? _xaeCoordinator;
     private Task? _serverTask;
     private Task? _xaeTask;
@@ -44,17 +45,20 @@ public sealed class GatewayDesktopHost : IDisposable
 
         _status = new GatewayStatusSnapshotStore(
             GatewayStatusSnapshotStore.CreateInitial(version));
+        _errors = new GatewayErrorJournal(_status);
         OperationStore operations = new();
         _queue = new OperationQueue(
             operations,
-            exceptionSink: _logger);
+            exceptionSink: _logger,
+            gatewayErrorSink: _errors);
         _xaeCoordinator = ActiveProfile is null
             ? null
             : new XaeSessionCoordinator(
                 ActiveProfile,
                 _status,
                 _logger,
-                logs);
+                logs,
+                _errors);
         Func<GatewayDiagnosticsResult>? diagnosticsProvider =
             _xaeCoordinator is null
                 ? null
@@ -69,6 +73,7 @@ public sealed class GatewayDesktopHost : IDisposable
             operations,
             _queue,
             logs,
+            _errors,
             diagnosticsProvider,
             buildExecutor);
         GatewayRequestDispatcher dispatcher = new(ApplicationService);
@@ -91,6 +96,17 @@ public sealed class GatewayDesktopHost : IDisposable
             ? GatewayState.Disconnected
             : GatewayState.Faulted;
         _status.Replace(initial);
+        if (StartupError is not null)
+        {
+            _errors.Record(
+                new GatewayError
+                {
+                    Code = ErrorCodes.ProfileInvalid,
+                    Message = StartupError,
+                    Stage = "configuration.load",
+                },
+                DateTimeOffset.UtcNow);
+        }
     }
 
     public GatewayApplicationService ApplicationService { get; }
@@ -192,9 +208,16 @@ public sealed class GatewayDesktopHost : IDisposable
             _status.Update(status =>
             {
                 status.Gateway.State = GatewayState.Faulted;
-                status.UnreadErrors++;
                 return status;
             });
+            _errors.Record(
+                new GatewayError
+                {
+                    Code = ErrorCodes.OperationFailed,
+                    Message = "The IPC server stopped unexpectedly.",
+                    Stage = "ipc.server",
+                },
+                DateTimeOffset.UtcNow);
         }
     }
 

@@ -59,7 +59,14 @@ public sealed class GatewayRequestDispatcher
             case GatewayMethods.Status:
                 return _service.GetStatus();
             case GatewayMethods.GetDiagnostics:
-                return _service.GetDiagnostics();
+                {
+                    GetDiagnosticsParameters parameters =
+                        request.DeserializeParameters<
+                            GetDiagnosticsParameters>(
+                            _serializerOptions);
+                    return _service.GetDiagnostics(parameters);
+                }
+
             case GatewayMethods.Build:
                 {
                     BuildParameters parameters =
