@@ -118,6 +118,112 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
     }
 
+    public async Task<BuildResult> ExecuteBuildAsync(
+        string operationId,
+        BuildParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(parameters.Profile)
+            && !string.Equals(
+                parameters.Profile,
+                _profile.Name,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileNotFound,
+                $"Project profile '{parameters.Profile}' is not active.",
+                stage: "build.validate");
+        }
+
+        if (!string.IsNullOrWhiteSpace(parameters.Configuration)
+            || !string.IsNullOrWhiteSpace(parameters.Platform))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Explicit build configuration and platform selection "
+                + "are not implemented yet.",
+                stage: "build.validate");
+        }
+
+        TimeSpan timeout = TimeSpan.FromSeconds(
+            parameters.TimeoutSeconds ?? 120);
+        XaeBuildExecutionResult execution =
+            await _session.ExecuteBuildAsync(
+                parameters.Action,
+                parameters.ChangedPaths,
+                timeout,
+                cancellationToken).ConfigureAwait(false);
+        List<BuildDiagnostic> diagnostics =
+            execution.Diagnostics.ToList();
+        int errors = diagnostics.Count(diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error);
+        if (execution.FailedProjects > 0
+            && errors == 0)
+        {
+            diagnostics.Add(
+                new BuildDiagnostic
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Source = "xae-build",
+                    Message = execution.FailedProjects == 1
+                        ? "One project failed to build; XAE Error List "
+                            + "did not expose compiler diagnostics."
+                        : $"{execution.FailedProjects} projects failed "
+                            + "to build; XAE Error List did not expose "
+                            + "compiler diagnostics.",
+                });
+            errors = 1;
+        }
+
+        int warnings = diagnostics.Count(diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Warning);
+        const int maximumDiagnostics = 50;
+        BuildResult result = new()
+        {
+            Ok = execution.FailedProjects == 0
+                && errors == 0,
+            OperationId = operationId,
+            Action = execution.Action,
+            DurationMs = execution.DurationMs,
+            Counts = new DiagnosticCounts
+            {
+                Errors = errors,
+                Warnings = warnings,
+            },
+            Diagnostics = diagnostics
+                .Take(maximumDiagnostics)
+                .ToList(),
+            MoreDiagnostics = Math.Max(
+                0,
+                diagnostics.Count - maximumDiagnostics),
+        };
+        _logger.Write(
+            result.Ok
+                ? StructuredLogLevel.Information
+                : StructuredLogLevel.Warning,
+            "xae.build.completed",
+            result.Ok
+                ? "XAE build completed successfully."
+                : "XAE build completed with errors.",
+            operationId,
+            properties: new Dictionary<string, string>
+            {
+                ["action"] = result.Action.ToString(),
+                ["failedProjects"] =
+                    execution.FailedProjects.ToString(
+                        CultureInfo.InvariantCulture),
+                ["errors"] = errors.ToString(
+                    CultureInfo.InvariantCulture),
+                ["warnings"] = warnings.ToString(
+                    CultureInfo.InvariantCulture),
+                ["synchronizedFiles"] =
+                    execution.Synchronization
+                        .SynchronizedDocuments.Count.ToString(
+                            CultureInfo.InvariantCulture),
+            });
+        return result;
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)

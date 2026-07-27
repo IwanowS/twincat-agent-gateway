@@ -132,6 +132,111 @@ public sealed class GatewayApplicationServiceTests
         Assert.True(diagnostics.LogStore.Healthy);
     }
 
+    [Fact]
+    public async Task BuildUsesStableOperationIdAndCapturedPaths()
+    {
+        string? executorOperationId = null;
+        string? changedPath = null;
+        using ServiceFixture fixture = new(
+            buildExecutor: (
+                operationId,
+                parameters,
+                cancellationToken) =>
+            {
+                executorOperationId = operationId;
+                changedPath = Assert.Single(
+                    parameters.ChangedPaths);
+                return Task.FromResult(
+                    new BuildResult
+                    {
+                        Ok = true,
+                        Action = parameters.Action,
+                    });
+            });
+        fixture.Status.Update(status =>
+        {
+            status.Xae.Connected = true;
+            status.Gateway.State = GatewayState.Ready;
+            return status;
+        });
+        BuildParameters parameters = new()
+        {
+            Action = BuildAction.Build,
+            ChangedPaths =
+            {
+                "Plc/POUs/MAIN.TcPOU",
+            },
+        };
+
+        OperationAccepted accepted =
+            fixture.Service.StartBuild(parameters);
+        parameters.ChangedPaths[0] = "mutated";
+        StoredOperation completed = await WaitForStateAsync(
+            fixture.Operations,
+            accepted.OperationId,
+            OperationState.Succeeded);
+
+        Assert.Equal(accepted.OperationId, executorOperationId);
+        Assert.Equal("Plc/POUs/MAIN.TcPOU", changedPath);
+        BuildResult result =
+            Assert.IsType<BuildResult>(completed.Result);
+        Assert.Equal(accepted.OperationId, result.OperationId);
+        Assert.True(fixture.Service.GetStatus().LastBuild?.Ok);
+        Assert.Equal(
+            GatewayState.Ready,
+            fixture.Service.GetStatus().Gateway.State);
+    }
+
+    [Fact]
+    public async Task BuildFailurePreservesResultAndMarksOperationFailed()
+    {
+        using ServiceFixture fixture = new(
+            buildExecutor: (
+                operationId,
+                parameters,
+                cancellationToken) =>
+                Task.FromResult(
+                    new BuildResult
+                    {
+                        Ok = false,
+                        Action = parameters.Action,
+                        Counts = new DiagnosticCounts
+                        {
+                            Errors = 1,
+                        },
+                    }));
+        fixture.Status.Update(status =>
+        {
+            status.Xae.Connected = true;
+            status.Gateway.State = GatewayState.Ready;
+            return status;
+        });
+
+        OperationAccepted accepted =
+            fixture.Service.StartBuild(
+                new BuildParameters
+                {
+                    Action = BuildAction.Rebuild,
+                });
+        StoredOperation completed = await WaitForStateAsync(
+            fixture.Operations,
+            accepted.OperationId,
+            OperationState.Failed);
+
+        Assert.Equal(
+            ErrorCodes.BuildFailed,
+            completed.Summary.Error?.Code);
+        BuildResult result =
+            Assert.IsType<BuildResult>(completed.Result);
+        Assert.False(result.Ok);
+        Assert.Equal(1, result.Counts.Errors);
+        Assert.False(fixture.Service.GetStatus().LastBuild?.Ok);
+        Assert.Null(fixture.Service.GetStatus().CurrentOperation);
+        Assert.Equal(
+            GatewayState.Ready,
+            fixture.Service.GetStatus().Gateway.State);
+    }
+
     private static TaskCompletionSource<bool> NewCompletionSource()
     {
         return new TaskCompletionSource<bool>(
@@ -154,7 +259,8 @@ public sealed class GatewayApplicationServiceTests
         private readonly string _temporaryDirectory;
 
         public ServiceFixture(
-            Func<GatewayDiagnosticsResult>? diagnosticsProvider = null)
+            Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
+            BuildOperationExecutor? buildExecutor = null)
         {
             _temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -172,7 +278,8 @@ public sealed class GatewayApplicationServiceTests
                 Operations,
                 Queue,
                 Logs,
-                diagnosticsProvider);
+                diagnosticsProvider,
+                buildExecutor);
         }
 
         public GatewayStatusSnapshotStore Status { get; }
@@ -193,5 +300,26 @@ public sealed class GatewayApplicationServiceTests
                 Directory.Delete(_temporaryDirectory, recursive: true);
             }
         }
+    }
+
+    private static async Task<StoredOperation> WaitForStateAsync(
+        OperationStore store,
+        string operationId,
+        OperationState expected)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            StoredOperation? operation = store.Get(operationId);
+            if (operation?.Summary.State == expected)
+            {
+                return operation;
+            }
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException(
+            $"Operation '{operationId}' did not reach {expected}.");
     }
 }

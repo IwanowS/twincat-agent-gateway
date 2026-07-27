@@ -58,13 +58,18 @@ public sealed class GatewayDesktopHost : IDisposable
             _xaeCoordinator is null
                 ? null
                 : _xaeCoordinator.CreateDiagnostics;
+        BuildOperationExecutor? buildExecutor =
+            _xaeCoordinator is null
+                ? null
+                : _xaeCoordinator.ExecuteBuildAsync;
         ApplicationService = new GatewayApplicationService(
             version,
             _status,
             operations,
             _queue,
             logs,
-            diagnosticsProvider);
+            diagnosticsProvider,
+            buildExecutor);
         GatewayRequestDispatcher dispatcher = new(ApplicationService);
         GatewayProtocolHandler protocol = new(
             dispatcher.DispatchAsync,

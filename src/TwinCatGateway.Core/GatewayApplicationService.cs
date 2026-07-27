@@ -1,9 +1,17 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using TwinCatGateway.Contracts;
 
 namespace TwinCatGateway.Core;
+
+public delegate Task<BuildResult> BuildOperationExecutor(
+    string operationId,
+    BuildParameters parameters,
+    CancellationToken cancellationToken);
 
 public sealed class GatewayApplicationService
 {
@@ -13,6 +21,7 @@ public sealed class GatewayApplicationService
     private readonly OperationQueue _queue;
     private readonly LocalLogStore _logs;
     private readonly Func<GatewayDiagnosticsResult>? _diagnosticsProvider;
+    private readonly BuildOperationExecutor? _buildExecutor;
 
     public GatewayApplicationService(
         string version,
@@ -20,7 +29,8 @@ public sealed class GatewayApplicationService
         OperationStore operations,
         OperationQueue queue,
         LocalLogStore logs,
-        Func<GatewayDiagnosticsResult>? diagnosticsProvider = null)
+        Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
+        BuildOperationExecutor? buildExecutor = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -33,6 +43,7 @@ public sealed class GatewayApplicationService
         _logs = logs
             ?? throw new ArgumentNullException(nameof(logs));
         _diagnosticsProvider = diagnosticsProvider;
+        _buildExecutor = buildExecutor;
     }
 
     public HealthResult GetHealth()
@@ -70,6 +81,54 @@ public sealed class GatewayApplicationService
             Message = _logs.RootDirectory,
         };
         return result;
+    }
+
+    public OperationAccepted StartBuild(BuildParameters parameters)
+    {
+        if (parameters is null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (_buildExecutor is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "The XAE build executor is unavailable.",
+                retryable: true,
+                stage: "build.enqueue");
+        }
+
+        if (!Enum.IsDefined(
+            typeof(BuildAction),
+            parameters.Action))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Build action is not supported.",
+                stage: "build.validate");
+        }
+
+        if (parameters.TimeoutSeconds.HasValue
+            && parameters.TimeoutSeconds.Value <= 0)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Build timeout must be positive.",
+                stage: "build.validate");
+        }
+
+        BuildParameters captured = CloneBuildParameters(parameters);
+        TimeSpan timeout = TimeSpan.FromSeconds(
+            captured.TimeoutSeconds ?? 120);
+        return _queue.Enqueue(
+            OperationKind.Build,
+            (operationId, cancellationToken) =>
+                ExecuteBuildAsync(
+                    operationId,
+                    captured,
+                    cancellationToken),
+            timeout);
     }
 
     public OperationDetails<object> GetOperation(string operationId)
@@ -157,5 +216,88 @@ public sealed class GatewayApplicationService
     public IReadOnlyList<StoredOperation> GetRecentOperations(int maximumCount)
     {
         return _operations.GetRecent(maximumCount);
+    }
+
+    private async Task<OperationExecutionResult> ExecuteBuildAsync(
+        string operationId,
+        BuildParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
+        _status.Update(status =>
+        {
+            status.Gateway.State = GatewayState.Building;
+            status.CurrentOperation = new OperationSummary
+            {
+                OperationId = operationId,
+                Kind = OperationKind.Build,
+                State = OperationState.Running,
+                QueuedAtUtc = startedAtUtc,
+                StartedAtUtc = startedAtUtc,
+            };
+            return status;
+        });
+        try
+        {
+            BuildResult result = await _buildExecutor!(
+                operationId,
+                parameters,
+                cancellationToken).ConfigureAwait(false);
+            result.OperationId = operationId;
+            _status.Update(status =>
+            {
+                status.LastBuild = new BuildSummary
+                {
+                    Ok = result.Ok,
+                    OperationId = operationId,
+                    Action = result.Action,
+                    Errors = result.Counts.Errors,
+                    Warnings = result.Counts.Warnings,
+                };
+                return status;
+            });
+            if (result.Ok)
+            {
+                return OperationExecutionResult.Success(result);
+            }
+
+            return OperationExecutionResult.Failure(
+                new GatewayError
+                {
+                    Code = ErrorCodes.BuildFailed,
+                    Message = "XAE completed the build with errors.",
+                    Retryable = false,
+                    Stage = "build.verify",
+                },
+                result);
+        }
+        finally
+        {
+            _status.Update(status =>
+            {
+                status.CurrentOperation = null;
+                status.Gateway.State = status.Xae.Connected
+                    ? GatewayState.Ready
+                    : GatewayState.Disconnected;
+                return status;
+            });
+        }
+    }
+
+    private static BuildParameters CloneBuildParameters(
+        BuildParameters source)
+    {
+        return new BuildParameters
+        {
+            Profile = source.Profile,
+            Action = source.Action,
+            Configuration = source.Configuration,
+            Platform = source.Platform,
+            ChangedPaths = source.ChangedPaths?
+                .ToList()
+                ?? new List<string>(),
+            Detail = source.Detail,
+            TimeoutSeconds = source.TimeoutSeconds,
+        };
     }
 }

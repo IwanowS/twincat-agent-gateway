@@ -47,6 +47,19 @@ public sealed class TwinCatGatewayClient
             cancellationToken);
     }
 
+    public Task<GatewayResponse<OperationAccepted>> StartBuildAsync(
+        BuildParameters parameters,
+        CancellationToken cancellationToken = default)
+    {
+        return _client.SendAsync<
+            BuildParameters,
+            OperationAccepted>(
+            GatewayMethods.Build,
+            parameters,
+            wait: false,
+            cancellationToken);
+    }
+
     public Task<GatewayResponse<OperationDetails<TResult>>> GetOperationAsync<TResult>(
         string operationId,
         CancellationToken cancellationToken = default)
