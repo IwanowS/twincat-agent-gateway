@@ -4,10 +4,12 @@ using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
+using TwinCatGateway.Ipc;
 using TwinCatGateway.Xae;
 
 namespace TwinCatGateway.Desktop;
@@ -187,6 +189,50 @@ internal sealed class XaeSessionCoordinator : IDisposable
             operationId,
             ResourceKind.BuildLog,
             FormatBuildOutput(execution.Output));
+        ResourceReference? projectNoise = execution.ProjectChanges.Count == 0
+            ? null
+            : _logs.WriteText(
+                operationId,
+                ResourceKind.ProjectNoise,
+                FormatProjectChanges(execution.ProjectChanges));
+        List<ProjectChangeSummary> expectedProjectNoise =
+            execution.ProjectChanges
+                .Where(change =>
+                    change.Classification
+                        == ProjectChangeClassification
+                            .ExpectedReorderOnly
+                    || change.Classification
+                        == ProjectChangeClassification
+                            .WhitespaceOnly)
+                .Select(change =>
+                    new ProjectChangeSummary
+                    {
+                        File = change.Path,
+                        Classification = change.Classification,
+                        MovedBlocks = change.MovedBlocks,
+                        ContentChanges = change.ContentChanges,
+                        DoNotInspectFullFile = true,
+                        Details = projectNoise,
+                    })
+                .ToList();
+        XaeProjectFileChangeResult? unsupportedProjectChange =
+            execution.ProjectChanges.FirstOrDefault(change =>
+                change.Classification
+                    == ProjectChangeClassification.ContentChanged
+                || change.Classification
+                    == ProjectChangeClassification.Unknown);
+        if (unsupportedProjectChange is not null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ExternalEditUnsupported,
+                "TwinCAT project content changed during the operation "
+                + $"and was classified as "
+                + $"'{unsupportedProjectChange.Classification}': "
+                + $"'{unsupportedProjectChange.Path}'.",
+                stage: "xae.build.project-file",
+                rawLogRef: projectNoise?.Uri);
+        }
+
         BuildResult result = new()
         {
             Ok = execution.FailedProjects == 0
@@ -205,6 +251,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             MoreDiagnostics = Math.Max(
                 0,
                 diagnostics.Count - maximumDiagnostics),
+            ExpectedProjectNoise = expectedProjectNoise,
             Log = log,
         };
         _logger.Write(
@@ -230,6 +277,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     execution.Synchronization
                         .SynchronizedDocuments.Count.ToString(
                             CultureInfo.InvariantCulture),
+                ["projectNoise"] =
+                    expectedProjectNoise.Count.ToString(
+                        CultureInfo.InvariantCulture),
             });
         return result;
     }
@@ -266,6 +316,18 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         return text.ToString();
+    }
+
+    private static string FormatProjectChanges(
+        IReadOnlyList<XaeProjectFileChangeResult> changes)
+    {
+        return JsonSerializer.Serialize(
+            new
+            {
+                SchemaVersion = 1,
+                Changes = changes,
+            },
+            GatewayJson.CreateSerializerOptions());
     }
 
     public void Dispose()

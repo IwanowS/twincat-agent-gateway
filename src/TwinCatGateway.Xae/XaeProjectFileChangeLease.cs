@@ -12,17 +12,47 @@ using OleServiceProvider =
 
 namespace TwinCatGateway.Xae;
 
+public sealed class XaeProjectFileChangeResult
+{
+    internal XaeProjectFileChangeResult(
+        string path,
+        ProjectChangeClassification classification,
+        int movedBlocks,
+        int contentChanges,
+        string reason)
+    {
+        Path = path;
+        Classification = classification;
+        MovedBlocks = movedBlocks;
+        ContentChanges = contentChanges;
+        Reason = reason;
+    }
+
+    public string Path { get; }
+
+    public ProjectChangeClassification Classification { get; }
+
+    public int MovedBlocks { get; }
+
+    public int ContentChanges { get; }
+
+    public string Reason { get; }
+}
+
 internal sealed class XaeProjectFileChangeLease : IDisposable
 {
     private readonly IVsFileChangeEx _fileChange;
+    private readonly string _root;
     private readonly IReadOnlyList<ProjectFileState> _files;
     private bool _disposed;
 
     private XaeProjectFileChangeLease(
         IVsFileChangeEx fileChange,
+        string root,
         IReadOnlyList<ProjectFileState> files)
     {
         _fileChange = fileChange;
+        _root = root;
         _files = files;
     }
 
@@ -35,16 +65,7 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
             ?? throw new ArgumentException(
                 "Solution path has no parent directory.",
                 nameof(solutionPath));
-        string[] paths = Directory
-            .EnumerateFiles(
-                root,
-                "*.tsproj",
-                SearchOption.AllDirectories)
-            .Select(Path.GetFullPath)
-            .OrderBy(
-                path => path,
-                StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        string[] paths = EnumerateProjectFiles(root);
         IVsFileChangeEx? fileChange = null;
         List<ProjectFileState> files = new();
         try
@@ -54,9 +75,11 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                 typeof(SVsFileChangeEx).GUID);
             foreach (string path in paths)
             {
+                byte[] content = ReadAllBytes(path);
                 ProjectFileState state = new(
                     path,
-                    ComputeSha256(path));
+                    content,
+                    ComputeSha256(content));
                 Marshal.ThrowExceptionForHR(
                     fileChange.IgnoreFile(
                         0,
@@ -66,7 +89,7 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
             }
 
             XaeProjectFileChangeLease lease =
-                new(fileChange, files);
+                new(fileChange, root, files);
             fileChange = null;
             return lease;
         }
@@ -87,30 +110,78 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
         }
     }
 
-    public void VerifyUnchangedAndRelease()
+    public IReadOnlyList<XaeProjectFileChangeResult>
+        ClassifyChangesAndRelease()
     {
-        string? changedPath = null;
-        foreach (ProjectFileState file in _files)
+        try
         {
-            if (!File.Exists(file.Path)
-                || !string.Equals(
-                    file.Sha256,
-                    ComputeSha256(file.Path),
-                    StringComparison.Ordinal))
+            List<XaeProjectFileChangeResult> changes = new();
+            HashSet<string> baselinePaths = new(
+                _files.Select(file => file.Path),
+                StringComparer.OrdinalIgnoreCase);
+            foreach (ProjectFileState file in _files)
             {
-                changedPath = file.Path;
-                break;
-            }
-        }
+                if (!File.Exists(file.Path))
+                {
+                    changes.Add(
+                        new XaeProjectFileChangeResult(
+                            file.Path,
+                            ProjectChangeClassification.Unknown,
+                            movedBlocks: 0,
+                            contentChanges: 0,
+                            "The TwinCAT project file was removed "
+                            + "during the operation."));
+                    continue;
+                }
 
-        Dispose();
-        if (changedPath is not null)
+                byte[] current = ReadAllBytes(file.Path);
+                if (string.Equals(
+                    file.Sha256,
+                    ComputeSha256(current),
+                    StringComparison.Ordinal))
+                {
+                    file.AcknowledgeWhileIgnored = true;
+                    continue;
+                }
+
+                TsProjectClassificationResult classification =
+                    TsProjectNoiseClassifier.Classify(
+                        file.BaselineContent,
+                        current);
+                file.AcknowledgeWhileIgnored =
+                    classification.Classification
+                        == ProjectChangeClassification
+                            .ExpectedReorderOnly
+                    || classification.Classification
+                        == ProjectChangeClassification
+                            .WhitespaceOnly;
+                changes.Add(
+                    new XaeProjectFileChangeResult(
+                        file.Path,
+                        classification.Classification,
+                        classification.MovedBlocks,
+                        classification.ContentChanges,
+                        classification.Reason));
+            }
+
+            foreach (string addedPath in EnumerateProjectFiles(_root)
+                .Where(path => !baselinePaths.Contains(path)))
+            {
+                changes.Add(
+                    new XaeProjectFileChangeResult(
+                        addedPath,
+                        ProjectChangeClassification.Unknown,
+                        movedBlocks: 0,
+                        contentChanges: 0,
+                        "A TwinCAT project file was added during "
+                        + "the operation."));
+            }
+
+            return changes;
+        }
+        finally
         {
-            throw new GatewayOperationException(
-                ErrorCodes.ExternalEditUnsupported,
-                $"TwinCAT project file content changed during the "
-                + $"operation and remains unclassified: '{changedPath}'.",
-                stage: "xae.build.project-file");
+            Dispose();
         }
     }
 
@@ -136,15 +207,80 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
 
     private static string ComputeSha256(string path)
     {
+        return ComputeSha256(ReadAllBytes(path));
+    }
+
+    private static string ComputeSha256(byte[] content)
+    {
         using SHA256 sha256 = SHA256.Create();
+        return BitConverter
+            .ToString(sha256.ComputeHash(content))
+            .Replace("-", string.Empty);
+    }
+
+    private static byte[] ReadAllBytes(string path)
+    {
+        FileInfo before = new(path);
+        long length = before.Length;
+        DateTime lastWriteTimeUtc = before.LastWriteTimeUtc;
         using FileStream stream = new(
             path,
             FileMode.Open,
             FileAccess.Read,
             FileShare.ReadWrite | FileShare.Delete);
-        return BitConverter
-            .ToString(sha256.ComputeHash(stream))
-            .Replace("-", string.Empty);
+        if (length > int.MaxValue)
+        {
+            throw new IOException(
+                $"TwinCAT project file is too large to classify: '{path}'.");
+        }
+
+        byte[] content = new byte[(int)length];
+        int offset = 0;
+        while (offset < content.Length)
+        {
+            int read = stream.Read(
+                content,
+                offset,
+                content.Length - offset);
+            if (read == 0)
+            {
+                throw new EndOfStreamException(
+                    $"TwinCAT project file changed while it was read: "
+                    + $"'{path}'.");
+            }
+
+            offset += read;
+        }
+
+        if (stream.ReadByte() != -1)
+        {
+            throw new IOException(
+                $"TwinCAT project file changed while it was read: '{path}'.");
+        }
+
+        before.Refresh();
+        if (length != before.Length
+            || lastWriteTimeUtc != before.LastWriteTimeUtc)
+        {
+            throw new IOException(
+                $"TwinCAT project file changed while it was read: '{path}'.");
+        }
+
+        return content;
+    }
+
+    private static string[] EnumerateProjectFiles(string root)
+    {
+        return Directory
+            .EnumerateFiles(
+                root,
+                "*.tsproj",
+                SearchOption.AllDirectories)
+            .Select(Path.GetFullPath)
+            .OrderBy(
+                path => path,
+                StringComparer.OrdinalIgnoreCase)
+            .ToArray();
     }
 
     private static void RestoreNotifications(
@@ -161,7 +297,7 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                         file.Sha256,
                         ComputeSha256(file.Path),
                         StringComparison.Ordinal);
-                if (unchanged)
+                if (unchanged || file.AcknowledgeWhileIgnored)
                 {
                     Marshal.ThrowExceptionForHR(
                         fileChange.SyncFile(file.Path));
@@ -172,7 +308,7 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                         0,
                         file.Path,
                         0));
-                if (!unchanged)
+                if (!unchanged && !file.AcknowledgeWhileIgnored)
                 {
                     Marshal.ThrowExceptionForHR(
                         fileChange.SyncFile(file.Path));
@@ -256,14 +392,20 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
     {
         public ProjectFileState(
             string path,
+            byte[] baselineContent,
             string sha256)
         {
             Path = path;
+            BaselineContent = baselineContent;
             Sha256 = sha256;
         }
 
         public string Path { get; }
 
+        public byte[] BaselineContent { get; }
+
         public string Sha256 { get; }
+
+        public bool AcknowledgeWhileIgnored { get; set; }
     }
 }

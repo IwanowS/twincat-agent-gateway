@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Contracts;
@@ -151,6 +152,32 @@ public sealed class GatewayApplicationServiceTests
                     {
                         Ok = true,
                         Action = parameters.Action,
+                        Log = new ResourceReference
+                        {
+                            Uri = "twincat-log://operation-placeholder/build",
+                            OperationId = "operation-placeholder",
+                            Kind = ResourceKind.BuildLog,
+                        },
+                        ExpectedProjectNoise =
+                        {
+                            new ProjectChangeSummary
+                            {
+                                File = "Machine.tsproj",
+                                Classification =
+                                    ProjectChangeClassification
+                                        .ExpectedReorderOnly,
+                                DoNotInspectFullFile = true,
+                                Details = new ResourceReference
+                                {
+                                    Uri = "twincat-diff://"
+                                        + "operation-placeholder/"
+                                        + "project-noise",
+                                    OperationId =
+                                        "operation-placeholder",
+                                    Kind = ResourceKind.ProjectNoise,
+                                },
+                            },
+                        },
                     });
             });
         fixture.Status.Update(status =>
@@ -181,6 +208,14 @@ public sealed class GatewayApplicationServiceTests
         BuildResult result =
             Assert.IsType<BuildResult>(completed.Result);
         Assert.Equal(accepted.OperationId, result.OperationId);
+        Assert.Equal(
+            new[]
+            {
+                ResourceKind.BuildLog,
+                ResourceKind.ProjectNoise,
+            },
+            completed.Summary.Resources.Select(
+                resource => resource.Kind));
         Assert.True(fixture.Service.GetStatus().LastBuild?.Ok);
         Assert.Equal(
             GatewayState.Ready,

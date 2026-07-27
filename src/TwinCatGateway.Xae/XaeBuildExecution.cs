@@ -21,6 +21,7 @@ public sealed class XaeBuildExecutionResult
         vsBuildAction eventAction,
         IEnumerable<BuildDiagnostic> diagnostics,
         IEnumerable<XaeOutputDelta> output,
+        IEnumerable<XaeProjectFileChangeResult> projectChanges,
         ExternalChangeSynchronizationResult synchronization)
     {
         Action = action;
@@ -31,6 +32,7 @@ public sealed class XaeBuildExecutionResult
         EventAction = eventAction;
         Diagnostics = diagnostics.ToArray();
         Output = output.ToArray();
+        ProjectChanges = projectChanges.ToArray();
         Synchronization = synchronization;
     }
 
@@ -49,6 +51,8 @@ public sealed class XaeBuildExecutionResult
     public IReadOnlyList<BuildDiagnostic> Diagnostics { get; }
 
     public IReadOnlyList<XaeOutputDelta> Output { get; }
+
+    public IReadOnlyList<XaeProjectFileChangeResult> ProjectChanges { get; }
 
     public ExternalChangeSynchronizationResult Synchronization { get; }
 }
@@ -146,7 +150,8 @@ internal sealed class XaeBuildEventLease : IDisposable
                 stage: "xae.build.verify");
         }
 
-        _projectFileLease.VerifyUnchangedAndRelease();
+        IReadOnlyList<XaeProjectFileChangeResult> projectChanges =
+            _projectFileLease.ClassifyChangesAndRelease();
         int failedProjects = _requestedAction == BuildAction.Clean
             ? 0
             : _solutionBuild.LastBuildInfo;
@@ -193,6 +198,7 @@ internal sealed class XaeBuildEventLease : IDisposable
             evidence.Action,
             diagnostics,
             output,
+            projectChanges,
             synchronization);
     }
 

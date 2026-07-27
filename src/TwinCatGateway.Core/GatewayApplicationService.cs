@@ -256,10 +256,21 @@ public sealed class GatewayApplicationService
                 };
                 return status;
             });
-            IReadOnlyList<ResourceReference> resources =
-                result.Log is null
-                    ? Array.Empty<ResourceReference>()
-                    : new[] { result.Log };
+            List<ResourceReference> resources = new();
+            if (result.Log is not null)
+            {
+                resources.Add(result.Log);
+            }
+
+            resources.AddRange(
+                result.ExpectedProjectNoise
+                    .Select(change => change.Details)
+                    .Where(reference => reference is not null)
+                    .Cast<ResourceReference>()
+                    .GroupBy(
+                        reference => reference.Uri,
+                        StringComparer.Ordinal)
+                    .Select(group => group.First()));
             if (result.Ok)
             {
                 return OperationExecutionResult.Success(
