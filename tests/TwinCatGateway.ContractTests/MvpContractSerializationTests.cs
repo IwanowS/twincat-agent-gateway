@@ -88,7 +88,8 @@ public sealed class MvpContractSerializationTests
                 Started = null,
                 Mode = RuntimeMode.Unknown,
             },
-            LatestErrorCursor = 42,
+            EventStreamId = "stream-42",
+            LatestEventCursor = 42,
         };
 
         string json = JsonSerializer.Serialize(status, ContractJson.SerializerOptions);
@@ -99,9 +100,11 @@ public sealed class MvpContractSerializationTests
         Assert.Null(result.TwinCat.Started);
         Assert.Equal(RuntimeMode.Unknown, result.TwinCat.Mode);
         Assert.True(result.Xae.AgentWorkspaceOwned);
-        Assert.Equal(42, result.LatestErrorCursor);
+        Assert.Equal("stream-42", result.EventStreamId);
+        Assert.Equal(42, result.LatestEventCursor);
         Assert.Contains("\"mode\":\"unknown\"", json);
         Assert.DoesNotContain("unreadErrors", json);
+        Assert.DoesNotContain("latestErrorCursor", json);
     }
 
     [Fact]
@@ -248,16 +251,18 @@ public sealed class MvpContractSerializationTests
     }
 
     [Fact]
-    public void DiagnosticsErrorCursorRoundTripsWithoutReadMutation()
+    public void DiagnosticsEventCursorRoundTripsWithoutReadMutation()
     {
         GatewayDiagnosticsResult diagnostics = new()
         {
-            NextErrorCursor = 8,
-            MoreErrorsAvailable = true,
-            ErrorHistoryTruncated = false,
-            Errors =
+            EventStreamId = "stream-10",
+            NextScanCursor = 8,
+            LatestEventCursor = 10,
+            MoreMatchingEventsAvailable = true,
+            EventHistoryTruncated = false,
+            Events =
             {
-                new GatewayErrorEntry
+                new GatewayEvent
                 {
                     Cursor = 8,
                     OccurredAtUtc = new DateTimeOffset(
@@ -268,11 +273,21 @@ public sealed class MvpContractSerializationTests
                         2,
                         3,
                         TimeSpan.Zero),
+                    Type = "build.failed",
+                    Severity = DiagnosticSeverity.Error,
+                    OperationId = "operation-8",
+                    OperationKind = OperationKind.Build,
+                    Stage = "build.verify",
+                    Message = "Build failed.",
                     Error = new GatewayError
                     {
                         Code = ErrorCodes.BuildFailed,
                         Message = "Build failed.",
                         OperationId = "operation-8",
+                    },
+                    Properties =
+                    {
+                        ["action"] = "rebuild",
                     },
                 },
             },
@@ -287,11 +302,44 @@ public sealed class MvpContractSerializationTests
                 ContractJson.SerializerOptions);
 
         Assert.NotNull(result);
-        Assert.Equal(8, result.NextErrorCursor);
-        Assert.True(result.MoreErrorsAvailable);
-        GatewayErrorEntry entry = Assert.Single(result.Errors);
+        Assert.Equal("stream-10", result.EventStreamId);
+        Assert.Equal(8, result.NextScanCursor);
+        Assert.Equal(10, result.LatestEventCursor);
+        Assert.True(result.MoreMatchingEventsAvailable);
+        GatewayEvent entry = Assert.Single(result.Events);
         Assert.Equal(8, entry.Cursor);
-        Assert.Equal(ErrorCodes.BuildFailed, entry.Error.Code);
+        Assert.Equal("build.failed", entry.Type);
+        Assert.Equal(ErrorCodes.BuildFailed, entry.Error?.Code);
+        Assert.Equal("rebuild", entry.Properties["action"]);
         Assert.DoesNotContain("stackTrace", json);
+    }
+
+    [Fact]
+    public void DiagnosticsRequestRoundTripsSharedEventCursorAndFilter()
+    {
+        GetDiagnosticsParameters parameters = new()
+        {
+            EventStreamId = "stream-10",
+            AfterEventCursor = 8,
+            MaximumEvents = 25,
+            MinimumSeverity = DiagnosticSeverity.Error,
+        };
+
+        string json = JsonSerializer.Serialize(
+            parameters,
+            ContractJson.SerializerOptions);
+        GetDiagnosticsParameters? result =
+            JsonSerializer.Deserialize<GetDiagnosticsParameters>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal("stream-10", result.EventStreamId);
+        Assert.Equal(8, result.AfterEventCursor);
+        Assert.Equal(25, result.MaximumEvents);
+        Assert.Equal(
+            DiagnosticSeverity.Error,
+            result.MinimumSeverity);
+        Assert.Contains("\"minimumSeverity\":\"error\"", json);
     }
 }

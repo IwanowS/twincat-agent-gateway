@@ -66,7 +66,7 @@ public sealed class DesktopGatewayHostTests
             host,
             GatewayState.Disconnected,
             TimeSpan.FromSeconds(10));
-        await WaitForErrorCursorAsync(
+        await WaitForEventCursorAsync(
             host,
             TimeSpan.FromSeconds(10));
 
@@ -83,7 +83,7 @@ public sealed class DesktopGatewayHostTests
                 GatewayMethods.GetDiagnostics,
                 new GetDiagnosticsParameters
                 {
-                    AfterErrorCursor = 0,
+                    AfterEventCursor = 0,
                 },
                 wait: true,
                 CancellationToken.None);
@@ -94,14 +94,16 @@ public sealed class DesktopGatewayHostTests
         Assert.Equal(GatewayState.Disconnected, response.Result?.Gateway.State);
         Assert.Equal("fixture", host.ActiveProfile?.Name);
         Assert.Null(host.StartupError);
-        Assert.True(response.Result?.LatestErrorCursor > 0);
+        Assert.True(response.Result?.LatestEventCursor > 0);
         Assert.True(diagnostics.Ok);
         Assert.Equal(
-            response.Result?.LatestErrorCursor,
-            diagnostics.Result?.NextErrorCursor);
+            response.Result?.LatestEventCursor,
+            diagnostics.Result?.NextScanCursor);
         Assert.Contains(
-            diagnostics.Result!.Errors,
-            entry => entry.Error.Code == ErrorCodes.XaeNotFound);
+            diagnostics.Result!.Events,
+            gatewayEvent =>
+                gatewayEvent.Error?.Code
+                    == ErrorCodes.XaeNotFound);
     }
 
     [XaeFact]
@@ -331,7 +333,7 @@ public sealed class DesktopGatewayHostTests
             $"Operation '{operationId}' did not complete.");
     }
 
-    private static async Task WaitForErrorCursorAsync(
+    private static async Task WaitForEventCursorAsync(
         GatewayDesktopHost host,
         TimeSpan timeout)
     {
@@ -341,7 +343,7 @@ public sealed class DesktopGatewayHostTests
         {
             if (host.ApplicationService
                     .GetStatus()
-                    .LatestErrorCursor > 0)
+                    .LatestEventCursor > 0)
             {
                 return;
             }

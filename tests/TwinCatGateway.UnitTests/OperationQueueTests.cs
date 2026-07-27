@@ -118,10 +118,10 @@ public sealed class OperationQueueTests
         OperationStore store = new();
         GatewayStatusSnapshotStore status =
             new(GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
-        GatewayErrorJournal errors = new(status);
+        GatewayEventJournal events = new(status);
         using OperationQueue queue = new(
             store,
-            gatewayErrorSink: errors);
+            gatewayEventSink: events);
 
         OperationAccepted accepted = queue.Enqueue(
             OperationKind.Build,
@@ -138,12 +138,12 @@ public sealed class OperationQueueTests
 
         Assert.Equal(ErrorCodes.OperationTimeout, operation.Summary.Error?.Code);
         Assert.True(operation.Summary.Error?.Retryable);
-        Assert.Equal(1, status.Read().LatestErrorCursor);
+        Assert.Equal(1, status.Read().LatestEventCursor);
         Assert.Equal(
             ErrorCodes.OperationTimeout,
             Assert.Single(
-                errors.ReadAfter(0, 50).Errors)
-                .Error.Code);
+                events.ReadAfter(null, 0, 100).Events)
+                .Error?.Code);
     }
 
     [Fact]

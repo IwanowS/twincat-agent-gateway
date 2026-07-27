@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Contracts;
@@ -30,7 +32,7 @@ public sealed class OperationQueue : IDisposable
     private readonly IClock _clock;
     private readonly IOperationIdGenerator _idGenerator;
     private readonly IOperationExceptionSink _exceptionSink;
-    private readonly IGatewayErrorSink? _gatewayErrorSink;
+    private readonly IGatewayEventSink? _gatewayEventSink;
     private readonly Task _processor;
     private int _stopped;
 
@@ -39,13 +41,13 @@ public sealed class OperationQueue : IDisposable
         IClock? clock = null,
         IOperationIdGenerator? idGenerator = null,
         IOperationExceptionSink? exceptionSink = null,
-        IGatewayErrorSink? gatewayErrorSink = null)
+        IGatewayEventSink? gatewayEventSink = null)
     {
         _store = store ?? throw new ArgumentNullException(nameof(store));
         _clock = clock ?? SystemClock.Instance;
         _idGenerator = idGenerator ?? GuidOperationIdGenerator.Instance;
         _exceptionSink = exceptionSink ?? TraceOperationExceptionSink.Instance;
-        _gatewayErrorSink = gatewayErrorSink;
+        _gatewayEventSink = gatewayEventSink;
         _processor = Task.Run(ProcessQueueAsync);
     }
 
@@ -221,8 +223,11 @@ public sealed class OperationQueue : IDisposable
                 result.Resources);
             if (completed && error is not null)
             {
-                _gatewayErrorSink?.Record(
-                    error,
+                _gatewayEventSink?.Record(
+                    CreateErrorEvent(
+                        item.Kind,
+                        error,
+                        result.Resources),
                     completedAtUtc);
             }
         }
@@ -244,8 +249,10 @@ public sealed class OperationQueue : IDisposable
                 error: error);
             if (completed)
             {
-                _gatewayErrorSink?.Record(
-                    error,
+                _gatewayEventSink?.Record(
+                    CreateErrorEvent(
+                        item.Kind,
+                        error),
                     completedAtUtc);
             }
         }
@@ -274,8 +281,10 @@ public sealed class OperationQueue : IDisposable
                 error: error);
             if (completed)
             {
-                _gatewayErrorSink?.Record(
-                    error,
+                _gatewayEventSink?.Record(
+                    CreateErrorEvent(
+                        item.Kind,
+                        error),
                     completedAtUtc);
             }
         }
@@ -295,8 +304,10 @@ public sealed class OperationQueue : IDisposable
                 error: error);
             if (completed)
             {
-                _gatewayErrorSink?.Record(
-                    error,
+                _gatewayEventSink?.Record(
+                    CreateErrorEvent(
+                        item.Kind,
+                        error),
                     completedAtUtc);
             }
         }
@@ -340,6 +351,25 @@ public sealed class OperationQueue : IDisposable
             Retryable = retryable,
             Stage = stage,
             RawLogRef = rawLogRef,
+        };
+    }
+
+    private static GatewayEvent CreateErrorEvent(
+        OperationKind kind,
+        GatewayError error,
+        IReadOnlyList<ResourceReference>? resources = null)
+    {
+        return new GatewayEvent
+        {
+            Type = GatewayEventTypes.ErrorOccurred,
+            Severity = DiagnosticSeverity.Error,
+            OperationId = error.OperationId,
+            OperationKind = kind,
+            Stage = error.Stage,
+            Message = error.Message,
+            Error = error,
+            Resources = resources?.ToList()
+                ?? new List<ResourceReference>(),
         };
     }
 

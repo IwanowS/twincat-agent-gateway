@@ -22,7 +22,7 @@ public sealed class GatewayApplicationService
     private readonly LocalLogStore _logs;
     private readonly Func<GatewayDiagnosticsResult>? _diagnosticsProvider;
     private readonly BuildOperationExecutor? _buildExecutor;
-    private readonly GatewayErrorJournal _errorJournal;
+    private readonly GatewayEventJournal _eventJournal;
 
     public GatewayApplicationService(
         string version,
@@ -30,7 +30,7 @@ public sealed class GatewayApplicationService
         OperationStore operations,
         OperationQueue queue,
         LocalLogStore logs,
-        GatewayErrorJournal errorJournal,
+        GatewayEventJournal eventJournal,
         Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
         BuildOperationExecutor? buildExecutor = null)
     {
@@ -46,9 +46,9 @@ public sealed class GatewayApplicationService
             ?? throw new ArgumentNullException(nameof(logs));
         _diagnosticsProvider = diagnosticsProvider;
         _buildExecutor = buildExecutor;
-        _errorJournal = errorJournal
+        _eventJournal = eventJournal
             ?? throw new ArgumentNullException(
-                nameof(errorJournal));
+                nameof(eventJournal));
     }
 
     public HealthResult GetHealth()
@@ -74,26 +74,59 @@ public sealed class GatewayApplicationService
         GetDiagnosticsParameters? parameters = null)
     {
         parameters ??= new GetDiagnosticsParameters();
-        if (parameters.AfterErrorCursor < 0)
+        if (parameters.AfterEventCursor < 0)
         {
             throw new GatewayOperationException(
                 ErrorCodes.RequestInvalid,
-                "The error cursor cannot be negative.",
+                "The event cursor cannot be negative.",
                 stage: "diagnostics.validate");
         }
 
-        if (parameters.MaximumErrors <= 0
-            || parameters.MaximumErrors > 200)
+        if (parameters.AfterEventCursor > 0
+            && string.IsNullOrWhiteSpace(
+                parameters.EventStreamId))
         {
             throw new GatewayOperationException(
                 ErrorCodes.RequestInvalid,
-                "Maximum errors must be between 1 and 200.",
+                "The event stream ID is required when continuing from a cursor.",
                 stage: "diagnostics.validate");
         }
 
-        GatewayErrorPage errors = _errorJournal.ReadAfter(
-            parameters.AfterErrorCursor,
-            parameters.MaximumErrors);
+        if (parameters.EventStreamId is not null
+            && string.IsNullOrWhiteSpace(
+                parameters.EventStreamId))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "The event stream ID cannot be empty.",
+                stage: "diagnostics.validate");
+        }
+
+        if (parameters.MaximumEvents <= 0
+            || parameters.MaximumEvents > 200)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Maximum events must be between 1 and 200.",
+                stage: "diagnostics.validate");
+        }
+
+        if (parameters.MinimumSeverity.HasValue
+            && !Enum.IsDefined(
+                typeof(DiagnosticSeverity),
+                parameters.MinimumSeverity.Value))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Minimum event severity is not supported.",
+                stage: "diagnostics.validate");
+        }
+
+        GatewayEventPage events = _eventJournal.ReadAfter(
+            parameters.EventStreamId,
+            parameters.AfterEventCursor,
+            parameters.MaximumEvents,
+            parameters.MinimumSeverity);
         GatewayDiagnosticsResult result =
             _diagnosticsProvider?.Invoke()
             ?? new GatewayDiagnosticsResult();
@@ -107,11 +140,14 @@ public sealed class GatewayApplicationService
             Healthy = true,
             Message = _logs.RootDirectory,
         };
-        result.Errors = errors.Errors.ToList();
-        result.NextErrorCursor = errors.NextCursor;
-        result.MoreErrorsAvailable = errors.MoreAvailable;
-        result.ErrorHistoryTruncated =
-            errors.HistoryTruncated;
+        result.Events = events.Events.ToList();
+        result.EventStreamId = events.EventStreamId;
+        result.NextScanCursor = events.NextScanCursor;
+        result.LatestEventCursor = events.LatestCursor;
+        result.MoreMatchingEventsAvailable =
+            events.MoreMatchingEventsAvailable;
+        result.EventHistoryTruncated =
+            events.HistoryTruncated;
         return result;
     }
 

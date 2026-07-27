@@ -53,23 +53,20 @@ public sealed class GatewayStatusResult
 
     public TestSummary? LastTest { get; set; }
 
-    public long LatestErrorCursor { get; set; }
+    public string EventStreamId { get; set; } = string.Empty;
+
+    public long LatestEventCursor { get; set; }
 }
 
 public sealed class GetDiagnosticsParameters
 {
-    public long AfterErrorCursor { get; set; }
+    public string? EventStreamId { get; set; }
 
-    public int MaximumErrors { get; set; } = 50;
-}
+    public long AfterEventCursor { get; set; }
 
-public sealed class GatewayErrorEntry
-{
-    public long Cursor { get; set; }
+    public int MaximumEvents { get; set; } = 100;
 
-    public DateTimeOffset OccurredAtUtc { get; set; }
-
-    public GatewayError Error { get; set; } = new();
+    public DiagnosticSeverity? MinimumSeverity { get; set; }
 }
 
 public sealed class DteInstanceInfo
@@ -150,19 +147,21 @@ public sealed class GatewayDiagnosticsResult
 
     public ComDiagnostics Com { get; set; } = new();
 
-    public List<OperationTimelineEntry> OperationTimeline { get; set; } = new();
-
     public ComponentHealth Ipc { get; set; } = new();
 
     public ComponentHealth LogStore { get; set; } = new();
 
     public List<ResourceReference> Resources { get; set; } = new();
 
-    public List<GatewayErrorEntry> Errors { get; set; } = new();
+    public List<GatewayEvent> Events { get; set; } = new();
 
-    public long NextErrorCursor { get; set; }
+    public string EventStreamId { get; set; } = string.Empty;
 
-    public bool MoreErrorsAvailable { get; set; }
+    public long NextScanCursor { get; set; }
 
-    public bool ErrorHistoryTruncated { get; set; }
+    public long LatestEventCursor { get; set; }
+
+    public bool MoreMatchingEventsAvailable { get; set; }
+
+    public bool EventHistoryTruncated { get; set; }
 }

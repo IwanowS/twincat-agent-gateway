@@ -137,9 +137,9 @@ public sealed class GatewayApplicationServiceTests
     [InlineData(-1, 50)]
     [InlineData(0, 0)]
     [InlineData(0, 201)]
-    public void DiagnosticsRejectInvalidErrorCursorRequests(
-        long afterErrorCursor,
-        int maximumErrors)
+    public void DiagnosticsRejectInvalidEventCursorRequests(
+        long afterEventCursor,
+        int maximumEvents)
     {
         using ServiceFixture fixture = new();
 
@@ -148,8 +148,25 @@ public sealed class GatewayApplicationServiceTests
                 () => fixture.Service.GetDiagnostics(
                     new GetDiagnosticsParameters
                     {
-                        AfterErrorCursor = afterErrorCursor,
-                        MaximumErrors = maximumErrors,
+                        AfterEventCursor = afterEventCursor,
+                        MaximumEvents = maximumEvents,
+                    }));
+
+        Assert.Equal(ErrorCodes.RequestInvalid, exception.Code);
+        Assert.Equal("diagnostics.validate", exception.Stage);
+    }
+
+    [Fact]
+    public void DiagnosticsRequireStreamIdWhenContinuingFromCursor()
+    {
+        using ServiceFixture fixture = new();
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.GetDiagnostics(
+                    new GetDiagnosticsParameters
+                    {
+                        AfterEventCursor = 1,
                     }));
 
         Assert.Equal(ErrorCodes.RequestInvalid, exception.Code);
@@ -304,15 +321,19 @@ public sealed class GatewayApplicationServiceTests
         Assert.Null(fixture.Service.GetStatus().CurrentOperation);
         Assert.Equal(
             1,
-            fixture.Service.GetStatus().LatestErrorCursor);
-        GatewayErrorEntry error = Assert.Single(
+            fixture.Service.GetStatus().LatestEventCursor);
+        GatewayEvent gatewayEvent = Assert.Single(
             fixture.Service.GetDiagnostics(
                 new GetDiagnosticsParameters
                 {
-                    AfterErrorCursor = 0,
-                }).Errors);
-        Assert.Equal(ErrorCodes.BuildFailed, error.Error.Code);
-        Assert.Equal(accepted.OperationId, error.Error.OperationId);
+                    AfterEventCursor = 0,
+                }).Events);
+        Assert.Equal(
+            ErrorCodes.BuildFailed,
+            gatewayEvent.Error?.Code);
+        Assert.Equal(
+            accepted.OperationId,
+            gatewayEvent.Error?.OperationId);
         Assert.Equal(
             GatewayState.Ready,
             fixture.Service.GetStatus().Gateway.State);
@@ -350,19 +371,19 @@ public sealed class GatewayApplicationServiceTests
             Directory.CreateDirectory(_temporaryDirectory);
             Status = new GatewayStatusSnapshotStore(
                 GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
-            Errors = new GatewayErrorJournal(Status);
+            Events = new GatewayEventJournal(Status);
             Operations = new OperationStore();
             Logs = new LocalLogStore(_temporaryDirectory);
             Queue = new OperationQueue(
                 Operations,
-                gatewayErrorSink: Errors);
+                gatewayEventSink: Events);
             Service = new GatewayApplicationService(
                 "0.1.0",
                 Status,
                 Operations,
                 Queue,
                 Logs,
-                Errors,
+                Events,
                 diagnosticsProvider,
                 buildExecutor);
         }
@@ -371,7 +392,7 @@ public sealed class GatewayApplicationServiceTests
 
         public OperationStore Operations { get; }
 
-        public GatewayErrorJournal Errors { get; }
+        public GatewayEventJournal Events { get; }
 
         public LocalLogStore Logs { get; }
 
