@@ -610,13 +610,16 @@ solution root и временно вызывает
 - если файл существует и hash совпадает, gateway вызывает `SyncFile(path)`
   при ещё подавленных notifications, затем возвращает
   `IgnoreFile(0, path, 0)`;
-- если содержимое или наличие файла изменилось, gateway сначала возвращает
-  notifications и синхронизирует watcher, затем завершает операцию явной
-  `EXTERNAL_EDIT_UNSUPPORTED`: изменение остаётся `unknown` до classifier;
+- если hash изменился, gateway запускает classifier до восстановления
+  notifications; подтверждённые `whitespace-only` и `reorder-only` changes
+  синхронизируются при ещё подавленных notifications;
+- `content-changed`, `unknown`, добавление или удаление `.tsproj` завершают
+  операцию явной `EXTERNAL_EDIT_UNSUPPORTED` со ссылкой на classifier
+  artifact; перед ошибкой notifications обязательно восстанавливаются;
 - восстановление notifications выполняется также при исключении и Dispose.
 
-Это узкий exact-same-content guard, а не `.tsproj` classifier: gateway не
-перезаписывает файл и не скрывает содержательные изменения. Проверенный
+Guard и classifier не перезаписывают файл и не скрывают содержательные
+изменения. Проверенный
 `IVsRunningDocumentTable5.HandsOffDocument/HandsOnDocument` для этой задачи
 не используется: XAE Shell на базе Visual Studio 2019 в тестовой конфигурации
 не зарегистрировал COM proxy этого интерфейса.
@@ -630,13 +633,14 @@ solution root и временно вызывает
 - не считать рабочее дерево чистым, если Git показывает изменение;
 - явно помечать изменение как ожидаемый generated noise.
 
-### 14.2 Предлагаемый классификатор
+### 14.2 Классификатор
 
 1. Найти изменённые `.tsproj` после XAE operation.
-2. Получить baseline из pre-operation snapshot или Git base.
-3. Безопасно распарсить оба XML.
+2. Использовать точный pre-operation byte snapshot как baseline.
+3. Безопасно распарсить оба XML с запрещёнными DTD и external resolver.
 4. Построить semantic representation.
-5. Для известных XAE-контейнеров сравнить дочерние блоки как multiset по стабильному identity:
+5. Только для известных 4024.17-контейнеров `Plc`, `Tasks`, `Contexts` и
+   `TaskPouOids` сравнить дочерние блоки как multiset по стабильному identity:
    - element type;
    - object Id/GUID;
    - name/path;
@@ -648,7 +652,11 @@ solution root и временно вызывает
    - вне разрешённых контейнеров нет изменений.
 7. Вернуть `reorder-only` и количество перемещённых блоков.
 
-Если identity неоднозначен или XML некорректен, результат — `unknown`, а не `reorder-only`.
+Attribute order и незначащий formatting дают `whitespace-only`. Если identity
+неоднозначен, XML некорректен или change находится вне разрешённого
+контейнера, результат — `unknown`, а не `reorder-only`. Compact response
+содержит только counts и рекомендацию, а локальный `ProjectNoise` resource —
+classification reason без полного XML diff.
 
 ### 14.3 Ответ агенту
 
