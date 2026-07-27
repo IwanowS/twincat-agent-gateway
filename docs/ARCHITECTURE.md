@@ -508,7 +508,7 @@ Target identity следует показывать и сохранять в aud
   "lastActivation": {
     "ok": true
   },
-  "unreadErrors": 0
+  "latestErrorCursor": 42
 }
 ```
 
@@ -532,6 +532,15 @@ Target identity следует показывать и сохранять в aud
 - build diagnostics;
 - `.tsproj` noise classification;
 - IPC/log-store health.
+
+Ошибки читаются немутирующим cursor protocol:
+
+- compact status возвращает монотонный `latestErrorCursor`;
+- `getDiagnostics(afterErrorCursor, maximumErrors)` возвращает только более новые retained errors;
+- `nextErrorCursor` передаётся следующим вызовом того же клиента;
+- чтение не меняет глобальное состояние, поэтому WPF, CLI и MCP не конкурируют за признак «прочитано»;
+- `moreErrorsAvailable` означает, что страницу нужно продолжить;
+- `errorHistoryTruncated` означает retention gap или cursor от предыдущего gateway process; клиент продолжает с возвращённого `nextErrorCursor`.
 
 ### 12.3 Runtime status
 

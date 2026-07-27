@@ -398,7 +398,7 @@ docs/
 - read-only ADS System Service runtime state;
 - `GetLastErrorMessages()`;
 - COM retry/error statistics;
-- unread/new error cursor;
+- немутирующий монотонный error cursor с независимым paging для каждого клиента;
 - CLI `status` и `diagnostics`;
 - UI diagnostics page.
 
