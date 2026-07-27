@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.ExceptionServices;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using EnvDTE;
@@ -20,6 +21,12 @@ public sealed class XaeSession : IDisposable
         TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan PollCallLimit =
         TimeSpan.FromSeconds(3);
+    private static readonly string[] ErrorMessageSeparators =
+    {
+        "\r\n",
+        "\n",
+        "\r",
+    };
     private readonly ComStaDispatcher _dispatcher;
     private readonly object _fingerprintSync = new();
     private readonly bool _ownsDispatcher;
@@ -725,6 +732,10 @@ public sealed class XaeSession : IDisposable
             DiscardedDocumentCount = ownership.DiscardedDocuments.Count,
             DiscoveredInstances = new[] { CloneInfo(info)! },
         };
+        using (CreateUserSilentModeLease())
+        {
+            RefreshDiagnosticsOnSta();
+        }
         return CloneSnapshot(_snapshot);
     }
 
@@ -805,6 +816,10 @@ public sealed class XaeSession : IDisposable
                 ownership?.DiscardedDocuments.Count ?? 0,
             DiscoveredInstances = instances,
         };
+        using (CreateUserSilentModeLease())
+        {
+            RefreshDiagnosticsOnSta();
+        }
         return CloneSnapshot(_snapshot);
     }
 
@@ -858,7 +873,168 @@ public sealed class XaeSession : IDisposable
                         : CloneInfo(instance)!)
                 .ToArray(),
         };
+        using (CreateUserSilentModeLease())
+        {
+            RefreshDiagnosticsOnSta();
+        }
         return CloneSnapshot(_snapshot);
+    }
+
+    private void RefreshDiagnosticsOnSta()
+    {
+        DTE2 dte = _dte
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: "xae.diagnostics");
+        ITcSysManager sysManager = _sysManager
+            ?? throw new GatewayOperationException(
+                ErrorCodes.SysManagerNotAvailable,
+                "The attached XAE session has no System Manager.",
+                retryable: true,
+                stage: "xae.diagnostics");
+        List<string> issues = new();
+        string? activeConfiguration = null;
+        string? activePlatform = null;
+        string? targetAmsNetId = null;
+        IReadOnlyList<string> lastErrorMessages =
+            Array.Empty<string>();
+
+        try
+        {
+            ReadActiveSolutionConfiguration(
+                dte,
+                out activeConfiguration,
+                out activePlatform);
+        }
+        catch (Exception exception)
+        {
+            issues.Add(FormatDiagnosticIssue(
+                "activeSolutionConfiguration",
+                exception));
+        }
+
+        try
+        {
+            ITcSysManager2 sysManager2 =
+                (ITcSysManager2)sysManager;
+            targetAmsNetId = EmptyToNull(
+                sysManager2.GetTargetNetId());
+            lastErrorMessages = SplitErrorMessages(
+                sysManager2.GetLastErrorMessages());
+        }
+        catch (Exception exception)
+        {
+            issues.Add(FormatDiagnosticIssue(
+                "sysManager2",
+                exception));
+        }
+
+        _snapshot.ActiveConfiguration =
+            activeConfiguration;
+        _snapshot.ActivePlatform = activePlatform;
+        _snapshot.TargetAmsNetId = targetAmsNetId;
+        _snapshot.LastErrorMessages =
+            lastErrorMessages;
+        _snapshot.DiagnosticIssues = issues;
+    }
+
+    private static void ReadActiveSolutionConfiguration(
+        DTE2 dte,
+        out string? activeConfiguration,
+        out string? activePlatform)
+    {
+        Solution? solution = null;
+        SolutionBuild? solutionBuild = null;
+        SolutionConfiguration? configuration = null;
+        SolutionContexts? contexts = null;
+        List<string> platforms = new();
+        activeConfiguration = null;
+        activePlatform = null;
+        try
+        {
+            solution = dte.Solution;
+            solutionBuild = solution.SolutionBuild;
+            configuration =
+                solutionBuild.ActiveConfiguration;
+            activeConfiguration = EmptyToNull(
+                configuration.Name);
+            contexts = configuration.SolutionContexts;
+            int count = contexts.Count;
+            for (int index = 1; index <= count; index++)
+            {
+                SolutionContext? context = null;
+                try
+                {
+                    object itemIndex = index;
+                    context = contexts.Item(itemIndex);
+                    string? platform = EmptyToNull(
+                        context.PlatformName);
+                    if (platform is not null)
+                    {
+                        platforms.Add(platform);
+                    }
+                }
+                finally
+                {
+                    ComObject.Release(context);
+                }
+            }
+
+            string[] uniquePlatforms = platforms
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            activePlatform = uniquePlatforms.Length == 1
+                ? uniquePlatforms[0]
+                : null;
+        }
+        finally
+        {
+            ComObject.Release(contexts);
+            ComObject.Release(configuration);
+            ComObject.Release(solutionBuild);
+            ComObject.Release(solution);
+        }
+    }
+
+    private static string[] SplitErrorMessages(
+        string? messages)
+    {
+        if (string.IsNullOrWhiteSpace(messages))
+        {
+            return Array.Empty<string>();
+        }
+
+        return messages!
+            .Split(
+                ErrorMessageSeparators,
+                StringSplitOptions.RemoveEmptyEntries)
+            .Select(message => message.Trim())
+            .Where(message => message.Length != 0)
+            .Take(50)
+            .Select(message =>
+                message.Length <= 2000
+                    ? message
+                    : message.Substring(0, 2000))
+            .ToArray();
+    }
+
+    private static string FormatDiagnosticIssue(
+        string source,
+        Exception exception)
+    {
+        return exception is COMException
+            ? $"{source}: COM call failed "
+                + $"(HRESULT 0x{exception.HResult:X8})."
+            : $"{source}: {exception.GetType().Name}.";
+    }
+
+    private static string? EmptyToNull(string? value)
+    {
+        return string.IsNullOrWhiteSpace(value)
+            ? null
+            : value;
     }
 
     private static ITcSysManager AcquireSysManager(
@@ -1494,6 +1670,13 @@ public sealed class XaeSession : IDisposable
             AgentWorkspaceOwned = source.AgentWorkspaceOwned,
             ClosedDocumentCount = source.ClosedDocumentCount,
             DiscardedDocumentCount = source.DiscardedDocumentCount,
+            ActiveConfiguration = source.ActiveConfiguration,
+            ActivePlatform = source.ActivePlatform,
+            TargetAmsNetId = source.TargetAmsNetId,
+            LastErrorMessages =
+                source.LastErrorMessages.ToArray(),
+            DiagnosticIssues =
+                source.DiagnosticIssues.ToArray(),
             DiscoveredInstances = source.DiscoveredInstances
                 .Select(instance => CloneInfo(instance)!)
                 .ToArray(),

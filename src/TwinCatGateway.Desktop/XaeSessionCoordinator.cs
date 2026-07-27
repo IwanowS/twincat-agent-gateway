@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using TwinCatGateway.Ads;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using TwinCatGateway.Ipc;
@@ -30,9 +31,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly XaeSession _session = new();
     private XaeSessionSnapshot _lastSnapshot = new();
     private ComDiagnostics _lastComDiagnostics = new();
+    private AdsRuntimeDiagnostics _lastRuntimeDiagnostics = new();
     private string? _lastErrorMessage;
     private int? _lastHResult;
     private string? _lastFailureSignature;
+    private string? _lastRuntimeFailureSignature;
     private bool _wasConnected;
     private int _disposed;
 
@@ -82,7 +85,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         AttachTimeout,
                         cancellationToken).ConfigureAwait(false);
                 connected = true;
-                PublishConnected(snapshot);
+                AdsRuntimeStatusReadResult runtime =
+                    ReadRuntimeStatus(snapshot);
+                PublishConnected(snapshot, runtime);
             }
             catch (OperationCanceledException) when (
                 cancellationToken.IsCancellationRequested)
@@ -115,12 +120,20 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 {
                     SysManagerAvailable =
                         _lastSnapshot.SysManagerAvailable,
-                    LastErrorMessages = _lastErrorMessage is null
-                        ? new List<string>()
-                        : new List<string> { _lastErrorMessage },
+                    ActiveConfiguration =
+                        _lastSnapshot.ActiveConfiguration,
+                    ActivePlatform =
+                        _lastSnapshot.ActivePlatform,
+                    Target = CreateTarget(_lastSnapshot),
+                    LastErrorMessages =
+                        MergeLastErrorMessages(),
+                    InspectionIssues =
+                        _lastSnapshot.DiagnosticIssues.ToList(),
                     LastHResult = _lastHResult,
                 },
                 Com = CloneCom(_lastComDiagnostics),
+                Runtime = CloneRuntime(
+                    _lastRuntimeDiagnostics),
             };
         }
     }
@@ -361,16 +374,27 @@ internal sealed class XaeSessionCoordinator : IDisposable
         });
     }
 
-    private void PublishConnected(XaeSessionSnapshot snapshot)
+    private void PublishConnected(
+        XaeSessionSnapshot snapshot,
+        AdsRuntimeStatusReadResult runtime)
     {
         ComDiagnostics diagnostics = _session.GetComDiagnostics();
         bool logConnection;
+        bool logRuntimeFailure;
         lock (_sync)
         {
             _lastSnapshot = CloneSnapshot(snapshot);
             _lastComDiagnostics = CloneCom(diagnostics);
-            _lastErrorMessage = null;
-            _lastHResult = null;
+            _lastRuntimeDiagnostics =
+                CloneRuntime(runtime.Diagnostics);
+            logRuntimeFailure =
+                runtime.Diagnostics.ErrorCode is not null
+                && !string.Equals(
+                    _lastRuntimeFailureSignature,
+                    runtime.Diagnostics.ErrorCode,
+                    StringComparison.Ordinal);
+            _lastRuntimeFailureSignature =
+                runtime.Diagnostics.ErrorCode;
             _lastFailureSignature = null;
             logConnection = !_wasConnected;
             _wasConnected = true;
@@ -392,6 +416,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
             status.Xae.Solution = selected.Solution;
             status.Xae.AgentWorkspaceOwned =
                 snapshot.AgentWorkspaceOwned;
+            status.TwinCat.Started =
+                runtime.Status.Started;
+            status.TwinCat.Mode =
+                runtime.Status.Mode;
             return status;
         });
         if (logConnection)
@@ -417,6 +445,27 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         snapshot.DiscardedDocumentCount.ToString(
                             CultureInfo.InvariantCulture),
                 });
+        }
+
+        if (logRuntimeFailure)
+        {
+            _logger.Write(
+                StructuredLogLevel.Warning,
+                "ads.runtime_status.failed",
+                "Could not read the selected target runtime state.",
+                properties: new Dictionary<string, string>
+                {
+                    ["amsNetId"] =
+                        runtime.Diagnostics.AmsNetId
+                        ?? "unknown",
+                    ["port"] =
+                        runtime.Diagnostics.Port.ToString(
+                            CultureInfo.InvariantCulture),
+                    ["errorCode"] =
+                        runtime.Diagnostics.ErrorCode
+                        ?? "UNKNOWN",
+                },
+                exception: runtime.Failure);
         }
     }
 
@@ -459,6 +508,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             status.Xae.Version = null;
             status.Xae.Solution = null;
             status.Xae.AgentWorkspaceOwned = false;
+            status.TwinCat.Started = null;
+            status.TwinCat.Mode = RuntimeMode.Unknown;
             if (newFailure)
             {
                 status.UnreadErrors++;
@@ -569,6 +620,14 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ClosedDocumentCount = source.ClosedDocumentCount,
             DiscardedDocumentCount =
                 source.DiscardedDocumentCount,
+            ActiveConfiguration =
+                source.ActiveConfiguration,
+            ActivePlatform = source.ActivePlatform,
+            TargetAmsNetId = source.TargetAmsNetId,
+            LastErrorMessages =
+                source.LastErrorMessages.ToArray(),
+            DiagnosticIssues =
+                source.DiagnosticIssues.ToArray(),
             DiscoveredInstances = source.DiscoveredInstances
                 .Select(CloneInfo)
                 .ToArray(),
@@ -601,5 +660,82 @@ internal sealed class XaeSessionCoordinator : IDisposable
             LastCallLatencyMs = source.LastCallLatencyMs,
             LastHResult = source.LastHResult,
         };
+    }
+
+    private static AdsRuntimeDiagnostics CloneRuntime(
+        AdsRuntimeDiagnostics source)
+    {
+        return new AdsRuntimeDiagnostics
+        {
+            AmsNetId = source.AmsNetId,
+            Port = source.Port,
+            AdsState = source.AdsState,
+            DeviceState = source.DeviceState,
+            ErrorCode = source.ErrorCode,
+            ReadAtUtc = source.ReadAtUtc,
+        };
+    }
+
+    private static AdsRuntimeStatusReadResult ReadRuntimeStatus(
+        XaeSessionSnapshot snapshot)
+    {
+        if (snapshot.TargetAmsNetId is null)
+        {
+            return new AdsRuntimeStatusReadResult(
+                new TwinCatStatus
+                {
+                    Started = null,
+                    Mode = RuntimeMode.Unknown,
+                },
+                new AdsRuntimeDiagnostics
+                {
+                    Port =
+                        AdsRuntimeStatusReader.SystemServicePort,
+                    ErrorCode = "TARGET_NETID_UNAVAILABLE",
+                    ReadAtUtc = DateTimeOffset.UtcNow,
+                });
+        }
+
+        return AdsRuntimeStatusReader.Read(
+            snapshot.TargetAmsNetId,
+            TimeSpan.FromSeconds(3));
+    }
+
+    private TargetIdentity? CreateTarget(
+        XaeSessionSnapshot snapshot)
+    {
+        if (snapshot.TargetAmsNetId is null)
+        {
+            return null;
+        }
+
+        string? expectedAmsNetId =
+            _profile.ExpectedTarget?.AmsNetId;
+        return new TargetIdentity
+        {
+            Name = string.Equals(
+                expectedAmsNetId,
+                snapshot.TargetAmsNetId,
+                StringComparison.OrdinalIgnoreCase)
+                ? _profile.ExpectedTarget?.Name
+                : null,
+            AmsNetId = snapshot.TargetAmsNetId,
+        };
+    }
+
+    private List<string> MergeLastErrorMessages()
+    {
+        IEnumerable<string> messages =
+            _lastSnapshot.LastErrorMessages;
+        if (_lastErrorMessage is not null)
+        {
+            messages = messages.Append(
+                _lastErrorMessage);
+        }
+
+        return messages
+            .Distinct(StringComparer.Ordinal)
+            .Take(50)
+            .ToList();
     }
 }

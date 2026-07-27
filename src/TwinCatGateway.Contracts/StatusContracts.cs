@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace TwinCatGateway.Contracts;
@@ -88,11 +89,26 @@ public sealed class XaeDiagnostics
 
     public TargetIdentity? Target { get; set; }
 
-    public bool? TwinCatStarted { get; set; }
-
     public List<string> LastErrorMessages { get; set; } = new();
 
+    public List<string> InspectionIssues { get; set; } = new();
+
     public int? LastHResult { get; set; }
+}
+
+public sealed class AdsRuntimeDiagnostics
+{
+    public string? AmsNetId { get; set; }
+
+    public int Port { get; set; } = 10000;
+
+    public string? AdsState { get; set; }
+
+    public short? DeviceState { get; set; }
+
+    public string? ErrorCode { get; set; }
+
+    public DateTimeOffset? ReadAtUtc { get; set; }
 }
 
 public sealed class ComDiagnostics
@@ -113,6 +129,8 @@ public sealed class GatewayDiagnosticsResult
     public List<DteInstanceInfo> DteInstances { get; set; } = new();
 
     public XaeDiagnostics Xae { get; set; } = new();
+
+    public AdsRuntimeDiagnostics Runtime { get; set; } = new();
 
     public ComDiagnostics Com { get; set; } = new();
 

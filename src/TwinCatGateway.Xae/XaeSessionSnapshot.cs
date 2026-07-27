@@ -19,6 +19,18 @@ public sealed class XaeSessionSnapshot
 
     public int DiscardedDocumentCount { get; set; }
 
+    public string? ActiveConfiguration { get; set; }
+
+    public string? ActivePlatform { get; set; }
+
+    public string? TargetAmsNetId { get; set; }
+
+    public IReadOnlyList<string> LastErrorMessages { get; set; } =
+        new List<string>();
+
+    public IReadOnlyList<string> DiagnosticIssues { get; set; } =
+        new List<string>();
+
     public IReadOnlyList<DteInstanceInfo> DiscoveredInstances { get; set; } =
         new List<DteInstanceInfo>();
 }

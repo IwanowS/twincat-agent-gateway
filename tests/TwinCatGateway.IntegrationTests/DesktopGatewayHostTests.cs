@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using TwinCatGateway.Ads;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using TwinCatGateway.Desktop;
@@ -134,6 +135,30 @@ public sealed class DesktopGatewayHostTests
         Assert.True(response.Ok);
         Assert.True(response.Result?.Status.Xae.Connected);
         Assert.True(response.Result?.Xae.SysManagerAvailable);
+        Assert.False(
+            string.IsNullOrWhiteSpace(
+                response.Result?.Xae.ActiveConfiguration));
+        Assert.False(
+            string.IsNullOrWhiteSpace(
+                response.Result?.Xae.ActivePlatform));
+        Assert.False(
+            string.IsNullOrWhiteSpace(
+                response.Result?.Xae.Target?.AmsNetId));
+        Assert.Empty(
+            response.Result!.Xae.InspectionIssues);
+        Assert.Equal(
+            AdsRuntimeStatusReader.SystemServicePort,
+            response.Result.Runtime.Port);
+        Assert.Equal(
+            "192.168.3.31.1.1",
+            response.Result.Runtime.AmsNetId);
+        Assert.Null(response.Result.Runtime.ErrorCode);
+        Assert.False(
+            string.IsNullOrWhiteSpace(
+                response.Result.Runtime.AdsState));
+        Assert.NotEqual(
+            RuntimeMode.Unknown,
+            response.Result.Status.TwinCat.Mode);
         Assert.Contains(
             response.Result!.DteInstances,
             instance => instance.Selected

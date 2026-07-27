@@ -121,6 +121,19 @@ public sealed class XaeEnvironmentTests
             solution,
             snapshot.SelectedInstance?.Solution,
             ignoreCase: true);
+        Assert.False(
+            string.IsNullOrWhiteSpace(
+                snapshot.ActiveConfiguration));
+        Assert.False(
+            string.IsNullOrWhiteSpace(
+                snapshot.ActivePlatform));
+        Assert.Equal(
+            "192.168.3.31.1.1",
+            snapshot.TargetAmsNetId);
+        Assert.Empty(snapshot.DiagnosticIssues);
+        Assert.Empty(XaeWindowProbe.FindModalDialogs(
+            Assert.IsType<int>(
+                snapshot.SelectedInstance?.ProcessId)));
     }
 
     [XaeFact]

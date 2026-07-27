@@ -1,3 +1,4 @@
+using System;
 using System.Text.Json;
 using TwinCatGateway.Contracts;
 using Xunit;
@@ -160,5 +161,86 @@ public sealed class MvpContractSerializationTests
         Assert.Equal(instance.InspectionError, result.InspectionError);
         Assert.Equal(instance.InspectionHResult, result.InspectionHResult);
         Assert.DoesNotContain("stackTrace", json);
+    }
+
+    [Fact]
+    public void DetailedXaeDiagnosticsRoundTripTypedHealthEvidence()
+    {
+        XaeDiagnostics diagnostics = new()
+        {
+            SysManagerAvailable = true,
+            ActiveConfiguration = "Debug",
+            ActivePlatform = "TwinCAT RT (x64)",
+            Target = new TargetIdentity
+            {
+                Name = "WIN-T077ADA",
+                AmsNetId = "192.168.3.31.1.1",
+            },
+            LastErrorMessages =
+            {
+                "Previous TwinCAT subsystem error.",
+            },
+            InspectionIssues =
+            {
+                "activeSolutionConfiguration: COM call failed "
+                + "(HRESULT 0x80010001).",
+            },
+            LastHResult = unchecked((int)0x80010001),
+        };
+
+        string json = JsonSerializer.Serialize(
+            diagnostics,
+            ContractJson.SerializerOptions);
+        XaeDiagnostics? result =
+            JsonSerializer.Deserialize<XaeDiagnostics>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal("Debug", result.ActiveConfiguration);
+        Assert.Equal(
+            "TwinCAT RT (x64)",
+            result.ActivePlatform);
+        Assert.Equal(
+            "192.168.3.31.1.1",
+            result.Target?.AmsNetId);
+        Assert.Single(result.LastErrorMessages);
+        Assert.Single(result.InspectionIssues);
+        Assert.DoesNotContain("stackTrace", json);
+    }
+
+    [Fact]
+    public void AdsRuntimeDiagnosticsRoundTripRawStateEvidence()
+    {
+        AdsRuntimeDiagnostics diagnostics = new()
+        {
+            AmsNetId = "192.168.3.31.1.1",
+            Port = 10000,
+            AdsState = "Exception",
+            DeviceState = 7,
+            ReadAtUtc = new DateTimeOffset(
+                2026,
+                7,
+                28,
+                1,
+                2,
+                3,
+                TimeSpan.Zero),
+        };
+
+        string json = JsonSerializer.Serialize(
+            diagnostics,
+            ContractJson.SerializerOptions);
+        AdsRuntimeDiagnostics? result =
+            JsonSerializer.Deserialize<AdsRuntimeDiagnostics>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal("192.168.3.31.1.1", result.AmsNetId);
+        Assert.Equal(10000, result.Port);
+        Assert.Equal("Exception", result.AdsState);
+        Assert.Equal((short)7, result.DeviceState);
+        Assert.Null(result.ErrorCode);
     }
 }

@@ -22,6 +22,7 @@ public enum RuntimeMode
     Config,
     Run,
     Stop,
+    Exception,
 }
 
 public sealed class TargetIdentity

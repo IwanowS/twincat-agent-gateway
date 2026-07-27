@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Description>Read-only ADS adapters hosted by the desktop gateway.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Beckhoff.TwinCAT.Ads" Version="7.0.292" />
+    <ProjectReference Include="..\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
+  </ItemGroup>
+</Project>
