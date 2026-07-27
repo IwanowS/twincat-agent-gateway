@@ -182,6 +182,69 @@ public sealed class XaeSession : IDisposable
             cancellationToken);
     }
 
+    public async Task ActivateConfigurationAsync(
+        string solutionPath,
+        string expectedAmsNetId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        string normalizedSolution =
+            NormalizeSolutionPath(solutionPath);
+        await _dispatcher.InvokeAsync(
+            () =>
+            {
+                ActivateConfigurationOnSta(
+                    normalizedSolution,
+                    expectedAmsNetId);
+                return true;
+            },
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task StartRestartTwinCatAsync(
+        string solutionPath,
+        string expectedAmsNetId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        string normalizedSolution =
+            NormalizeSolutionPath(solutionPath);
+        await _dispatcher.InvokeAsync(
+            () =>
+            {
+                StartRestartTwinCatOnSta(
+                    normalizedSolution,
+                    expectedAmsNetId);
+                return true;
+            },
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RestartTwinCatConfigModeAsync(
+        string solutionPath,
+        string expectedAmsNetId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        string normalizedSolution =
+            NormalizeSolutionPath(solutionPath);
+        await _dispatcher.InvokeAsync(
+            () =>
+            {
+                RestartTwinCatConfigModeOnSta(
+                    normalizedSolution,
+                    expectedAmsNetId);
+                return true;
+            },
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     internal Task<bool> ReadSilentModeAsync(
         TimeSpan timeout,
         CancellationToken cancellationToken)
@@ -878,6 +941,117 @@ public sealed class XaeSession : IDisposable
             RefreshDiagnosticsOnSta();
         }
         return CloneSnapshot(_snapshot);
+    }
+
+    private void ActivateConfigurationOnSta(
+        string normalizedSolution,
+        string expectedAmsNetId)
+    {
+        const string stage =
+            "activation.activateConfiguration";
+        using (CreateUserSilentModeLease())
+        {
+            VerifyActivationBoundaryOnSta(
+                normalizedSolution,
+                expectedAmsNetId,
+                stage);
+            try
+            {
+                _sysManager!.ActivateConfiguration();
+            }
+            catch (Exception exception)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.ActivateConfigurationFailed,
+                    "TwinCAT configuration activation failed.",
+                    retryable: false,
+                    stage: stage,
+                    innerException: exception);
+            }
+        }
+    }
+
+    private void StartRestartTwinCatOnSta(
+        string normalizedSolution,
+        string expectedAmsNetId)
+    {
+        const string stage = "activation.restart";
+        using (CreateUserSilentModeLease())
+        {
+            VerifyActivationBoundaryOnSta(
+                normalizedSolution,
+                expectedAmsNetId,
+                stage);
+            try
+            {
+                _sysManager!.StartRestartTwinCAT();
+            }
+            catch (Exception exception)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.TwinCatRestartFailed,
+                    "TwinCAT restart request failed.",
+                    retryable: true,
+                    stage: stage,
+                    innerException: exception);
+            }
+        }
+    }
+
+    private void RestartTwinCatConfigModeOnSta(
+        string normalizedSolution,
+        string expectedAmsNetId)
+    {
+        const string stage = "activation.recoverToConfig";
+        using (CreateUserSilentModeLease())
+        {
+            VerifyActivationBoundaryOnSta(
+                normalizedSolution,
+                expectedAmsNetId,
+                stage);
+            try
+            {
+                _dte!.ExecuteCommand(
+                    "TwinCAT.RestartTwinCATConfigMode");
+            }
+            catch (Exception exception)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.ConfigModeRecoveryFailed,
+                    "TwinCAT Config Mode recovery request failed.",
+                    retryable: true,
+                    stage: stage,
+                    innerException: exception);
+            }
+        }
+    }
+
+    private void VerifyActivationBoundaryOnSta(
+        string normalizedSolution,
+        string expectedAmsNetId,
+        string stage)
+    {
+        if (string.IsNullOrWhiteSpace(expectedAmsNetId))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileInvalid,
+                "Activation profile has no expected AMS NetId.",
+                stage: stage);
+        }
+
+        XaeSessionSnapshot snapshot =
+            VerifyAttachedOnSta(normalizedSolution);
+        if (!string.Equals(
+            snapshot.TargetAmsNetId,
+            expectedAmsNetId,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ActivationTargetMismatch,
+                "The selected XAE target AMS NetId does not match "
+                    + "the activation profile.",
+                stage: stage);
+        }
     }
 
     private void RefreshDiagnosticsOnSta()
