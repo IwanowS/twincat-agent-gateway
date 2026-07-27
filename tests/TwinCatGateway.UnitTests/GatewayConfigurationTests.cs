@@ -26,6 +26,8 @@ public sealed class GatewayConfigurationTests
                     {
                       "name": "bench",
                       "solution": "C:\\Projects\\Machine\\Machine.sln",
+                      "allowXaeLaunch": true,
+                      "xaeProgId": "VisualStudio.DTE.16.0",
                       "allowActivation": true,
                       "expectedTarget": {
                         "name": "WIN-T077ADA",
@@ -45,6 +47,8 @@ public sealed class GatewayConfigurationTests
                 new GatewayConfigurationLoader().Load(path);
 
             ProjectProfile profile = Assert.Single(configuration.Profiles);
+            Assert.True(profile.AllowXaeLaunch);
+            Assert.Equal("VisualStudio.DTE.16.0", profile.XaeProgId);
             Assert.True(profile.AllowActivation);
             Assert.Equal("192.168.3.31.1.1", profile.ExpectedTarget?.AmsNetId);
             Assert.Equal(ZeroTestsPolicy.Warn, profile.TcUnit?.ZeroTests);
@@ -126,6 +130,22 @@ public sealed class GatewayConfigurationTests
             validation.Issues,
             issue => issue.Path.EndsWith(
                 ".tcUnit.reportPath",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void WhitespaceXaeProgIdIsRejected()
+    {
+        GatewayConfiguration configuration = CreateValidConfiguration();
+        configuration.Profiles[0].XaeProgId = " ";
+
+        ConfigurationValidationResult validation =
+            GatewayConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(
+            validation.Issues,
+            issue => issue.Path.EndsWith(
+                ".xaeProgId",
                 StringComparison.Ordinal));
     }
 

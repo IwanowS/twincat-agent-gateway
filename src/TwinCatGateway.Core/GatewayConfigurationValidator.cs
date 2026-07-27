@@ -164,6 +164,10 @@ public static class GatewayConfigurationValidator
             profile.Platform,
             $"{path}.platform",
             issues);
+        ValidateOptionalNonWhitespace(
+            profile.XaeProgId,
+            $"{path}.xaeProgId",
+            issues);
 
         if (profile.RequireRecentSuccessfulBuild
             && profile.RecentBuildMaxAgeSeconds <= 0)

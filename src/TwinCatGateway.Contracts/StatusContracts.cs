@@ -70,6 +70,10 @@ public sealed class DteInstanceInfo
     public bool Selected { get; set; }
 
     public string? SelectionReason { get; set; }
+
+    public string? InspectionError { get; set; }
+
+    public int? InspectionHResult { get; set; }
 }
 
 public sealed class XaeDiagnostics

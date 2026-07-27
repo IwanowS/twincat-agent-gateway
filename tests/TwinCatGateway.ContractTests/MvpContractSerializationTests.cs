@@ -105,6 +105,7 @@ public sealed class MvpContractSerializationTests
         {
             Name = "bench-remote",
             Solution = @"C:\Projects\Machine\Machine.sln",
+            XaeProgId = "VisualStudio.DTE.16.0",
             AllowActivation = true,
             ExpectedTarget = new TargetIdentity
             {
@@ -123,6 +124,7 @@ public sealed class MvpContractSerializationTests
             JsonSerializer.Deserialize<ProjectProfile>(json, ContractJson.SerializerOptions);
 
         Assert.NotNull(result);
+        Assert.Equal("VisualStudio.DTE.16.0", result.XaeProgId);
         Assert.True(result.AllowActivation);
         Assert.Equal("WIN-T077ADA", result.ExpectedTarget?.Name);
         Assert.Equal("192.168.3.31.1.1", result.ExpectedTarget?.AmsNetId);
@@ -130,5 +132,30 @@ public sealed class MvpContractSerializationTests
             "GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished",
             result.TcUnit?.FinishedSymbol);
         Assert.Equal(ZeroTestsPolicy.Fail, result.TcUnit?.ZeroTests);
+    }
+
+    [Fact]
+    public void DteInspectionFailureRoundTripsWithoutAStackTrace()
+    {
+        DteInstanceInfo instance = new()
+        {
+            Moniker = "!VisualStudio.DTE.16.0:1234",
+            ProgId = "VisualStudio.DTE.16.0",
+            InspectionError = "The DTE instance could not be inspected.",
+            InspectionHResult = unchecked((int)0x80010001),
+        };
+
+        string json = JsonSerializer.Serialize(
+            instance,
+            ContractJson.SerializerOptions);
+        DteInstanceInfo? result =
+            JsonSerializer.Deserialize<DteInstanceInfo>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(instance.InspectionError, result.InspectionError);
+        Assert.Equal(instance.InspectionHResult, result.InspectionHResult);
+        Assert.DoesNotContain("stackTrace", json);
     }
 }

@@ -61,6 +61,7 @@ public sealed class ProjectProfileCatalog
             Name = source.Name,
             Solution = source.Solution,
             AllowXaeLaunch = source.AllowXaeLaunch,
+            XaeProgId = source.XaeProgId,
             AllowActivation = source.AllowActivation,
             ExpectedTarget = source.ExpectedTarget is null
                 ? null

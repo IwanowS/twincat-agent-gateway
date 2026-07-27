@@ -32,6 +32,8 @@ public sealed class ProjectProfile
 
     public bool AllowXaeLaunch { get; set; } = true;
 
+    public string? XaeProgId { get; set; }
+
     public bool AllowActivation { get; set; }
 
     public TargetIdentity? ExpectedTarget { get; set; }
