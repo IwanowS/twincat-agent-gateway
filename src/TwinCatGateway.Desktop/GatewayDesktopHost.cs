@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -13,6 +14,8 @@ namespace TwinCatGateway.Desktop;
 public sealed class GatewayDesktopHost : IDisposable
 {
     private const string DefaultPipeName = "TwinCatAgentGateway";
+    private readonly object _configurationSync = new();
+    private readonly string? _configurationPath;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly StructuredFileLogger _logger;
     private readonly OperationQueue _queue;
@@ -32,6 +35,10 @@ public sealed class GatewayDesktopHost : IDisposable
         }
 
         string version = GetVersion();
+        _configurationPath = string.IsNullOrWhiteSpace(
+            options.ConfigurationPath)
+            ? null
+            : Path.GetFullPath(options.ConfigurationPath);
         HostConfiguration hostConfiguration = LoadConfiguration(options);
         StartupError = hostConfiguration.Error;
         Configuration = hostConfiguration.Configuration;
@@ -93,9 +100,75 @@ public sealed class GatewayDesktopHost : IDisposable
 
     public ProjectProfile? ActiveProfile { get; }
 
+    public string? ConfigurationPath => _configurationPath;
+
     public string LogDirectory { get; }
 
     public string? StartupError { get; }
+
+    public void UpdateUnsavedDocumentPolicy(
+        UnsavedDocumentPolicy policy)
+    {
+        if (!Enum.IsDefined(
+            typeof(UnsavedDocumentPolicy),
+            policy))
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(policy));
+        }
+
+        ProjectProfile? activeProfile = ActiveProfile;
+        string? configurationPath = _configurationPath;
+        if (activeProfile is null
+            || configurationPath is null
+            || string.IsNullOrWhiteSpace(configurationPath))
+        {
+            throw new InvalidOperationException(
+                "No editable active profile is available.");
+        }
+
+        lock (_configurationSync)
+        {
+            ProjectProfile persistedProfile =
+                Configuration.Profiles.Single(profile =>
+                    string.Equals(
+                        profile.Name,
+                        activeProfile.Name,
+                        StringComparison.OrdinalIgnoreCase));
+            UnsavedDocumentPolicy previousPersisted =
+                persistedProfile.UnsavedDocuments;
+            UnsavedDocumentPolicy previousActive =
+                activeProfile.UnsavedDocuments;
+            try
+            {
+                persistedProfile.UnsavedDocuments = policy;
+                activeProfile.UnsavedDocuments = policy;
+                new GatewayConfigurationLoader().Save(
+                    configurationPath,
+                    Configuration);
+                _logger.Write(
+                    StructuredLogLevel.Information,
+                    "configuration.unsavedDocuments.changed",
+                    "Unsaved XAE document policy changed.",
+                    properties: new Dictionary<string, string>
+                    {
+                        ["profile"] = activeProfile.Name,
+                        ["policy"] = policy.ToString(),
+                    });
+            }
+            catch (Exception exception)
+            {
+                persistedProfile.UnsavedDocuments =
+                    previousPersisted;
+                activeProfile.UnsavedDocuments =
+                    previousActive;
+                _logger.Record(
+                    "configuration",
+                    exception);
+                throw;
+            }
+        }
+    }
 
     public void Start()
     {

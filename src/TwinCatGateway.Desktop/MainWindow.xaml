@@ -90,20 +90,41 @@
                 BorderBrush="#DCE2E8"
                 BorderThickness="1"
                 CornerRadius="10">
-            <StackPanel>
-                <TextBlock Foreground="#6A7681"
-                           Text="Activation safety" />
-                <TextBlock Margin="0,5,0,0"
-                           FontWeight="SemiBold"
-                           Text="{Binding ActivationPolicy}" />
-                <TextBlock Margin="0,4,0,0"
-                           Foreground="#5C6975"
-                           Text="{Binding Target}" />
-                <TextBlock Margin="0,10,0,0"
-                           Foreground="#B42318"
-                           TextWrapping="Wrap"
-                           Text="{Binding StartupError}" />
-            </StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="28" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Foreground="#6A7681"
+                               Text="Activation safety" />
+                    <TextBlock Margin="0,5,0,0"
+                               FontWeight="SemiBold"
+                               Text="{Binding ActivationPolicy}" />
+                    <TextBlock Margin="0,4,0,0"
+                               Foreground="#5C6975"
+                               Text="{Binding Target}" />
+                    <TextBlock Margin="0,10,0,0"
+                               Foreground="#B42318"
+                               TextWrapping="Wrap"
+                               Text="{Binding StartupError}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Foreground="#6A7681"
+                               Text="Unsaved XAE documents before build" />
+                    <ComboBox Margin="0,5,0,0"
+                              MinWidth="180"
+                              HorizontalAlignment="Left"
+                              IsEnabled="{Binding CanEditUnsavedDocuments}"
+                              ItemsSource="{Binding UnsavedDocumentPolicies}"
+                              SelectedItem="{Binding UnsavedDocuments, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <TextBlock Margin="0,5,0,0"
+                               Foreground="#5C6975"
+                               TextWrapping="Wrap"
+                               Text="{Binding UnsavedDocumentsStatus}" />
+                </StackPanel>
+            </Grid>
         </Border>
 
         <Border Grid.Row="3"
