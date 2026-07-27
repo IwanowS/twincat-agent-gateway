@@ -6,11 +6,6 @@ namespace TwinCatGateway.ContractTests;
 
 public sealed class GatewayResponseSerializationTests
 {
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     [Fact]
     public void SuccessfulResponseRoundTrips()
     {
@@ -24,9 +19,11 @@ public sealed class GatewayResponseSerializationTests
             },
         };
 
-        string json = JsonSerializer.Serialize(response, SerializerOptions);
+        string json = JsonSerializer.Serialize(response, ContractJson.SerializerOptions);
         GatewayResponse<ExampleResult>? result =
-            JsonSerializer.Deserialize<GatewayResponse<ExampleResult>>(json, SerializerOptions);
+            JsonSerializer.Deserialize<GatewayResponse<ExampleResult>>(
+                json,
+                ContractJson.SerializerOptions);
 
         Assert.NotNull(result);
         Assert.Equal(ProtocolVersion.Current, result.ProtocolVersion);
@@ -54,9 +51,11 @@ public sealed class GatewayResponseSerializationTests
             },
         };
 
-        string json = JsonSerializer.Serialize(response, SerializerOptions);
+        string json = JsonSerializer.Serialize(response, ContractJson.SerializerOptions);
         GatewayResponse<EmptyParameters>? result =
-            JsonSerializer.Deserialize<GatewayResponse<EmptyParameters>>(json, SerializerOptions);
+            JsonSerializer.Deserialize<GatewayResponse<EmptyParameters>>(
+                json,
+                ContractJson.SerializerOptions);
 
         Assert.NotNull(result);
         Assert.False(result.Ok);

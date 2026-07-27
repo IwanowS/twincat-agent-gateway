@@ -2,7 +2,14 @@ namespace TwinCatGateway.Contracts;
 
 public static class ErrorCodes
 {
+    public const string RequestInvalid = "REQUEST_INVALID";
+    public const string MethodNotFound = "METHOD_NOT_FOUND";
     public const string GatewayNotReady = "GATEWAY_NOT_READY";
+    public const string OperationNotFound = "OPERATION_NOT_FOUND";
+    public const string OperationNotCancellable = "OPERATION_NOT_CANCELLABLE";
+    public const string ProfileNotFound = "PROFILE_NOT_FOUND";
+    public const string ProfileInvalid = "PROFILE_INVALID";
+    public const string ResourceNotFound = "RESOURCE_NOT_FOUND";
     public const string XaeNotFound = "XAE_NOT_FOUND";
     public const string XaeMultipleMatches = "XAE_MULTIPLE_MATCHES";
     public const string SolutionNotFound = "SOLUTION_NOT_FOUND";
