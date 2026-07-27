@@ -17,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\TwinCatGateway.Ipc\TwinCatGateway.Ipc.csproj" />
     <ProjectReference Include="..\..\src\TwinCatGateway.Xae\TwinCatGateway.Xae.csproj" />
   </ItemGroup>
 </Project>

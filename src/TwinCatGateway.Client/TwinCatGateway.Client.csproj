@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Description>Thin .NET 8 IPC client for TwinCAT Agent Gateway.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
+    <ProjectReference Include="..\TwinCatGateway.Ipc\TwinCatGateway.Ipc.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>net8.0;net48</TargetFrameworks>
+    <Description>Versioned local Named Pipe transport for TwinCAT Agent Gateway.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
+  </ItemGroup>
+</Project>
