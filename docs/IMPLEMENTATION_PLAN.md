@@ -133,8 +133,10 @@ Acceptance:
 
 Acceptance:
 
-- выбран минимальный refresh workflow;
-- определён способ детектировать конфликт;
+- выбран agent-owned workspace workflow с discard несохранённых XAE changes;
+- изменения обнаруживаются fingerprint scan без предварительного объявления
+  paths;
+- изменённые документы типизированно reload-ятся перед build;
 - нет обязательного полного reload после каждой сборки.
 
 #### 0.8 Read-only ADS completion для TcUnit
@@ -292,7 +294,12 @@ docs/
 ### Задачи
 
 - operation contract `build`;
+- необязательный `changedPaths` hint плюс авторитетный fingerprint diff;
+- agent workspace ownership с закрытием editors без сохранения;
+- typed reload изменённых PLC sources перед операцией;
 - Build/Rebuild/Clean implementation;
+- `Build.RebuildSolution` через `DTE.ExecuteCommand` с ожиданием
+  `vsBuildActionRebuildAll`;
 - configuration/platform resolution;
 - BuildEvents lifecycle;
 - Error List delta collector;
@@ -312,6 +319,11 @@ docs/
 - warning-only build остаётся success;
 - infrastructure failure не выдаётся за compile error;
 - Clean отличается от Build/Rebuild;
+- внешнее изменение открытого или закрытого `.TcPOU` попадает в следующую
+  сборку без modal dialog;
+- несохранённая XAE версия PLC source отбрасывается и не перезаписывает
+  agent edit;
+- добавленный/удалённый source file завершается явной unsupported error;
 - full output не попадает в compact response;
 - CLI exit code соответствует результату;
 - existing PowerShell helper больше не требуется для нормального workflow.
@@ -581,7 +593,7 @@ twincat-diff://<operation-id>/project-noise
 ### P1
 
 - полноценный WPF log viewer;
-- improved external edit conflict detection;
+- structural sync добавленных/удалённых PLC source files;
 - operation cancellation UI;
 - report run identifier;
 - optional automatic reconnect;
@@ -612,7 +624,7 @@ twincat-diff://<operation-id>/project-noise
 | Build success/fail | Парсер | Да | Да |
 | Warning-only build | Парсер | Да | Да |
 | XAE busy | Нет | Нет | Да |
-| External edit conflict | Да | Да | Да |
+| Agent-owned external edit sync | Да | Да | Да |
 | `.tsproj` reorder-only | Да | Да | Да |
 | Activation allowed/denied | Да | Да | Да |
 | Recovery after exception | Нет | Да | Да |

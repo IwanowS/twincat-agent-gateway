@@ -324,37 +324,48 @@ Operation deadline не заменяет postcondition.
   "action": "rebuild",
   "configuration": null,
   "platform": null,
+  "changedPaths": [
+    "TC3_SimpleProject/PlcProject1/POUs/MAIN.TcPOU"
+  ],
   "detail": "compact"
 }
 ```
 
 Configuration/platform берутся из profile или активного solution, если не заданы явно и это разрешено политикой.
+`changedPaths` необязателен: gateway в любом случае обнаруживает изменения по
+fingerprint baseline, а список от caller используется только как
+дополнительная явная подсказка.
 
 ### 10.2 Последовательность
 
-1. Валидация profile и solution.
-2. Проверка conflict между external file edits и unsaved XAE documents.
-3. `SaveAll`, если политика допускает.
-4. Snapshot текущих Error List/Output позиций.
-5. Подписка/проверка `BuildEvents`.
-6. Запуск Build/Rebuild/Clean.
-7. Ожидание `OnBuildDone` и проверка `BuildState`.
-8. Чтение `LastBuildInfo`.
-9. Сбор новых Error List entries.
-10. Сбор нового Output delta.
-11. Нормализация diagnostics.
-12. Классификация `.tsproj` changes.
-13. Сохранение raw artifacts.
-14. Возврат compact result.
+1. Валидация profile, solution и action.
+2. Сравнение текущих PLC source fingerprints с session baseline.
+3. Объединение обнаруженных файлов с необязательным `changedPaths`.
+4. Отказ для добавленных/удалённых source files, пока structural sync не
+   реализован.
+5. Закрытие поддерживаемых XAE editors без сохранения; dirty in-memory
+   изменения отбрасываются.
+6. Типизированный reload изменённых документов через VSSDK Running Document
+   Table и `IVsPersistDocData.ReloadDocData(...)`.
+7. Повторный fingerprint scan; concurrent external change завершает операцию
+   ошибкой.
+8. Snapshot текущих Error List/Output позиций.
+9. Подписка/проверка `BuildEvents`.
+10. Запуск Build/Clean через `SolutionBuild`; Rebuild через
+    `DTE.ExecuteCommand("Build.RebuildSolution")`.
+11. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
+12. Чтение `LastBuildInfo`.
+13. Сбор новых Error List entries и Output delta.
+14. Нормализация diagnostics.
+15. Классификация `.tsproj` changes.
+16. Сохранение raw artifacts.
+17. Возврат compact result.
 
-Profile задаёт `unsavedDocuments: saveAll|reject`. Значение по умолчанию —
-`saveAll`; оно одинаково применяется к XAE, запущенному gateway, и к
-подключённому пользовательскому XAE. Оператор может изменить его в WPF UI,
-после чего gateway атомарно сохраняет настройку в локальный configuration
-file. Политика не отменяет защиту external edits: если несохранённый XAE
-document конфликтует с внешним изменением того же файла,
-`EXTERNAL_EDIT_CONFLICT` возвращается до `SaveAll`, и gateway не выбирает
-версию автоматически.
+`DTE.ExecuteCommand(...)` допустим для стабильной встроенной команды XAE/VS,
+если нет надёжного отдельного typed automation method. Он всегда вызывается
+на единственном STA, а его возврат не считается завершением операции:
+необходимы соответствующее событие и проверяемые postconditions. Для Rebuild
+ожидается `vsBuildActionRebuildAll` со scope `Solution`.
 
 ### 10.3 Diagnostic DTO
 
@@ -440,7 +451,6 @@ Automation Interface предоставляет `StartRestartTwinCAT()` для R
 ```yaml
 name: bench-remote
 solution: C:\Projects\Machine\Machine.sln
-unsavedDocuments: saveAll
 allowActivation: true
 requireRecentSuccessfulBuild: true
 autoWaitForTcUnit: true
@@ -525,8 +535,9 @@ run | config | exception | stopped | unknown
 
 ```text
 agent edits files
-    -> gateway pre-build conflict check
-    -> минимальный XAE refresh при необходимости
+    -> build(changedPaths?)
+    -> gateway detects all changed PLC sources
+    -> gateway synchronizes XAE project model
     -> build
     -> diagnostics
 ```
@@ -539,53 +550,46 @@ agent edits files
 - не нужно передавать PLC code через MCP;
 - меньше COM surface.
 
-### 13.2 Конфликт с XAE
+### 13.2 Agent owns workspace
 
-Опасный сценарий:
+Пока gateway подключён к solution, поддерживаемые PLC source files принадлежат
+агенту. Агент может менять любой из них в любое время после подключения и не
+обязан заранее объявлять paths. Несохранённые изменения тех же документов в
+XAE не сохраняются: gateway закрывает такие editors с
+`vsSaveChangesNo`. Отдельных `SaveAll|Reject` policy и
+`prepare_external_edit` / `complete_external_edit` handshake нет.
 
-1. файл открыт и изменён в XAE, но не сохранён;
-2. агент меняет тот же файл на диске;
-3. XAE позднее сохраняет старую in-memory версию.
-
-Gateway должен детектировать это до build/save и вернуть:
-
-```text
-EXTERNAL_EDIT_CONFLICT
-```
-
-с перечнем файлов. Автоматический выбор версии запрещён.
+При подключении gateway вычисляет SHA-256 fingerprint всех `.TcPOU`, `.TcGVL`
+и `.TcDUT` под solution root. Непосредственно перед каждой
+Build/Rebuild/Clean выполняется новый scan. Фактический diff является
+авторитетным; `changedPaths` только дополняет его.
 
 Проверка на TwinCAT 3.1.4024.17 уточнила границу:
 
 - после обычного внешнего edit открытого сохранённого `.TcPOU`
   `EnvDTE.Document.Saved` остаётся `true`; при следующем build XAE может
   показать project-level и editor-level reload dialogs;
-- внешний edit открытого несохранённого document создаёт file-modification
-  conflict dialog ещё до build; Silent Mode его не подавляет, а последующий
-  COM-вызов может блокироваться до deadline;
+- внешний edit открытого несохранённого document без предварительного захвата
+  workspace создаёт file-modification conflict dialog; Silent Mode его не
+  подавляет;
 - после обычного внешнего edit закрытого `.TcPOU` modal dialog не появляется,
   но build использует stale project model; одного `Documents.Open(...)`
   недостаточно;
-- типизированный VSSDK workflow
-  `IVsDocDataFileChangeControl.IgnoreFileChanges(1)` перед записью,
-  `IVsPersistDocData.ReloadDocData(...)` после записи и затем
-  `IgnoreFileChanges(0)` устраняет modal dialog; последующий build подтверждённо
-  использует внешне изменённый ST source;
+- типизированный VSSDK reload через Running Document Table и
+  `IVsPersistDocData.ReloadDocData(...)` с
+  `RDD_IgnoreNextFileChange|RDD_RemoveUndoStack` устраняет modal dialog;
+  последующий build подтверждённо использует внешне изменённый ST source;
 - для закрытого `.TcPOU` временное открытие с последующим
   `ReloadDocData(...)` обновляет project model; XAE после reload снова не
   оставляет editor открытым;
-- `IVsPersistDocData.IsDocDataDirty(...)` надёжно обнаруживает dirty document
-  до внешней записи.
+- закрытие dirty editor с `vsSaveChangesNo` надёжно отбрасывает in-memory
+  версию до reload.
 
-Следовательно, post-edit проверка непосредственно перед build необходима, но
-сама по себе опаздывает. Для безопасной реализации нужен явный
-`prepare_external_edit(exactPaths)` / `complete_external_edit(editId)`
-handshake. На prepare gateway применяет profile policy `SaveAll|Reject`,
-проверяет dirty state и подавляет file-change notifications только для exact
-open documents. На complete он типизированно reload-ит открытые documents,
-временно открывает и reload-ит изменённые закрытые documents, а затем
-восстанавливает notifications в `finally`. COM interfaces и edit lease
-остаются внутри STA; исходно закрытые editors не должны оставаться открытыми.
+Перед build gateway повторно захватывает ownership, временно открывает каждый
+изменённый закрытый document, выполняет typed reload и снова закрывает editor.
+После reload выполняется второй fingerprint scan: изменение файлов во время
+синхронизации возвращает retryable error. В MVP добавление и удаление project
+sources не синхронизируется автоматически и завершается явной ошибкой.
 
 ## 14. `.tsproj` reorder-only noise
 
@@ -707,8 +711,8 @@ Tool result должен быть достаточен для обычного �
 - просмотр structured и raw logs;
 - кнопки reconnect, build, activate и open log folder;
 - явный индикатор, когда activation запрещён profile;
-- настройка `SaveAll`/`Reject` для несохранённых XAE documents перед build;
-- отображение unresolved external edit conflicts.
+- индикатор agent-owned workspace и количества отброшенных dirty documents;
+- отображение ошибок fingerprint/reload synchronization.
 
 UI не должен содержать отдельную реализацию операций; он вызывает тот же application service, что IPC.
 
@@ -728,7 +732,9 @@ COM_CALL_REJECTED
 COM_CALL_TIMEOUT
 BUILD_FAILED
 BUILD_RESULT_INCONSISTENT
-EXTERNAL_EDIT_CONFLICT
+XAE_WORKSPACE_OWNERSHIP_FAILED
+EXTERNAL_EDIT_UNSUPPORTED
+EXTERNAL_EDIT_SYNC_FAILED
 ACTIVATION_NOT_ALLOWED
 CONFIG_MODE_REQUIRED
 ACTIVATE_CONFIGURATION_FAILED
@@ -786,7 +792,7 @@ Metrics не обязательны для MVP, но structured events долж�
 
 1. Стабильный вызов `Restart TwinCAT (Config Mode)` в XAE 4024.17 без ADS runtime control.
 2. Надёжный источник exact runtime mode без расширения completion-only ADS adapter; допустимый результат spike — подтверждение, что MVP показывает только `started/unknown`.
-3. Public lifecycle, deadline и crash recovery для `prepare_external_edit` / `complete_external_edit` lease.
+3. Поддержка structural sync для добавленных и удалённых PLC source files.
 4. Полнота Error List по сравнению с Build Output на реальных PLC compile errors.
 5. Точный lifecycle `BuildEvents` в нескольких открытых XAE instances.
 6. Silent Mode и поведение confirmation dialogs при activation на тестовом стенде.
