@@ -563,11 +563,17 @@ EXTERNAL_EDIT_CONFLICT
 - внешний edit открытого несохранённого document создаёт file-modification
   conflict dialog ещё до build; Silent Mode его не подавляет, а последующий
   COM-вызов может блокироваться до deadline;
+- после обычного внешнего edit закрытого `.TcPOU` modal dialog не появляется,
+  но build использует stale project model; одного `Documents.Open(...)`
+  недостаточно;
 - типизированный VSSDK workflow
   `IVsDocDataFileChangeControl.IgnoreFileChanges(1)` перед записью,
   `IVsPersistDocData.ReloadDocData(...)` после записи и затем
   `IgnoreFileChanges(0)` устраняет modal dialog; последующий build подтверждённо
   использует внешне изменённый ST source;
+- для закрытого `.TcPOU` временное открытие с последующим
+  `ReloadDocData(...)` обновляет project model; XAE после reload снова не
+  оставляет editor открытым;
 - `IVsPersistDocData.IsDocDataDirty(...)` надёжно обнаруживает dirty document
   до внешней записи.
 
@@ -576,9 +582,10 @@ EXTERNAL_EDIT_CONFLICT
 `prepare_external_edit(exactPaths)` / `complete_external_edit(editId)`
 handshake. На prepare gateway применяет profile policy `SaveAll|Reject`,
 проверяет dirty state и подавляет file-change notifications только для exact
-open documents. На complete он типизированно reload-ит эти documents и
+open documents. На complete он типизированно reload-ит открытые documents,
+временно открывает и reload-ит изменённые закрытые documents, а затем
 восстанавливает notifications в `finally`. COM interfaces и edit lease
-остаются внутри STA.
+остаются внутри STA; исходно закрытые editors не должны оставаться открытыми.
 
 ## 14. `.tsproj` reorder-only noise
 
