@@ -263,6 +263,12 @@ public sealed class XaeSession : IDisposable
             }
         }
 
+        ValidateChangedPlcObjects(
+            paths,
+            cancellationToken);
+        GetRemaining(
+            deadlineUtc,
+            "xae.workspace.validate");
         XaeDocumentSynchronizationResult synchronized =
             await _dispatcher.InvokeAsync(
                 () => SynchronizeExternalChangesOnSta(
@@ -1217,6 +1223,33 @@ public sealed class XaeSession : IDisposable
         }
 
         return fullPath;
+    }
+
+    internal static void ValidateChangedPlcObjects(
+        IEnumerable<string> paths,
+        CancellationToken cancellationToken)
+    {
+        foreach (string path in paths.OrderBy(
+            value => value,
+            StringComparer.OrdinalIgnoreCase))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            using FileStream content = new(
+                path,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read | FileShare.Delete);
+            TwinCatPlcObjectValidationResult validation =
+                TwinCatPlcObjectValidator.Validate(content);
+            if (!validation.IsValid)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.PlcObjectInvalid,
+                    $"PLC object '{path}' failed pinned XSD "
+                    + $"validation: {validation.Error}",
+                    stage: "xae.workspace.validate");
+            }
+        }
     }
 
     private void EnsurePendingLaunchedProcess(int processId)

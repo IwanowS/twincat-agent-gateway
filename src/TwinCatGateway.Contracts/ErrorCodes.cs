@@ -32,6 +32,8 @@ public static class ErrorCodes
         "EXTERNAL_EDIT_UNSUPPORTED";
     public const string ExternalEditSyncFailed =
         "EXTERNAL_EDIT_SYNC_FAILED";
+    public const string PlcObjectInvalid =
+        "PLC_OBJECT_INVALID";
     public const string ActivationNotAllowed = "ACTIVATION_NOT_ALLOWED";
     public const string ConfigModeRequired = "CONFIG_MODE_REQUIRED";
     public const string ActivateConfigurationFailed = "ACTIVATE_CONFIGURATION_FAILED";
