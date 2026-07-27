@@ -22,7 +22,7 @@ MVP завершён, когда Codex может выполнить следу�
 10. при проблеме агент запросит detailed diagnostics или конкретный raw log;
 11. reorder-only `.tsproj` изменения будут отмечены как ожидаемые без полного чтения XML.
 
-Весь цикл выполняется без PowerShell. ADS surface ограничен чтением заранее настроенных TcUnit completion symbols; произвольные reads/writes, RPC и runtime control через ADS не входят в MVP.
+Весь цикл выполняется без PowerShell. ADS surface ограничен `ReadState` на фиксированном System Service port 10000 и чтением заранее настроенных TcUnit completion symbols выбранного target; произвольные reads/writes, RPC и runtime control через ADS не входят в MVP.
 
 ## 3. Milestone 0 — технические spikes
 
@@ -108,19 +108,16 @@ Acceptance:
 
 Не использовать UI coordinates, SendKeys и локализованный caption как постоянное решение.
 
-#### 0.6 Runtime status без расширения ADS surface
+#### 0.6 Read-only runtime status
 
-Проверить, какие состояния можно надёжно получить через:
-
-- `IsTwinCATStarted()`;
-- XAE command status;
-- другие доступные Automation Interface свойства;
-- Error List/last error messages.
+Проверить состояния через `AdsClient.TryReadState` на фиксированном System Service port 10000. NetId брать только из target, выбранного и проверенного через XAE/profile; не принимать NetId или port от MCP/CLI.
 
 Acceptance:
 
-- документировано, какие значения подтверждаются;
-- неподтверждённые состояния возвращаются как `unknown`.
+- `Run`, `Config/Reconfig`, `Stop/Stopping/Shutdown` и `Error/Exception` проверены на закреплённом ADS client;
+- неподдержанные состояния и ADS failures возвращаются как `unknown`;
+- raw ADS/device state и error evidence доступны в detailed diagnostics;
+- runtime status read не вызывает XAE dialogs и не меняет runtime state.
 
 #### 0.7 File edit/refresh
 
@@ -398,7 +395,7 @@ docs/
 - gateway/XAE/solution health;
 - current/last operation;
 - last build/activation/test summaries;
-- `IsTwinCATStarted()`;
+- read-only ADS System Service runtime state;
 - `GetLastErrorMessages()`;
 - COM retry/error statistics;
 - unread/new error cursor;
@@ -613,6 +610,7 @@ twincat-diff://<operation-id>/project-noise
 - Build/Rebuild/Clean;
 - Error List normalization;
 - compact operations/status;
+- read-only ADS System Service status adapter;
 - local IPC;
 - safe activation profile;
 - `ActivateConfiguration + StartRestartTwinCAT`;
@@ -661,6 +659,7 @@ twincat-diff://<operation-id>/project-noise
 | `.tsproj` reorder-only | Да | Да | Да |
 | Activation allowed/denied | Да | Да | Да |
 | Recovery after exception | Нет | Да | Да |
+| ADS System Service runtime status | Да | Да | Да |
 | TcUnit ADS completion | Да (fake ADS) | Да | Да |
 | ADS target/profile mismatch | Да | Да | Да |
 | TcUnit fresh report | Да | Да | Да |
@@ -705,7 +704,7 @@ twincat-diff://<operation-id>/project-noise
 - TcUnit report связан с текущим запуском и не берётся из старого файла.
 - `.tsproj` reorder-only noise определяется без изменения файла.
 - Нет PowerShell runtime dependency.
-- ADS client ограничен фиксированными TcUnit completion reads; general-purpose ADS access отсутствует.
+- ADS client ограничен System Service `ReadState` и фиксированными TcUnit completion reads выбранного target; general-purpose ADS access отсутствует.
 - MCP можно перезапустить без потери gateway/XAE session.
 - CLI и MCP используют общий IPC/domain contract.
 - Все P0 сценарии имеют тесты соответствующего уровня.

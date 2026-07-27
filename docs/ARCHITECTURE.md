@@ -15,7 +15,7 @@ AI-агент должен иметь возможность редактиро�
 - уменьшить расход токенов за счёт структурированных кратких результатов;
 - отделить хрупкую XAE automation от конкретного AI-агента;
 - сохранить возможность ручной диагностики через UI и CLI;
-- использовать ADS только для read-only проверки завершения TcUnit на явно выбранном тестовом target;
+- использовать ADS только для read-only статуса System Service и проверки завершения TcUnit на явно выбранном target;
 - редактировать PLC-код через файлы;
 - не исправлять автоматически генерируемый `.tsproj` noise;
 - сделать опасные операции явными и ограниченными project profiles.
@@ -66,11 +66,12 @@ AI-агент должен иметь возможность редактиро�
 └───────────────────────┬──────────────────────┬───────────────┘
                         │ COM                  │ read-only ADS
                ┌────────▼────────┐     ┌───────▼──────────────┐
-               │ TwinCAT XAE     │     │ selected PLC runtime │
-               │ VS2019/XAE Shell│     │ port 851             │
-               └─────────────────┘     └──────────────────────┘
-                                      fixed TcUnit completion
-                                      symbols only
+               │ TwinCAT XAE     │     │ selected target      │
+               │ VS2019/XAE Shell│     │ system port 10000    │
+               └─────────────────┘     │ + PLC runtime port   │
+                                       └──────────────────────┘
+                                       ReadState + fixed TcUnit
+                                       completion symbols only
 
 ┌──────────────────────┐
 │ twincatctl            │ .NET 8
@@ -219,7 +220,7 @@ Status endpoint читает immutable snapshot и не блокирует UI н
 - возвращает counts и failed tests;
 - хранит исходный XML как resource.
 
-ADS adapter не предоставляет произвольный путь symbol вызывающему коду, не пишет значения, не вызывает RPC и не меняет runtime state. Activation/restart остаются обязанностью `ActivationService` через Automation Interface.
+ADS adapters не принимают от вызывающего кода произвольные NetId, port или symbol path, не пишут значения, не вызывают RPC и не меняют runtime state. Status adapter вызывает только `TryReadState` на фиксированном System Service port 10000 выбранного XAE target. Activation/restart остаются обязанностью `ActivationService` через Automation Interface.
 
 Стандартные symbol paths задаются operator-controlled profile и проверяются на закреплённой версии TcUnit. Они не считаются стабильным публичным API TcUnit и не передаются произвольными аргументами MCP/CLI.
 
@@ -441,7 +442,7 @@ fingerprint baseline, а список от caller используется то�
 7. Вызвать `ActivateConfiguration()`.
 8. Вызвать `StartRestartTwinCAT()`.
 9. Дождаться окончания команды по доступным XAE/Automation Interface признакам.
-10. Проверить `IsTwinCATStarted()`.
+10. Проверить runtime state через read-only ADS `TryReadState` на System Service port 10000.
 11. Прочитать `GetLastErrorMessages()` и XAE diagnostics.
 12. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
 
@@ -522,7 +523,7 @@ Target identity следует показывать и сохранять в aud
 - `ITcSysManager` availability;
 - active configuration/platform;
 - target NetId;
-- `IsTwinCATStarted()`;
+- raw ADS state и device state с System Service port 10000;
 - `GetLastErrorMessages()`;
 - последний HRESULT;
 - COM retry counts и latency;
@@ -532,9 +533,9 @@ Target identity следует показывать и сохранять в aud
 - `.tsproj` noise classification;
 - IPC/log-store health.
 
-### 12.3 Ограничение runtime status
+### 12.3 Runtime status
 
-`IsTwinCATStarted()` сообщает, запущена ли система, но не является полным runtime-state API. Read-only ADS adapter намеренно ограничен TcUnit completion и не используется как общий runtime status API. Поэтому exact `Run/Config/Exception` нельзя обещать без отдельного проверенного XAE-specific источника.
+Gateway читает состояние выбранного target через `AdsClient.TryReadState` на фиксированном ADS System Service port 10000. NetId поступает только из типизированного `ITcSysManager2.GetTargetNetId()` и не задаётся MCP/CLI caller. Это отдельный узкий read-only adapter, а не general-purpose ADS surface.
 
 Поле `mode` принимает:
 
@@ -542,7 +543,7 @@ Target identity следует показывать и сохранять в aud
 run | config | exception | stopped | unknown
 ```
 
-но gateway возвращает конкретное значение только при наличии надёжного подтверждения. Иначе — `unknown` плюс evidence в detailed diagnostics.
+`Run`, `Config/Reconfig`, `Stop/Stopping/Shutdown` и `Error/Exception` отображаются соответственно в `run`, `config`, `stopped` и `exception`. Переходные, неподдержанные состояния и ошибки ADS возвращают `unknown`. Detailed diagnostics сохраняет NetId, port, raw ADS state, device state, timestamp и error code. Runtime status failure не делает исправную XAE-сессию disconnected.
 
 ## 13. Редактирование через файлы
 
@@ -869,7 +870,7 @@ IPC_VERSION_MISMATCH
 - Named Pipe ACL ограничена текущим пользователем.
 - Activation запрещена по умолчанию.
 - Для этого репозитория локальная activation/restart и другие изменения состояния TwinCAT runtime запрещены; такие сценарии выполняются только на явно разрешённом удалённом тестовом стенде.
-- ADS разрешён только для чтения фиксированных TcUnit completion symbols на target, связанном с разрешённым profile. Произвольные symbol paths, ADS writes, RPC и `WriteControl` не входят в gateway API.
+- ADS разрешён только для `ReadState` на фиксированном System Service port 10000 и чтения фиксированных TcUnit completion symbols на target, выбранном и проверенном через XAE/profile. Произвольные NetId, ports, symbol paths, ADS writes, RPC и `WriteControl` не входят в gateway API.
 - Profile задаётся локальной конфигурацией, а не произвольными аргументами агента.
 - Solution/target выводятся перед activation в UI и operation log.
 - MCP не получает произвольный COM invoke tool.
@@ -897,13 +898,12 @@ Metrics не обязательны для MVP, но structured events долж�
 До фиксации реализации провести spikes:
 
 1. Стабильный вызов `Restart TwinCAT (Config Mode)` в XAE 4024.17 без ADS runtime control.
-2. Надёжный источник exact runtime mode без расширения completion-only ADS adapter; допустимый результат spike — подтверждение, что MVP показывает только `started/unknown`.
-3. Поддержка structural sync для добавленных и удалённых PLC source files.
-4. Полнота Error List по сравнению с Build Output на реальных PLC compile errors.
-5. Точный lifecycle `BuildEvents` в нескольких открытых XAE instances.
-6. Silent Mode и поведение confirmation dialogs при activation на тестовом стенде.
-7. Совместимая с .NET Framework 4.8 x86 и TwinCAT 4024.17 версия Beckhoff ADS client, reconnect после restart и доступность TcUnit completion symbols на реальном стенде.
-8. Закреплённая версия TcUnit, стабильность внутренних completion symbol paths и поведение `xUnitEnablePublish/xUnitFilePath` на 4024.17.
+2. Поддержка structural sync для добавленных и удалённых PLC source files.
+3. Полнота Error List по сравнению с Build Output на реальных PLC compile errors.
+4. Точный lifecycle `BuildEvents` в нескольких открытых XAE instances.
+5. Silent Mode и поведение confirmation dialogs при activation на тестовом стенде.
+6. Reconnect ADS client после restart и доступность TcUnit completion symbols на реальном стенде.
+7. Закреплённая версия TcUnit, стабильность внутренних completion symbol paths и поведение `xUnitEnablePublish/xUnitFilePath` на 4024.17.
 
 ## 22. Источники
 
@@ -913,6 +913,8 @@ Metrics не обязательны для MVP, но structured events долж�
 - Beckhoff: ActivateConfiguration — https://infosys.beckhoff.com/content/1031/tcautomationinterface/12425796491.html
 - Beckhoff: StartRestartTwinCAT — https://infosys.beckhoff.com/content/1033/tc3_automationinterface/242762891.html
 - Beckhoff: Silent Mode — https://infosys.beckhoff.com/content/1033/tc3_automationinterface/2489025803.html
+- Beckhoff: AdsClient.TryReadState — https://infosys.beckhoff.com/content/1033/tc3_ads.net/9407838987.html
+- Beckhoff: ADS System Service port 10000 — https://infosys.beckhoff.com/content/1033/tcadscommon/12439473419.html
 - Microsoft: IVsDocDataFileChangeControl — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivsdocdatafilechangecontrol
 - Microsoft: IVsPersistDocData.ReloadDocData — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivspersistdocdata.reloaddocdata
 - Microsoft: IVsFileChangeEx — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivsfilechangeex

@@ -93,7 +93,7 @@ After code changes, run the real project build and relevant tests. Treat compile
 - CLI and MCP are thin IPC clients; domain logic belongs in the gateway/core.
 - Activation is always an explicit operation and must never follow a build implicitly.
 - Do not close an XAE instance opened by the user unless explicitly requested.
-- ADS is allowed in the MVP only through a narrow read-only TcUnit completion adapter. It may read the configured completion and suite-count symbols from the explicitly selected test target. Do not add general symbol browsing, ADS writes, RPC, runtime state control, PLC debugging, or Automation Interface code editing.
+- ADS is allowed in the MVP only through narrow read-only adapters. Runtime status may call `ReadState` on the fixed System Service port 10000, and TcUnit may read the configured completion and suite-count symbols. Both use the target selected and verified through XAE/profile. Do not add general symbol browsing, caller-selected ADS ports or NetIds, ADS writes, RPC, runtime state control, PLC debugging, or Automation Interface code editing.
 - Do not add PowerShell scripts or modules as a product implementation layer. Development/bootstrap scripts are allowed only when they do not duplicate gateway domain behavior.
 - Do not rewrite or revert reorder-only `.tsproj` changes. Detect and mark them as expected generated noise.
 
@@ -145,7 +145,7 @@ State-changing TwinCAT tests must be clearly marked and must fail closed unless 
 
 - Activate only a configured and explicitly allowed target profile.
 - Local TwinCAT activation, restart, runtime-mode changes, PLC login, and ADS writes are prohibited for this repository. State-changing tests may target only the explicitly allow-listed remote test bench.
-- The TcUnit ADS reader must use the target selected and verified by the activation profile; MCP/CLI callers cannot supply an unrelated NetId or arbitrary symbol path.
+- Read-only ADS adapters must use the target selected and verified through XAE/profile. MCP/CLI callers cannot supply an unrelated NetId, arbitrary port, or arbitrary symbol path.
 - Never substitute another target, solution, or AMS identity automatically.
 - Do not put secrets, credentials, or unnecessary PLC source content in logs.
 - Do not return stack traces, full Build Output, full Error List, large XML, or large diffs by default.
