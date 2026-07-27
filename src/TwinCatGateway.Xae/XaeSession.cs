@@ -135,6 +135,19 @@ public sealed class XaeSession : IDisposable
             cancellationToken);
     }
 
+    public Task<XaeSessionSnapshot> VerifyAttachedAsync(
+        string solutionPath,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        string normalizedSolution = NormalizeSolutionPath(solutionPath);
+        return _dispatcher.InvokeAsync(
+            () => VerifyAttachedOnSta(normalizedSolution),
+            timeout,
+            cancellationToken);
+    }
+
     public Task DisconnectAsync(
         TimeSpan timeout,
         CancellationToken cancellationToken)
@@ -523,6 +536,52 @@ public sealed class XaeSession : IDisposable
             SysManagerAvailable = true,
             LaunchedByGateway = false,
             DiscoveredInstances = instances,
+        };
+        return CloneSnapshot(_snapshot);
+    }
+
+    private XaeSessionSnapshot VerifyAttachedOnSta(
+        string normalizedSolution)
+    {
+        if (_dte is null || _sysManager is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: "xae.health");
+        }
+
+        DteInstanceInfo info = RunningObjectTableScanner.InspectDte(
+            _snapshot.SelectedInstance?.Moniker ?? string.Empty,
+            _dte);
+        if (!string.Equals(
+            info.Solution,
+            normalizedSolution,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.SolutionMismatch,
+                "The attached XAE no longer has the configured solution open.",
+                retryable: true,
+                stage: "xae.health");
+        }
+
+        info.Selected = true;
+        info.SelectionReason =
+            _snapshot.SelectedInstance?.SelectionReason;
+        _snapshot = new XaeSessionSnapshot
+        {
+            Connected = true,
+            SelectedInstance = CloneInfo(info),
+            SysManagerAvailable = true,
+            LaunchedByGateway = _snapshot.LaunchedByGateway,
+            DiscoveredInstances = _snapshot.DiscoveredInstances
+                .Select(instance =>
+                    instance.Selected
+                        ? CloneInfo(info)!
+                        : CloneInfo(instance)!)
+                .ToArray(),
         };
         return CloneSnapshot(_snapshot);
     }

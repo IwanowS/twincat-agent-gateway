@@ -96,6 +96,32 @@ public sealed class XaeEnvironmentTests
         Assert.False(process.HasExited);
     }
 
+    [XaeFact]
+    public async Task AttachedSessionHealthCheckPreservesExactSelection()
+    {
+        string solution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        using XaeSession session = new();
+        await session.AttachAsync(
+            solution,
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+
+        XaeSessionSnapshot snapshot =
+            await session.VerifyAttachedAsync(
+                solution,
+                TimeSpan.FromSeconds(10),
+                CancellationToken.None);
+
+        Assert.True(snapshot.Connected);
+        Assert.True(snapshot.SysManagerAvailable);
+        Assert.Equal(
+            solution,
+            snapshot.SelectedInstance?.Solution,
+            ignoreCase: true);
+    }
+
     [XaeLaunchFact]
     public async Task GatewayCanLaunchAndOwnNewXae()
     {
