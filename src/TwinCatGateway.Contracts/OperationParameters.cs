@@ -13,4 +13,8 @@ public sealed class CancelOperationParameters
 public sealed class GetResourceParameters
 {
     public string Uri { get; set; } = string.Empty;
+
+    public int MaximumCharacters { get; set; } = 64 * 1024;
+
+    public long Offset { get; set; }
 }
