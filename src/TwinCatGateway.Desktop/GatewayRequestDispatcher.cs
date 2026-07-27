@@ -75,6 +75,15 @@ public sealed class GatewayRequestDispatcher
                     return _service.StartBuild(parameters);
                 }
 
+            case GatewayMethods.Activate:
+                {
+                    ActivateParameters parameters =
+                        request.DeserializeParameters<
+                            ActivateParameters>(
+                            _serializerOptions);
+                    return _service.StartActivation(parameters);
+                }
+
             case GatewayMethods.GetOperation:
                 {
                     GetOperationParameters parameters =

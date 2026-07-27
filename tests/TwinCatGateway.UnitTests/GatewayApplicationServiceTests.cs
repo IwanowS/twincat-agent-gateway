@@ -348,6 +348,199 @@ public sealed class GatewayApplicationServiceTests
             fixture.Service.GetStatus().Gateway.State);
     }
 
+    [Fact]
+    public void ActivationFailsClosedWhenProfileDisablesIt()
+    {
+        ProjectProfile profile = CreateActivationProfile();
+        profile.AllowActivation = false;
+        using ServiceFixture fixture = new(
+            activationExecutor: SuccessfulActivation,
+            activeProfile: profile);
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.StartActivation(
+                    new ActivateParameters
+                    {
+                        Profile = profile.Name,
+                    }));
+
+        Assert.Equal(
+            ErrorCodes.ActivationNotAllowed,
+            exception.Code);
+        Assert.Empty(fixture.Operations.GetRecent(10));
+    }
+
+    [Fact]
+    public void ActivationRequiresLatestBuildToBeRecentAndUsable()
+    {
+        DateTimeOffset now = new(
+            2026,
+            7,
+            28,
+            2,
+            0,
+            0,
+            TimeSpan.Zero);
+        ProjectProfile profile = CreateActivationProfile();
+        using ServiceFixture fixture = new(
+            activationExecutor: SuccessfulActivation,
+            activeProfile: profile,
+            clock: new TestClock(now));
+        SeedBuild(
+            fixture.Operations,
+            "build-success",
+            BuildAction.Build,
+            now.AddMinutes(-1));
+        SeedBuild(
+            fixture.Operations,
+            "clean-latest",
+            BuildAction.Clean,
+            now.AddSeconds(-10));
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.StartActivation(
+                    new ActivateParameters
+                    {
+                        Profile = profile.Name,
+                    }));
+
+        Assert.Equal(
+            ErrorCodes.RecentBuildRequired,
+            exception.Code);
+    }
+
+    [Fact]
+    public async Task ActivationPublishesLifecycleAndSummary()
+    {
+        DateTimeOffset now = new(
+            2026,
+            7,
+            28,
+            2,
+            0,
+            0,
+            TimeSpan.Zero);
+        ProjectProfile profile = CreateActivationProfile();
+        using ServiceFixture fixture = new(
+            activationExecutor: SuccessfulActivation,
+            activeProfile: profile,
+            clock: new TestClock(now));
+        SeedBuild(
+            fixture.Operations,
+            "build-success",
+            BuildAction.Build,
+            now.AddMinutes(-1));
+        fixture.Status.Update(status =>
+        {
+            status.Xae.Connected = true;
+            status.Gateway.State = GatewayState.Ready;
+            return status;
+        });
+
+        OperationAccepted accepted =
+            fixture.Service.StartActivation(
+                new ActivateParameters
+                {
+                    Profile = profile.Name,
+                });
+        StoredOperation completed = await WaitForStateAsync(
+            fixture.Operations,
+            accepted.OperationId,
+            OperationState.Succeeded);
+
+        ActivationResult result =
+            Assert.IsType<ActivationResult>(completed.Result);
+        Assert.True(result.Ok);
+        Assert.Equal(
+            accepted.OperationId,
+            fixture.Service.GetStatus()
+                .LastActivation?.OperationId);
+        Assert.Equal(
+            "192.168.3.31.1.1",
+            fixture.Service.GetStatus()
+                .LastActivation?.Target.AmsNetId);
+        Assert.Equal(
+            new[]
+            {
+                GatewayEventTypes.ActivationQueued,
+                GatewayEventTypes.ActivationStarted,
+                GatewayEventTypes.ActivationSucceeded,
+            },
+            fixture.Events
+                .ReadAfter(null, 0, 100)
+                .Events
+                .Where(gatewayEvent =>
+                    gatewayEvent.OperationId
+                        == accepted.OperationId)
+                .Select(gatewayEvent =>
+                    gatewayEvent.Type));
+    }
+
+    private static Task<ActivationResult> SuccessfulActivation(
+        string operationId,
+        ActivateParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(
+            new ActivationResult
+            {
+                Ok = true,
+                OperationId = operationId,
+                Profile = parameters.Profile,
+                Solution =
+                    @"C:\Projects\Machine\Machine.sln",
+                Target = new TargetIdentity
+                {
+                    Name = "WIN-T077ADA",
+                    AmsNetId = "192.168.3.31.1.1",
+                },
+            });
+    }
+
+    private static ProjectProfile CreateActivationProfile()
+    {
+        return new ProjectProfile
+        {
+            Name = "bench",
+            Solution = @"C:\Projects\Machine\Machine.sln",
+            AllowActivation = true,
+            ExpectedTarget = new TargetIdentity
+            {
+                Name = "WIN-T077ADA",
+                AmsNetId = "192.168.3.31.1.1",
+            },
+            RequireRecentSuccessfulBuild = true,
+            RecentBuildMaxAgeSeconds = 600,
+        };
+    }
+
+    private static void SeedBuild(
+        OperationStore operations,
+        string operationId,
+        BuildAction action,
+        DateTimeOffset completedAtUtc)
+    {
+        operations.AddQueued(
+            operationId,
+            OperationKind.Build,
+            completedAtUtc.AddSeconds(-2));
+        operations.TryMarkRunning(
+            operationId,
+            completedAtUtc.AddSeconds(-1));
+        operations.TryComplete(
+            operationId,
+            OperationState.Succeeded,
+            completedAtUtc,
+            new BuildResult
+            {
+                Ok = true,
+                OperationId = operationId,
+                Action = action,
+            });
+    }
+
     private static TaskCompletionSource<bool> NewCompletionSource()
     {
         return new TaskCompletionSource<bool>(
@@ -371,7 +564,10 @@ public sealed class GatewayApplicationServiceTests
 
         public ServiceFixture(
             Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
-            BuildOperationExecutor? buildExecutor = null)
+            BuildOperationExecutor? buildExecutor = null,
+            ActivationOperationExecutor? activationExecutor = null,
+            ProjectProfile? activeProfile = null,
+            IClock? clock = null)
         {
             _temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -385,6 +581,7 @@ public sealed class GatewayApplicationServiceTests
             Logs = new LocalLogStore(_temporaryDirectory);
             Queue = new OperationQueue(
                 Operations,
+                clock: clock,
                 gatewayEventSink: Events);
             Service = new GatewayApplicationService(
                 "0.1.0",
@@ -394,7 +591,10 @@ public sealed class GatewayApplicationServiceTests
                 Logs,
                 Events,
                 diagnosticsProvider,
-                buildExecutor);
+                buildExecutor,
+                activationExecutor,
+                activeProfile,
+                clock);
         }
 
         public GatewayStatusSnapshotStore Status { get; }
@@ -417,6 +617,16 @@ public sealed class GatewayApplicationServiceTests
                 Directory.Delete(_temporaryDirectory, recursive: true);
             }
         }
+    }
+
+    private sealed class TestClock : IClock
+    {
+        public TestClock(DateTimeOffset utcNow)
+        {
+            UtcNow = utcNow;
+        }
+
+        public DateTimeOffset UtcNow { get; }
     }
 
     private static async Task<StoredOperation> WaitForStateAsync(

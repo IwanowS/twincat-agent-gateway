@@ -13,6 +13,11 @@ public delegate Task<BuildResult> BuildOperationExecutor(
     BuildParameters parameters,
     CancellationToken cancellationToken);
 
+public delegate Task<ActivationResult> ActivationOperationExecutor(
+    string operationId,
+    ActivateParameters parameters,
+    CancellationToken cancellationToken);
+
 public sealed class GatewayApplicationService
 {
     private readonly string _version;
@@ -22,6 +27,9 @@ public sealed class GatewayApplicationService
     private readonly LocalLogStore _logs;
     private readonly Func<GatewayDiagnosticsResult>? _diagnosticsProvider;
     private readonly BuildOperationExecutor? _buildExecutor;
+    private readonly ActivationOperationExecutor? _activationExecutor;
+    private readonly ProjectProfile? _activeProfile;
+    private readonly IClock _clock;
     private readonly GatewayEventJournal _eventJournal;
 
     public GatewayApplicationService(
@@ -32,7 +40,10 @@ public sealed class GatewayApplicationService
         LocalLogStore logs,
         GatewayEventJournal eventJournal,
         Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
-        BuildOperationExecutor? buildExecutor = null)
+        BuildOperationExecutor? buildExecutor = null,
+        ActivationOperationExecutor? activationExecutor = null,
+        ProjectProfile? activeProfile = null,
+        IClock? clock = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -46,6 +57,9 @@ public sealed class GatewayApplicationService
             ?? throw new ArgumentNullException(nameof(logs));
         _diagnosticsProvider = diagnosticsProvider;
         _buildExecutor = buildExecutor;
+        _activationExecutor = activationExecutor;
+        _activeProfile = activeProfile;
+        _clock = clock ?? SystemClock.Instance;
         _eventJournal = eventJournal
             ?? throw new ArgumentNullException(
                 nameof(eventJournal));
@@ -193,6 +207,95 @@ public sealed class GatewayApplicationService
             OperationKind.Build,
             (operationId, cancellationToken) =>
                 ExecuteBuildAsync(
+                    operationId,
+                    captured,
+                    cancellationToken),
+            timeout);
+    }
+
+    public OperationAccepted StartActivation(
+        ActivateParameters parameters)
+    {
+        if (parameters is null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (_activationExecutor is null
+            || _activeProfile is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "The XAE activation executor is unavailable.",
+                retryable: true,
+                stage: "activation.enqueue");
+        }
+
+        if (string.IsNullOrWhiteSpace(parameters.Profile))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Activation requires an explicit profile name.",
+                stage: "activation.validate");
+        }
+
+        if (!string.Equals(
+            parameters.Profile,
+            _activeProfile.Name,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileNotFound,
+                $"Project profile '{parameters.Profile}' is not active.",
+                stage: "activation.validate");
+        }
+
+        if (!_activeProfile.AllowActivation)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ActivationNotAllowed,
+                $"Activation is disabled for profile '{_activeProfile.Name}'.",
+                stage: "activation.validate");
+        }
+
+        if (string.IsNullOrWhiteSpace(
+            _activeProfile.ExpectedTarget?.AmsNetId))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileInvalid,
+                "The activation profile has no expected AMS NetId.",
+                stage: "activation.validate");
+        }
+
+        if (parameters.TimeoutSeconds.HasValue
+            && parameters.TimeoutSeconds.Value <= 0)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Activation timeout must be positive.",
+                stage: "activation.validate");
+        }
+
+        bool waitForTcUnit = parameters.WaitForTcUnit
+            ?? _activeProfile.AutoWaitForTcUnit;
+        if (waitForTcUnit
+            && _activeProfile.TcUnit is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileInvalid,
+                "TcUnit waiting is enabled but no TcUnit profile is configured.",
+                stage: "activation.validate");
+        }
+
+        ValidateRecentBuild(_activeProfile);
+        ActivateParameters captured =
+            CloneActivateParameters(parameters);
+        TimeSpan timeout = TimeSpan.FromSeconds(
+            captured.TimeoutSeconds ?? 120);
+        return _queue.Enqueue(
+            OperationKind.Activate,
+            (operationId, cancellationToken) =>
+                ExecuteActivationAsync(
                     operationId,
                     captured,
                     cancellationToken),
@@ -371,6 +474,112 @@ public sealed class GatewayApplicationService
         }
     }
 
+    private async Task<OperationExecutionResult>
+        ExecuteActivationAsync(
+            string operationId,
+            ActivateParameters parameters,
+            CancellationToken cancellationToken)
+    {
+        DateTimeOffset startedAtUtc = _clock.UtcNow;
+        _status.Update(status =>
+        {
+            status.Gateway.State = GatewayState.Activating;
+            status.CurrentOperation = new OperationSummary
+            {
+                OperationId = operationId,
+                Kind = OperationKind.Activate,
+                State = OperationState.Running,
+                QueuedAtUtc = startedAtUtc,
+                StartedAtUtc = startedAtUtc,
+            };
+            return status;
+        });
+        try
+        {
+            ActivationResult result =
+                await _activationExecutor!(
+                    operationId,
+                    parameters,
+                    cancellationToken).ConfigureAwait(false);
+            result.OperationId = operationId;
+            _status.Update(status =>
+            {
+                status.LastActivation = new ActivationSummary
+                {
+                    Ok = result.Ok,
+                    OperationId = operationId,
+                    Profile = result.Profile,
+                    Target = CloneTarget(result.Target),
+                };
+                return status;
+            });
+            if (result.Ok)
+            {
+                return OperationExecutionResult.Success(
+                    result,
+                    result.Resources);
+            }
+
+            return OperationExecutionResult.Failure(
+                new GatewayError
+                {
+                    Code =
+                        ErrorCodes.ActivateConfigurationFailed,
+                    Message =
+                        "TwinCAT activation did not satisfy its postconditions.",
+                    Stage = "activation.verify",
+                },
+                result,
+                result.Resources);
+        }
+        finally
+        {
+            _status.Update(status =>
+            {
+                status.CurrentOperation = null;
+                status.Gateway.State = status.Xae.Connected
+                    ? GatewayState.Ready
+                    : GatewayState.Disconnected;
+                return status;
+            });
+        }
+    }
+
+    private void ValidateRecentBuild(ProjectProfile profile)
+    {
+        if (!profile.RequireRecentSuccessfulBuild)
+        {
+            return;
+        }
+
+        StoredOperation? latestBuild = _operations
+            .GetRecent(500)
+            .FirstOrDefault(operation =>
+                operation.Summary.Kind
+                    == OperationKind.Build
+                && operation.Summary.CompletedAtUtc.HasValue);
+        BuildResult? result =
+            latestBuild?.Result as BuildResult;
+        DateTimeOffset oldestAllowed =
+            _clock.UtcNow.AddSeconds(
+                -profile.RecentBuildMaxAgeSeconds);
+        bool acceptable = latestBuild is not null
+            && latestBuild.Summary.State
+                == OperationState.Succeeded
+            && latestBuild.Summary.CompletedAtUtc
+                >= oldestAllowed
+            && result?.Ok == true
+            && result.Action != BuildAction.Clean;
+        if (!acceptable)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RecentBuildRequired,
+                "Activation requires the latest build operation to be "
+                    + "a recent successful Build or Rebuild.",
+                stage: "activation.validate");
+        }
+    }
+
     private static BuildParameters CloneBuildParameters(
         BuildParameters source)
     {
@@ -385,6 +594,27 @@ public sealed class GatewayApplicationService
                 ?? new List<string>(),
             Detail = source.Detail,
             TimeoutSeconds = source.TimeoutSeconds,
+        };
+    }
+
+    private static ActivateParameters CloneActivateParameters(
+        ActivateParameters source)
+    {
+        return new ActivateParameters
+        {
+            Profile = source.Profile,
+            WaitForTcUnit = source.WaitForTcUnit,
+            TimeoutSeconds = source.TimeoutSeconds,
+        };
+    }
+
+    private static TargetIdentity CloneTarget(
+        TargetIdentity source)
+    {
+        return new TargetIdentity
+        {
+            Name = source.Name,
+            AmsNetId = source.AmsNetId,
         };
     }
 }
