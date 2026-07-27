@@ -15,6 +15,7 @@ public static class ErrorCodes
     public const string XaeNotFound = "XAE_NOT_FOUND";
     public const string XaeMultipleMatches = "XAE_MULTIPLE_MATCHES";
     public const string XaeProgIdNotRegistered = "XAE_PROGID_NOT_REGISTERED";
+    public const string XaeLaunchFailed = "XAE_LAUNCH_FAILED";
     public const string SolutionNotFound = "SOLUTION_NOT_FOUND";
     public const string SolutionMismatch = "SOLUTION_MISMATCH";
     public const string SysManagerNotAvailable = "SYSMANAGER_NOT_AVAILABLE";

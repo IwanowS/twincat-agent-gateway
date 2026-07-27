@@ -12,7 +12,9 @@ namespace TwinCatGateway.Xae;
 
 internal static class RunningObjectTableScanner
 {
-    public static RotScanResult Scan()
+    public static RotScanResult Scan(
+        string? requiredProgId = null,
+        int? requiredProcessId = null)
     {
         int hResult = CreateBindCtx(0, out IBindCtx? bindContext);
         Marshal.ThrowExceptionForHR(hResult);
@@ -40,6 +42,14 @@ internal static class RunningObjectTableScanner
                     }
 
                     if (!IsXaeDteMoniker(displayName))
+                    {
+                        continue;
+                    }
+
+                    if (!MatchesRequiredInstance(
+                        displayName,
+                        requiredProgId,
+                        requiredProcessId))
                     {
                         continue;
                     }
@@ -198,6 +208,20 @@ internal static class RunningObjectTableScanner
             || displayName.IndexOf(
                 "!TcXaeShell.DTE.",
                 StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
+    private static bool MatchesRequiredInstance(
+        string moniker,
+        string? requiredProgId,
+        int? requiredProcessId)
+    {
+        return (requiredProgId is null
+                || string.Equals(
+                    GetProgId(moniker),
+                    requiredProgId,
+                    StringComparison.OrdinalIgnoreCase))
+            && (requiredProcessId is null
+                || GetProcessId(moniker) == requiredProcessId);
     }
 
     private static string? GetProgId(string moniker)
