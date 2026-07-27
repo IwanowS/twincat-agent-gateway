@@ -101,6 +101,9 @@ State-changing scenarios run only on a dedicated remote test bench with:
 - an ADS route from the gateway host to the selected target;
 - a test PLC task that cyclically calls `TcUnit.RUN()` or `TcUnit.RUN_IN_SEQUENCE()` and exposes the configured completion symbols;
 - TcUnit xUnit publishing enabled to an accessible report path;
+- for a remote runtime, a dedicated read-only SMB share (or equivalent
+  filesystem access) for that report path; administrative shares are not a
+  supported assumption;
 - retained gateway, XAE, build, activation, and TcUnit logs.
 
 If the bench is unavailable, report real-XAE tests as not run. Do not replace them with mocked acceptance.

@@ -230,6 +230,13 @@ ADS adapters не принимают от вызывающего кода про
 
 Если unit-тесты запускаются автоматически вместе с boot project, test operation может быть связана с activation operation.
 
+При эффективном `waitForTcUnit=true` gateway снимает baseline отчёта
+непосредственно перед activation. После успешного restart/postcondition он
+ставит отдельную `OperationKind.Test` в ту же последовательную очередь и
+возвращает её ID в `ActivationResult.testOperationId`. Activation не
+становится неуспешной из-за последующего test failure: физическое применение
+конфигурации и результат тестов остаются двумя явно связанными операциями.
+
 ### 7.8 ProjectChangeClassifier
 
 Определяет шумовые изменения `.tsproj` без их исправления.
@@ -456,9 +463,10 @@ Gateway не вызывает `SaveAll` перед activation: при agent-owne
 последовательными операциями; activation никогда не запускается из build
 неявно.
 
-До завершения TcUnit stage запрос с эффективным `waitForTcUnit=true`
-отклоняется до первой изменяющей команды. Gateway не выполняет частичную
-activation, если обещанная связанная test operation ещё недоступна.
+Если TcUnit executor или profile отсутствует, запрос с эффективным
+`waitForTcUnit=true` отклоняется до первой изменяющей команды. Gateway не
+выполняет частичную activation, если обещанная связанная test operation
+недоступна.
 
 ### 11.3 Recovery to Config
 
@@ -813,6 +821,12 @@ contract. Например, `TcModuleClass.xsd` не нужен MVP, пока ge
 10. Gateway проверяет свежесть, стабильность и парсит XML.
 11. Агент получает counts и failures.
 
+Report transport — обычный read-only filesystem path, локальный или UNC,
+заданный operator-controlled profile. Gateway не загружает файл через ADS и
+не расширяет ADS surface до произвольного file access. Для remote runtime
+каталог отчёта должен быть опубликован отдельным read-only share или иным
+образом доступен desktop gateway под его Windows account.
+
 Перед activation gateway сохраняет baseline report и удаляет старый файл только при явно разрешённом локальном report path. Минимальная проверка текущего запуска:
 
 - связать test operation с конкретным successful activation/restart;
@@ -826,6 +840,16 @@ contract. Например, `TcModuleClass.xsd` не нужен MVP, пока ge
 - проверить наличие test suite/test case данных.
 
 ADS completion является доказательством окончания выполнения, но не источником pass/fail. Авторитетный результат — свежий валидный xUnit XML текущей operation. Лучшее будущее улучшение — run identifier внутри test harness/report.
+
+Test operation имеет собственные lifecycle events `tcunit.queued`,
+`tcunit.started`, `tcunit.succeeded|failed|timedOut|cancelled`. Дополнительные
+stage events `tcunit.completionObserved`, `tcunit.reportProduced` и
+`tcunit.zeroTests` используют тот же общий event cursor. Missing ADS
+route/port возвращает `TEST_ADS_UNAVAILABLE`, missing fixed symbol —
+`TEST_COMPLETION_SYMBOL_UNAVAILABLE`, отсутствие completion —
+`TEST_COMPLETION_TIMEOUT`, stale/missing report —
+`TEST_REPORT_NOT_PRODUCED`, invalid stable XML —
+`TEST_REPORT_INVALID`.
 
 Требования к test project:
 

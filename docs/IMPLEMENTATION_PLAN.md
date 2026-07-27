@@ -493,6 +493,8 @@ docs/
 - report resource;
 - timeout/error semantics;
 - linking activationId -> ADS evidence -> test report;
+- отдельная serial `OperationKind.Test`, ID которой возвращается из activation;
+- общий event cursor для activation и связанной test operation;
 - UI test summary;
 - CLI command.
 
