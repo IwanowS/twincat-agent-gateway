@@ -11,4 +11,13 @@
   <ItemGroup>
     <ProjectReference Include="..\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource
+      Include="..\..\schemas\twincat\3.1.4024.17\manifest.json"
+      LogicalName="TwinCatGateway.Schemas.3.1.4024.17.manifest.json" />
+    <EmbeddedResource
+      Include="..\..\schemas\twincat\3.1.4024.17\Modules\*.xsd"
+      LogicalName="TwinCatGateway.Schemas.3.1.4024.17.Modules.%(Filename)%(Extension)" />
+  </ItemGroup>
 </Project>

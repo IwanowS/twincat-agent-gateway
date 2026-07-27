@@ -17,4 +17,15 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\TwinCatGateway.Core\TwinCatGateway.Core.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None
+      Include="..\fixtures\TC3_SimpleProject\TC3_SimpleProject\TC3_SimpleProject.tsproj"
+      Link="Fixtures\TC3_SimpleProject.tsproj"
+      CopyToOutputDirectory="PreserveNewest" />
+    <None
+      Include="..\fixtures\TC3_SimpleProject\TC3_SimpleProject\PlcProject1\POUs\MAIN.TcPOU"
+      Link="Fixtures\MAIN.TcPOU"
+      CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
