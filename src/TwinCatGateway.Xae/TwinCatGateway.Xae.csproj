@@ -7,6 +7,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="Microsoft.CSharp" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
     <ProjectReference Include="..\TwinCatGateway.Core\TwinCatGateway.Core.csproj" />
   </ItemGroup>
