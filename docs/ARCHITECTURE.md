@@ -15,7 +15,7 @@ AI-агент должен иметь возможность редактиро�
 - уменьшить расход токенов за счёт структурированных кратких результатов;
 - отделить хрупкую XAE automation от конкретного AI-агента;
 - сохранить возможность ручной диагностики через UI и CLI;
-- не использовать ADS client в MVP;
+- использовать ADS только для read-only проверки завершения TcUnit на явно выбранном тестовом target;
 - редактировать PLC-код через файлы;
 - не исправлять автоматически генерируемый `.tsproj` noise;
 - сделать опасные операции явными и ограниченными project profiles.
@@ -24,6 +24,7 @@ AI-агент должен иметь возможность редактиро�
 
 - универсальная автоматизация всех функций TwinCAT;
 - online variables и symbol browsing;
+- произвольные ADS reads/writes, RPC и управление runtime state через ADS;
 - полный PLC debugger;
 - автоматическое создание и изменение PLC objects через Automation Interface;
 - I/O configuration;
@@ -55,19 +56,21 @@ AI-агент должен иметь возможность редактиро�
 │ UI / tray                                                     │
 │ Operation Queue ─ State Machine ─ Operation Store             │
 │ Build Service ─ Activation Service ─ Status/Diagnostics       │
-│ File Change Classifier ─ TcUnit Report Reader                 │
+│ File Change Classifier ─ TcUnit Test Completion/Report        │
 │                                                               │
 │ ┌───────────────────────────────────────────────────────────┐ │
 │ │ XAE COM Host                                               │ │
 │ │ один STA thread + message pump + OLE IMessageFilter        │ │
 │ │ DTE/DTE2 + ITcSysManager + BuildEvents + Error List        │ │
 │ └───────────────────────────────────────────────────────────┘ │
-└──────────────────────────────┬────────────────────────────────┘
-                               │ COM
-                      ┌────────▼────────┐
-                      │ TwinCAT XAE     │
-                      │ VS2019/XAE Shell│
-                      └─────────────────┘
+└───────────────────────┬──────────────────────┬───────────────┘
+                        │ COM                  │ read-only ADS
+               ┌────────▼────────┐     ┌───────▼──────────────┐
+               │ TwinCAT XAE     │     │ selected PLC runtime │
+               │ VS2019/XAE Shell│     │ port 851             │
+               └─────────────────┘     └──────────────────────┘
+                                      fixed TcUnit completion
+                                      symbols only
 
 ┌──────────────────────┐
 │ twincatctl            │ .NET 8
@@ -192,15 +195,21 @@ Status endpoint читает immutable snapshot и не блокирует UI н
 - compact status — для частых агентских вызовов;
 - detailed diagnostics — для расследования проблемы.
 
-### 7.7 TcUnitReportService
+### 7.7 TcUnitTestService
 
-В MVP не управляет PLC через ADS. Он:
+В MVP использует узкий read-only ADS adapter и файловый report reader. Он:
 
-- ожидает появление/изменение настроенного xUnit XML;
-- проверяет timestamp и целостность;
-- парсит report;
+- после связанной activation подключается к PLC runtime выбранного target;
+- опрашивает фиксированный symbol `GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished`;
+- читает `GVL_TcUnit.NumberOfInitializedTestSuites` для дополнительной проверки;
+- после подтверждения завершения ожидает свежий настроенный xUnit XML;
+- проверяет timestamp, стабильность файла и целостность XML;
 - возвращает counts и failed tests;
 - хранит исходный XML как resource.
+
+ADS adapter не предоставляет произвольный путь symbol вызывающему коду, не пишет значения, не вызывает RPC и не меняет runtime state. Activation/restart остаются обязанностью `ActivationService` через Automation Interface.
+
+Стандартные symbol paths задаются operator-controlled profile и проверяются на закреплённой версии TcUnit. Они не считаются стабильным публичным API TcUnit и не передаются произвольными аргументами MCP/CLI.
 
 Если unit-тесты запускаются автоматически вместе с boot project, test operation может быть связана с activation operation.
 
@@ -399,7 +408,7 @@ Configuration/platform берутся из profile или активного sol
 9. Дождаться окончания команды по доступным XAE/Automation Interface признакам.
 10. Проверить `IsTwinCATStarted()`.
 11. Прочитать `GetLastErrorMessages()` и XAE diagnostics.
-12. Запустить ожидание свежего TcUnit report, если это включено profile.
+12. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
 
 ### 11.3 Recovery to Config
 
@@ -425,10 +434,13 @@ solution: C:\Projects\Machine\Machine.sln
 allowActivation: true
 requireRecentSuccessfulBuild: true
 autoWaitForTcUnit: true
+tcUnitAdsPort: 851
+tcUnitFinishedSymbol: GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished
+tcUnitSuiteCountSymbol: GVL_TcUnit.NumberOfInitializedTestSuites
 tcUnitReportPath: C:\TwinCAT\3.1\Boot\tcunit_xunit_testresults.xml
 ```
 
-Target identity следует показывать и сохранять в audit log. Даже без собственного ADS client доступный через Automation Interface target NetId может использоваться как дополнительная проверка.
+Target identity следует показывать и сохранять в audit log. ADS completion adapter получает NetId только из target, выбранного и проверенного XAE/profile; отдельный произвольный NetId от MCP/CLI запрещён.
 
 ## 12. Status и detailed diagnostics
 
@@ -485,9 +497,9 @@ Target identity следует показывать и сохранять в aud
 - `.tsproj` noise classification;
 - IPC/log-store health.
 
-### 12.3 Ограничение без ADS
+### 12.3 Ограничение runtime status
 
-`IsTwinCATStarted()` сообщает, запущена ли система, но не является полным runtime-state API. Поэтому exact `Run/Config/Exception` нельзя обещать без проверенного XAE-specific источника.
+`IsTwinCATStarted()` сообщает, запущена ли система, но не является полным runtime-state API. Read-only ADS adapter намеренно ограничен TcUnit completion и не используется как общий runtime status API. Поэтому exact `Run/Config/Exception` нельзя обещать без отдельного проверенного XAE-specific источника.
 
 Поле `mode` принимает:
 
@@ -578,7 +590,7 @@ EXTERNAL_EDIT_CONFLICT
 
 Skill должен инструктировать агента не читать полный `.tsproj`, пока classifier не сообщил содержательное изменение.
 
-## 15. TcUnit без ADS client
+## 15. TcUnit с read-only ADS completion
 
 Предполагаемый workflow:
 
@@ -586,20 +598,36 @@ Skill должен инструктировать агента не читать
 2. Gateway выполняет Build/Rebuild.
 3. Агент явно вызывает Activate.
 4. `StartRestartTwinCAT()` запускает boot project при включённом Auto Boot.
-5. TcUnit выполняет тесты в PLC.
-6. TcUnit публикует xUnit XML.
-7. Gateway проверяет свежесть и парсит XML.
-8. Агент получает counts и failures.
+5. Назначенная PLC task циклически выполняет отдельную test program, которая инстанцирует suites и вызывает `TcUnit.RUN()` или `TcUnit.RUN_IN_SEQUENCE()`.
+6. Gateway подключается к тому же target по ADS на настроенный PLC port.
+7. Gateway опрашивает `GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished` до `TRUE`, cancellation или deadline.
+8. Gateway читает `GVL_TcUnit.NumberOfInitializedTestSuites`.
+9. После ADS completion TcUnit публикует xUnit XML.
+10. Gateway проверяет свежесть, стабильность и парсит XML.
+11. Агент получает counts и failures.
 
-Необходимо избегать чтения старого отчёта как результата нового запуска. Минимальная проверка:
+Перед activation gateway сохраняет baseline report и удаляет старый файл только при явно разрешённом локальном report path. Минимальная проверка текущего запуска:
 
-- сохранить baseline timestamp/size/hash до activation;
+- связать test operation с конкретным successful activation/restart;
+- использовать NetId только из выбранного activation profile/XAE target;
+- дождаться доступности двух фиксированных TcUnit symbols;
+- получить `AllTestSuitesFinished=TRUE` в пределах deadline;
+- сохранить ADS evidence и suite count в operation timeline;
 - дождаться нового изменения;
 - дождаться стабильного размера;
 - успешно распарсить XML;
 - проверить наличие test suite/test case данных.
 
-Лучшее будущее улучшение — run identifier внутри тестового harness/report, но оно не обязательно для первого MVP.
+ADS completion является доказательством окончания выполнения, но не источником pass/fail. Авторитетный результат — свежий валидный xUnit XML текущей operation. Лучшее будущее улучшение — run identifier внутри test harness/report.
+
+Требования к test project:
+
+- TcUnit library version закреплена и доступна в library repository стенда;
+- test program назначена PLC task и не зависит от production I/O;
+- `GVL_Param_TcUnit.xUnitEnablePublish=TRUE`;
+- `GVL_Param_TcUnit.xUnitFilePath` указывает на разрешённый и доступный gateway path;
+- tests, которые используют `TEST_FINISHED()`, могут занимать несколько PLC cycles, поэтому fixed delay не заменяет completion signal;
+- для separate test solution production code подключается как library/source reference, а activation разрешена только test profile.
 
 ## 16. MCP и token economy
 
@@ -662,6 +690,9 @@ CONFIG_MODE_REQUIRED
 ACTIVATE_CONFIGURATION_FAILED
 TWINCAT_RESTART_FAILED
 TWINCAT_STATE_UNKNOWN
+TEST_ADS_UNAVAILABLE
+TEST_COMPLETION_SYMBOL_UNAVAILABLE
+TEST_COMPLETION_TIMEOUT
 TEST_REPORT_NOT_PRODUCED
 TEST_REPORT_INVALID
 IPC_VERSION_MISMATCH
@@ -682,6 +713,7 @@ IPC_VERSION_MISMATCH
 - Named Pipe ACL ограничена текущим пользователем.
 - Activation запрещена по умолчанию.
 - Для этого репозитория локальная activation/restart и другие изменения состояния TwinCAT runtime запрещены; такие сценарии выполняются только на явно разрешённом удалённом тестовом стенде.
+- ADS разрешён только для чтения фиксированных TcUnit completion symbols на target, связанном с разрешённым profile. Произвольные symbol paths, ADS writes, RPC и `WriteControl` не входят в gateway API.
 - Profile задаётся локальной конфигурацией, а не произвольными аргументами агента.
 - Solution/target выводятся перед activation в UI и operation log.
 - MCP не получает произвольный COM invoke tool.
@@ -701,18 +733,21 @@ Metrics не обязательны для MVP, но structured events долж�
 - размер compact response;
 - число diagnostics, обрезанных лимитом;
 - число reorder-only classifications;
+- ADS connect/reconnect count и TcUnit completion wait duration;
 - TcUnit report wait duration.
 
 ## 21. Открытые технические вопросы
 
 До фиксации реализации провести spikes:
 
-1. Стабильный вызов `Restart TwinCAT (Config Mode)` в XAE 4024.17 без собственного ADS client.
-2. Надёжный источник exact runtime mode без ADS; допустимый результат spike — подтверждение, что MVP показывает только `started/unknown`.
+1. Стабильный вызов `Restart TwinCAT (Config Mode)` в XAE 4024.17 без ADS runtime control.
+2. Надёжный источник exact runtime mode без расширения completion-only ADS adapter; допустимый результат spike — подтверждение, что MVP показывает только `started/unknown`.
 3. Поведение внешнего редактирования `.TcPOU/.TcGVL/.TcDUT` при открытых editors и варианты минимального refresh.
 4. Полнота Error List по сравнению с Build Output на реальных PLC compile errors.
 5. Точный lifecycle `BuildEvents` в нескольких открытых XAE instances.
 6. Silent Mode и поведение confirmation dialogs при activation на тестовом стенде.
+7. Совместимая с .NET Framework 4.8 x86 и TwinCAT 4024.17 версия Beckhoff ADS client, reconnect после restart и доступность TcUnit completion symbols на реальном стенде.
+8. Закреплённая версия TcUnit, стабильность внутренних completion symbol paths и поведение `xUnitEnablePublish/xUnitFilePath` на 4024.17.
 
 ## 22. Источники
 
@@ -724,3 +759,7 @@ Metrics не обязательны для MVP, но structured events долж�
 - Beckhoff: Silent Mode — https://infosys.beckhoff.com/content/1033/tc3_automationinterface/2489025803.html
 - Existing minimal build skill — https://github.com/IwanowS/codex-skill-twincat-build
 - Reference all-in-one project — https://github.com/Lance0901/AI-TwinCAT-Skill
+- TcUnit documentation — https://tcunit.org/
+- TcUnit user guide and source — https://github.com/tcunit/TcUnit
+- Archived TcUnit-Runner reference implementation — https://github.com/tcunit/TcUnit-Runner
+- Reference ADS completion flow reviewed in TcKit — https://github.com/georgeturneruk/tckit/blob/4a4953f/dotnet/src/TcKit.Adapters.Ads/RuntimeOperations.cs

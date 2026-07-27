@@ -60,7 +60,7 @@ Real-XAE integration tests require the explicitly configured remote TwinCAT 3.1.
 - CLI and MCP are thin IPC clients; domain logic belongs in the gateway/core.
 - Activation is always an explicit operation and must never follow a build implicitly.
 - Do not close an XAE instance opened by the user unless explicitly requested.
-- Do not add an ADS client, online-variable access, PLC debugging, or Automation Interface code editing to the MVP.
+- ADS is allowed in the MVP only through a narrow read-only TcUnit completion adapter. It may read the configured completion and suite-count symbols from the explicitly selected test target. Do not add general symbol browsing, ADS writes, RPC, runtime state control, PLC debugging, or Automation Interface code editing.
 - Do not add PowerShell scripts or modules as a product implementation layer. Development/bootstrap scripts are allowed only when they do not duplicate gateway domain behavior.
 - Do not rewrite or revert reorder-only `.tsproj` changes. Detect and mark them as expected generated noise.
 
@@ -73,7 +73,7 @@ Real-XAE integration tests require the explicitly configured remote TwinCAT 3.1.
 - Build success requires a completed operation, zero compile errors, and no infrastructure failure.
 - Store full raw output locally; return compact summaries and references by default.
 - Treat unknown runtime state as `unknown`; never infer a trustworthy state from incomplete evidence.
-- TcUnit pass/fail comes from a fresh, completed report associated with the current run. A missing or stale report is an error.
+- TcUnit completion requires the configured ADS completion symbol to report finished after the linked activation. Pass/fail comes from a fresh, valid xUnit report associated with that run. A missing symbol, timeout, missing report, or stale report is an error.
 
 ## File editing
 
@@ -112,6 +112,7 @@ State-changing TwinCAT tests must be clearly marked and must fail closed unless 
 
 - Activate only a configured and explicitly allowed target profile.
 - Local TwinCAT activation, restart, runtime-mode changes, PLC login, and ADS writes are prohibited for this repository. State-changing tests may target only the explicitly allow-listed remote test bench.
+- The TcUnit ADS reader must use the target selected and verified by the activation profile; MCP/CLI callers cannot supply an unrelated NetId or arbitrary symbol path.
 - Never substitute another target, solution, or AMS identity automatically.
 - Do not put secrets, credentials, or unnecessary PLC source content in logs.
 - Do not return stack traces, full Build Output, full Error List, large XML, or large diffs by default.

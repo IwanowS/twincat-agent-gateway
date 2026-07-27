@@ -17,11 +17,12 @@ MVP завершён, когда Codex может выполнить следу�
 5. явно вызвать `Activate` для разрешённого стенда;
 6. gateway применит конфигурацию и перезапустит TwinCAT;
 7. boot project автоматически запустит TcUnit;
-8. агент получит summary и failed tests;
-9. при проблеме агент запросит detailed diagnostics или конкретный raw log;
-10. reorder-only `.tsproj` изменения будут отмечены как ожидаемые без полного чтения XML.
+8. gateway подтвердит завершение TcUnit через фиксированный read-only ADS symbol;
+9. агент получит summary и failed tests из свежего xUnit XML;
+10. при проблеме агент запросит detailed diagnostics или конкретный raw log;
+11. reorder-only `.tsproj` изменения будут отмечены как ожидаемые без полного чтения XML.
 
-Весь цикл выполняется без PowerShell и без собственного ADS client.
+Весь цикл выполняется без PowerShell. ADS surface ограничен чтением заранее настроенных TcUnit completion symbols; произвольные reads/writes, RPC и runtime control через ADS не входят в MVP.
 
 ## 3. Milestone 0 — технические spikes
 
@@ -90,7 +91,7 @@ Acceptance:
 - успешная и ошибочная сборка различаются без анализа полного stdout;
 - есть путь, строка и сообщение хотя бы для типовых PLC compile errors.
 
-#### 0.5 Config Mode без ADS client
+#### 0.5 Config Mode без ADS runtime control
 
 Исследовать стабильный способ вызвать `Restart TwinCAT (Config Mode)`:
 
@@ -107,7 +108,7 @@ Acceptance:
 
 Не использовать UI coordinates, SendKeys и локализованный caption как постоянное решение.
 
-#### 0.6 Runtime status без ADS
+#### 0.6 Runtime status без расширения ADS surface
 
 Проверить, какие состояния можно надёжно получить через:
 
@@ -135,6 +136,31 @@ Acceptance:
 - выбран минимальный refresh workflow;
 - определён способ детектировать конфликт;
 - нет обязательного полного reload после каждой сборки.
+
+#### 0.8 Read-only ADS completion для TcUnit
+
+На TwinCAT 3.1.4024.17 проверить:
+
+- TcUnit 1.3.1 как начальный candidate; окончательно закрепить версию по результату стенда;
+- совместимую с .NET Framework 4.8 x86 версию Beckhoff ADS client;
+- подключение к PLC runtime port после activation/restart;
+- чтение `GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished`;
+- чтение `GVL_TcUnit.NumberOfInitializedTestSuites`;
+- проверку этих paths на закреплённой TcUnit version, поскольку они не документированы как стабильный публичный API;
+- поведение до загрузки symbols и во время reconnect;
+- timeout/cancellation и различение missing symbol от недоступного ADS target;
+- соответствие ADS completion свежему xUnit XML текущего запуска.
+
+Acceptance:
+
+- target NetId берётся только из выбранного XAE/profile target;
+- test program назначена PLC task, инстанцирует suites и циклически вызывает `TcUnit.RUN()` или `TcUnit.RUN_IN_SEQUENCE()`;
+- `xUnitEnablePublish=TRUE`, а `xUnitFilePath` доступен gateway;
+- завершение определяется без фиксированного общего sleep;
+- adapter не принимает произвольные symbol paths и не содержит ADS writes, RPC или `WriteControl`;
+- unit tests используют fake ADS seam, а real-XAE acceptance выполняется на удалённом стенде.
+
+Официальный `TcUnit-Runner` рассматривается как reference, а не runtime dependency: его repository архивирован, и его старый ADS/toolchain stack не должен определять архитектуру gateway. Для completion flow переносится только проверенная семантика, подтверждённая на закреплённых версиях TcUnit и TwinCAT 4024.17.
 
 ### Выход milestone
 
@@ -398,16 +424,24 @@ docs/
 - `ActivateConfiguration()` не считается полным успехом без последующего restart/postcondition;
 - exception recovery либо автоматизирован и протестирован, либо возвращает `CONFIG_MODE_REQUIRED` без ложного success.
 
-## 11. Milestone 8 — TcUnit report flow
+## 11. Milestone 8 — TcUnit ADS completion и report flow
 
 ### Цель
 
-Получать результаты тестов после activation без собственного ADS client.
+После activation подтверждать завершение тестов через узкий read-only ADS adapter и получать результат из свежего xUnit XML.
 
 ### Задачи
 
+- profile PLC runtime port и фиксированные TcUnit symbol paths;
+- pinned TcUnit library version и validation её completion symbols;
+- read-only ADS connection seam;
+- reconnect после runtime restart;
+- polling `AllTestSuitesFinished` с deadline и cancellation;
+- чтение `NumberOfInitializedTestSuites`;
 - profile report path;
+- validation `GVL_Param_TcUnit.xUnitEnablePublish=TRUE` и настроенного `xUnitFilePath`;
 - pre-activation report baseline;
+- безопасное удаление старого report только для разрешённого локального path;
 - file watcher + polling fallback;
 - stable-file detection;
 - XML parser;
@@ -415,14 +449,21 @@ docs/
 - compact failures;
 - report resource;
 - timeout/error semantics;
-- linking activationId -> test report;
+- linking activationId -> ADS evidence -> test report;
 - UI test summary;
 - CLI command.
 
 ### Acceptance
 
+- ADS target совпадает с target связанной activation operation;
+- test project содержит назначенную task test program и не требует production I/O;
+- missing ADS route/target и missing completion symbol имеют разные error codes;
+- completion timeout не считается success;
+- adapter не предоставляет arbitrary symbol access и не выполняет ADS writes;
 - старый report не принимается за новый;
 - invalid/partial XML не принимается за success;
+- ADS completion без свежего XML не принимается за pass/fail success;
+- XML без подтверждённого ADS completion не принимается как результат текущей test operation;
 - zero tests явно отражается и настраивается как fail/warning;
 - successful test cases не перечисляются в compact result;
 - failed tests содержат suite/name/message;
@@ -467,7 +508,7 @@ twincat-diff://<operation-id>/project-noise
 
 - сначала успешный rebuild;
 - затем явный activate;
-- ждать связанный свежий TcUnit report;
+- ждать связанный ADS completion, затем свежий TcUnit report;
 - исправлять failed tests;
 - не загружать весь xUnit XML без необходимости.
 
@@ -531,6 +572,7 @@ twincat-diff://<operation-id>/project-noise
 - safe activation profile;
 - `ActivateConfiguration + StartRestartTwinCAT`;
 - Config recovery spike;
+- read-only ADS TcUnit completion adapter;
 - TcUnit report parser;
 - `.tsproj` reorder detector;
 - CLI;
@@ -548,8 +590,9 @@ twincat-diff://<operation-id>/project-noise
 
 ### Позже, вне MVP
 
-- ADS client;
-- online symbols;
+- general-purpose ADS client;
+- arbitrary online symbol reads/writes;
+- ADS RPC и runtime `WriteControl`;
 - code modification through Automation Interface;
 - PLC login/download control;
 - debugger;
@@ -573,6 +616,8 @@ twincat-diff://<operation-id>/project-noise
 | `.tsproj` reorder-only | Да | Да | Да |
 | Activation allowed/denied | Да | Да | Да |
 | Recovery after exception | Нет | Да | Да |
+| TcUnit ADS completion | Да (fake ADS) | Да | Да |
+| ADS target/profile mismatch | Да | Да | Да |
 | TcUnit fresh report | Да | Да | Да |
 | MCP/CLI parity | Нет | Да | Smoke |
 
@@ -611,10 +656,11 @@ twincat-diff://<operation-id>/project-noise
 - Agent получает compile errors без полного Build Output.
 - Activation ограничена profile и включает restart.
 - Exception recovery честно работает или честно сообщает ручной Config Mode.
+- TcUnit completion подтверждён через read-only ADS на target связанной activation.
 - TcUnit report связан с текущим запуском и не берётся из старого файла.
 - `.tsproj` reorder-only noise определяется без изменения файла.
 - Нет PowerShell runtime dependency.
-- Нет собственного ADS client.
+- ADS client ограничен фиксированными TcUnit completion reads; general-purpose ADS access отсутствует.
 - MCP можно перезапустить без потери gateway/XAE session.
 - CLI и MCP используют общий IPC/domain contract.
 - Все P0 сценарии имеют тесты соответствующего уровня.

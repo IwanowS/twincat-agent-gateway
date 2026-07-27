@@ -44,6 +44,9 @@ State-changing scenarios run only on a dedicated remote test bench with:
 - disposable or recoverable runtime state;
 - a known TwinCAT/XAE version;
 - a test-specific activation profile;
+- an ADS route from the gateway host to the selected target;
+- a test PLC task that cyclically calls `TcUnit.RUN()` or `TcUnit.RUN_IN_SEQUENCE()` and exposes the configured completion symbols;
+- TcUnit xUnit publishing enabled to an accessible report path;
 - retained gateway, XAE, build, activation, and TcUnit logs.
 
 If the bench is unavailable, report real-XAE tests as not run. Do not replace them with mocked acceptance.
