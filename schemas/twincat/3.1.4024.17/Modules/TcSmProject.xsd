@@ -1,0 +1,473 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="TcSmItem.xsd"/>
+	<xs:include schemaLocation="TcUserManagement.xsd"/>
+	<xs:element name="TcSmProject">
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="Translations" type="TranslationsType" minOccurs="0"/>
+				<xs:element name="DataTypes" type="DataTypesType" minOccurs="0"/>
+				<xs:element name="ModuleTmcs" minOccurs="0">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="ModuleTmc" type="ModuleType" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ImageDatas" type="ImageDatasType" minOccurs="0"/>
+				<xs:element name="Project">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="UserDB" minOccurs="0">
+								<xs:complexType>
+									<xs:attribute name="FileIdentifier" type="xs:hexBinary" use="required">
+										<xs:annotation>
+											<xs:documentation>Hash of DB_PublicKey</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="Name" type="xs:string" use="required"/>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="System" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Settings" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Cpu" minOccurs="0" maxOccurs="unbounded">
+														<xs:complexType>
+															<xs:attribute name="CpuId" type="xs:int"/>
+															<xs:attribute name="RtLimit" type="xs:int"/>
+															<xs:attribute name="BaseTime" type="xs:int"/>
+															<xs:attribute name="FastInterval" type="xs:int"/>
+															<xs:attribute name="LatencyWarning" type="xs:int"/>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="Debugger" minOccurs="0">
+														<xs:complexType>
+															<xs:attribute name="Priority" type="xs:int"/>
+															<xs:attribute name="Port" type="xs:int"/>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="IoIdleTask" minOccurs="0">
+														<xs:complexType>
+															<xs:attribute name="Priority" type="xs:int"/>
+															<xs:attribute name="CycleTime" type="xs:int"/>
+															<xs:attribute name="Affinity" type="HexDecValue"/>
+															<xs:attribute name="TickModulo" type="xs:int"/>
+														</xs:complexType>
+													</xs:element>
+													<xs:element name="ProjectVariant" type="ProjectVariantType" minOccurs="0"/>
+												</xs:sequence>
+												<xs:attribute name="MaxCpus" type="xs:int"/>
+												<xs:attribute name="NonWinCpus" type="xs:int"/>
+												<xs:attribute name="RouterMemory" type="xs:int"/>
+												<xs:attribute name="FastTickPossible" type="xs:int"/>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Licenses" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Target" type="LicenseAreaType" minOccurs="0"/>
+													<xs:element name="Local" type="LicenseAreaType" minOccurs="0">
+														<xs:annotation>
+															<xs:documentation>LEGACY</xs:documentation>
+														</xs:annotation>
+													</xs:element>
+												</xs:sequence>
+												<xs:attribute name="IgnoreProjectLicenses" type="xs:boolean"/>
+												<xs:attribute name="CacheOrCheckLicensesOnStartup" type="xs:boolean">
+													<xs:annotation>
+														<xs:documentation>DEPRECATED, use device-specific attribute instead</xs:documentation>
+													</xs:annotation>
+												</xs:attribute>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Tasks" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Task" type="TcSmTaskType" minOccurs="0" maxOccurs="unbounded"/>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Modules" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Module" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+													<xs:element name="AddClassFactory" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+													<xs:element name="TcLoadClassFactory" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+													<xs:element name="TcEncryptClassFactory" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Routes" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Route" minOccurs="0" maxOccurs="unbounded"/>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="TypeSystem" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="AdditionalTmcFile" minOccurs="0" maxOccurs="unbounded">
+														<xs:complexType>
+															<xs:attribute name="Name" type="xs:string"/>
+															<xs:attribute name="File" type="xs:string"/>
+															<xs:attribute name="FileIdentifier" type="xs:string"/>
+														</xs:complexType>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="AdditionalProjectFiles" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="File" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+									<xs:attribute name="PvUseLink" type="xs:boolean"/>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Motion" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="NC" type="TcSmNCType" minOccurs="0"/>
+										<xs:element name="CNC" type="TcSmCNCType" minOccurs="0"/>
+										<xs:element name="MC" type="TcSmMCType" minOccurs="0" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Plc" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Project" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="SubProjectType">
+														<xs:attribute name="Encryption" type="xs:int"/>
+														<xs:attribute name="AmsPort" type="xs:int"/>
+														<xs:attribute name="GeneralArchiveSettings" type="HexDecValue"/>
+														<xs:attribute name="TargetArchiveSettings" type="HexDecValue"/>
+														<xs:attribute name="FileArchiveSettings" type="HexDecValue"/>
+														<xs:attribute name="CopyTmcToTarget" type="xs:boolean"/>
+														<xs:attribute name="CopyTpyToTarget" type="xs:boolean"/>
+														<xs:attribute name="LowMappingPrio" type="xs:boolean"/>
+														<xs:attribute name="ClearInvalidPersist" type="xs:boolean"/>
+														<xs:attribute name="SymbolicMapping" type="xs:boolean"/>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="PlcAuxTask" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Name" type="xs:string" minOccurs="0"/>
+												</xs:sequence>
+												<xs:attribute name="AmsPort" type="xs:int"/>
+												<xs:attribute name="Priority" type="xs:int"/>
+												<xs:attribute name="Affinity" type="HexDecValue"/>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Safety" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Project" type="SubProjectType" minOccurs="0" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Cpp" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Project" type="SubProjectType" minOccurs="0" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Vision" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="JobPool" type="TcSmObjDef" minOccurs="0"/>
+										<xs:element name="App" type="TcSmVnApp" minOccurs="0" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Misc" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="LineMotion" minOccurs="0">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:choice>
+														<xs:sequence>
+															<xs:element name="SafTask" type="TcSmTaskType"/>
+															<xs:element name="SvbTask" type="TcSmTaskType"/>
+														</xs:sequence>
+														<xs:element name="Callers">
+															<xs:complexType>
+																<xs:attribute name="SafTaskId" type="xs:int"/>
+																<xs:attribute name="SvbTaskId" type="xs:int"/>
+															</xs:complexType>
+														</xs:element>
+													</xs:choice>
+													<xs:element name="Settings" minOccurs="0">
+														<xs:complexType>
+															<xs:attribute name="VG" type="xs:int"/>
+															<xs:attribute name="WSG" type="xs:int"/>
+															<xs:attribute name="WZ" type="xs:int"/>
+															<xs:attribute name="WZHS" type="xs:int"/>
+															<xs:attribute name="HSEncoder" type="xs:int"/>
+															<xs:attribute name="Retain" type="xs:int"/>
+															<xs:attribute name="Events" type="xs:int"/>
+															<xs:attribute name="WS" type="xs:int"/>
+															<xs:attribute name="HSMinTime" type="xs:int"/>
+															<xs:attribute name="EnableSercosEnc" type="xs:boolean"/>
+															<xs:attribute name="EnableDc" type="xs:boolean"/>
+															<xs:attribute name="EncoderTypes" type="xs:hexBinary"/>
+														</xs:complexType>
+													</xs:element>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="CamServer" minOccurs="0">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="TcSmTreeItem">
+														<xs:sequence>
+															<xs:element name="CamGroup" minOccurs="0" maxOccurs="unbounded">
+																<xs:complexType>
+																	<xs:sequence>
+																		<xs:element name="Settings" minOccurs="0">
+																			<xs:complexType>
+																				<xs:attribute name="Cams" type="xs:int"/>
+																				<xs:attribute name="CheckEncoder" type="xs:boolean"/>
+																				<xs:attribute name="CheckShaft" type="xs:boolean"/>
+																				<xs:attribute name="CheckRpm" type="xs:boolean"/>
+																				<xs:attribute name="RpmDiff" type="xs:int"/>
+																				<xs:attribute name="RpmDiffTime" type="xs:int"/>
+																				<xs:attribute name="ShaftErrTime" type="xs:int"/>
+																				<xs:attribute name="Or" type="xs:int"/>
+																				<xs:attribute name="And" type="xs:int"/>
+																				<xs:attribute name="PrvIoAddr" type="xs:int"/>
+																				<xs:attribute name="FastClock" type="xs:boolean"/>
+																				<xs:attribute name="CamTables" type="xs:int"/>
+																				<xs:attribute name="StandardIo" type="xs:boolean"/>
+																				<xs:attribute name="MapId" type="xs:int"/>
+																			</xs:complexType>
+																		</xs:element>
+																		<xs:element name="CamTask" type="TcSmTaskType"/>
+																		<xs:element name="CalcTask" type="TcSmTaskType"/>
+																		<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+																		<xs:element name="Cam" type="TcSmCamType" minOccurs="0" maxOccurs="unbounded"/>
+																		<xs:element name="Enc" type="TcSmCamEncType" minOccurs="0" maxOccurs="unbounded"/>
+																	</xs:sequence>
+																</xs:complexType>
+															</xs:element>
+															<xs:element name="ToolProtection" minOccurs="0" maxOccurs="unbounded">
+																<xs:complexType>
+																	<xs:sequence>
+																		<xs:element name="CamTask" type="TcSmTaskType"/>
+																		<xs:element name="Tool" type="TcSmCamToolType" minOccurs="0" maxOccurs="unbounded"/>
+																	</xs:sequence>
+																</xs:complexType>
+															</xs:element>
+														</xs:sequence>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Io" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="DeviceFolder" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="SubFolder" type="NcAxisSubFolderType" minOccurs="0" maxOccurs="unbounded"/>
+												</xs:sequence>
+												<xs:attribute name="Name" type="xs:string"/>
+											</xs:complexType>
+										</xs:element>
+										<xs:choice>
+											<xs:element name="Device" minOccurs="0" maxOccurs="unbounded">
+												<xs:complexType>
+													<xs:complexContent>
+														<xs:extension base="TcSmDevDef">
+															<xs:attribute name="File" type="xs:string">
+																<xs:annotation>
+																	<xs:documentation>Reference to a separate file</xs:documentation>
+																</xs:annotation>
+															</xs:attribute>
+															<xs:attribute name="FileIdentifier" type="GUID"/>
+														</xs:extension>
+													</xs:complexContent>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="DeviceReference" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+											<xs:element name="DeviceModule" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+										</xs:choice>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Variants" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Group" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Name" type="xs:string"/>
+													<xs:element name="Desc" type="xs:string" minOccurs="0"/>
+													<xs:element name="Member" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+												</xs:sequence>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Variant" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:sequence>
+													<xs:element name="Name" type="xs:string"/>
+													<xs:element name="Desc" type="xs:string" minOccurs="0"/>
+												</xs:sequence>
+												<xs:attribute name="Save" type="xs:boolean"/>
+											</xs:complexType>
+										</xs:element>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="SymbolWatch" minOccurs="0">
+								<xs:complexType>
+									<xs:sequence>
+										<xs:element name="Variable" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+									</xs:sequence>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+						<xs:attribute name="SccProjectName" type="xs:string"/>
+						<xs:attribute name="SccLocalPath" type="xs:string"/>
+						<xs:attribute name="SccAuxPath" type="xs:string"/>
+						<xs:attribute name="SccProvider" type="xs:string"/>
+						<xs:attribute name="ProjectGUID" type="GUID"/>
+						<xs:attribute name="ModifiedGUID" type="GUID"/>
+						<xs:attribute name="TargetNetId" type="xs:string"/>
+						<xs:attribute name="Target64Bit" type="xs:boolean"/>
+						<xs:attribute name="NoSaveToTarget" type="xs:boolean"/>
+						<xs:attribute name="RelativeTargetNetId" type="xs:boolean"/>
+						<xs:attribute name="RelativeIpAddresses" type="xs:boolean"/>
+						<xs:attribute name="AutoPrioManagement" type="xs:boolean"/>
+						<xs:attribute name="CompatibilityMode" type="xs:boolean"/>
+						<xs:attribute name="SaveToTarget" type="xs:boolean"/>
+						<xs:attribute name="HideSaveToTarget" type="xs:boolean"/>
+						<xs:attribute name="TaskObjectIdsViaPrio" type="xs:boolean"/>
+						<xs:attribute name="ObjectProtectionLevel" type="GUID"/>
+						<xs:attribute name="ShowHideConfigurations" type="HexDecValue"/>
+						<xs:attribute name="AmlIdsEnabled" type="xs:boolean"/>
+						<xs:attribute name="BootFileEncryption" type="HexDecValue"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Mappings" type="MappingsType" minOccurs="0"/>
+			</xs:sequence>
+			<xs:attribute name="TcSmVersion" use="required">
+				<xs:simpleType>
+					<xs:restriction base="xs:string">
+						<xs:pattern value="[1-9].[0-9]"/>
+						<xs:pattern value="[1-9].[0-9]{2}"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:attribute>
+			<xs:attribute name="TcVersion" type="xs:string"/>
+			<xs:attribute name="TcVersionFixed" type="xs:boolean"/>
+			<xs:attribute name="TcProjectVariant" type="xs:string"/>
+			<xs:attribute name="FileSignature" type="xs:hexBinary" use="optional"/>
+		</xs:complexType>
+	</xs:element>
+	<xs:complexType name="TcSmCamEncType">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="CreateEnc" type="xs:hexBinary"/>
+				<xs:attribute name="DisablePosRound" type="xs:boolean"/>
+				<xs:attribute name="UseEncPrecision" type="xs:boolean"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmCamToolType">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="CreateEnc" type="xs:hexBinary"/>
+				<xs:attribute name="DisablePosRound" type="xs:boolean"/>
+				<xs:attribute name="UseEncPrecision" type="xs:boolean"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="LicenseAreaType">
+		<xs:sequence>
+			<xs:element name="CustomComment" type="xs:string" minOccurs="0"/>
+			<xs:element name="ManualSelect" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="GUID">
+							<xs:attribute name="Instances" type="xs:int"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="TargetSelect" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="GUID">
+							<xs:attribute name="TargetId" type="xs:long"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="LicenseDevice" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="DongleHardwareId" type="xs:long"/>
+							<xs:attribute name="DongleDevice" type="HexDecValue"/>
+							<xs:attribute name="DongleChannel" type="xs:long"/>
+							<xs:attribute name="DongleSystemId" type="GUID"/>
+							<xs:attribute name="DongleVolumeId" type="GUID"/>
+							<xs:attribute name="DongleVolumeNo" type="xs:long"/>
+							<xs:attribute name="DongleSerialNumber" type="xs:string"/>
+							<xs:attribute name="DongleLevel" type="xs:long"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="OemInfo" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="OemId">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="GUID">
+										<xs:attribute name="OemName" type="xs:string"/>
+										<xs:attribute name="OemOrder" type="xs:string"/>
+										<xs:attribute name="CustomOrder" type="xs:string"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+						<xs:element name="CustomComment" type="xs:string" minOccurs="0"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="VolumeLicense" type="xs:boolean"/>
+		<xs:attribute name="BkhfOrder" type="xs:string"/>
+		<xs:attribute name="CustomOrder" type="xs:string"/>
+	</xs:complexType>
+</xs:schema>

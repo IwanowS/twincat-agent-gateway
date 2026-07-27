@@ -17,3 +17,6 @@
 *.jpg binary
 *.ico binary
 *.pdf binary
+
+# Preserve vendored TwinCAT schema snapshots byte-for-byte.
+schemas/twincat/**/Modules/*.xsd binary

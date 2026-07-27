@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="TcModuleBase.xsd"/>
+	<xs:element name="TcUserManagement">
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="TcUserManagementType">
+					<xs:attribute name="FileIdentifier" type="GUID"/>
+					<xs:attribute name="FileSignature" type="xs:hexBinary"/>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:complexType name="UserType">
+		<xs:sequence>
+			<xs:element name="Name" type="xs:string"/>
+			<xs:element name="GUID" type="GUID"/>
+			<xs:element name="Display" type="xs:string" minOccurs="0"/>
+			<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+			<xs:element name="Hash" type="xs:hexBinary" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>SHA1 hash of name (no case) and password</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Group" type="xs:string" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>GUID or Name of UserGroup (Name must be defined inside same file)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="UserGroupType">
+		<xs:sequence>
+			<xs:element name="Name" type="LangTextType"/>
+			<xs:element name="GUID" type="GUID"/>
+			<xs:element name="Parent" type="xs:string" minOccurs="0"/>
+			<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+			<xs:element name="Grant" type="xs:string" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>GUID or Name of right (Name must be defined inside same file)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Deny" type="xs:string" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>GUID or Name of right (Name must be defined inside same file)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="RightType">
+		<xs:sequence>
+			<xs:element name="Name" type="LangTextType"/>
+			<xs:element name="GUID" type="GUID"/>
+			<xs:element name="Folder" type="xs:string" minOccurs="0"/>
+			<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+			<xs:element name="UserGroup" type="xs:string" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>granted for user group. GUID or Name (Name must be defined inside same file)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="TcUserManagementType">
+		<xs:sequence>
+			<xs:element name="Translations" type="TranslationsType" minOccurs="0"/>
+			<xs:element name="User" type="UserType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="UserGroup" type="UserGroupType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="Right" type="RightType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="RightGroup" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Name" type="LangTextType"/>
+						<xs:element name="GUID" type="GUID"/>
+						<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+						<xs:element name="Right" type="xs:string" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>GUID or Name (Name must be defined inside same file)</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="UserGroup" type="xs:string" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>or UserGroup. GUID or Name (Name must be defined inside same file)</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+</xs:schema>

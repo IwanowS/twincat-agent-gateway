@@ -1,0 +1,3447 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:include schemaLocation="TcModuleBase.xsd"/>
+	<xs:element name="TcSmItem">
+		<xs:complexType>
+			<xs:complexContent>
+				<xs:extension base="TcSmItemType">
+					<xs:attribute name="TcSmVersion" use="required">
+						<xs:simpleType>
+							<xs:restriction base="xs:string">
+								<xs:pattern value="[1-9].[0-9]"/>
+								<xs:pattern value="[1-9].[0-9]{2}"/>
+							</xs:restriction>
+						</xs:simpleType>
+					</xs:attribute>
+					<xs:attribute name="TcVersion" type="xs:string"/>
+					<xs:attribute name="TcProjectVariant" type="xs:string"/>
+					<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+					<xs:attribute name="FileSignature" type="xs:hexBinary"/>
+				</xs:extension>
+			</xs:complexContent>
+		</xs:complexType>
+	</xs:element>
+	<xs:simpleType name="AmsNetId">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}.[0-9]{1,3}"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="AddressInfoType">
+		<xs:choice>
+			<xs:element name="Io">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Port" type="HexDecValue"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Io_Isa">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Port" type="HexDecValue"/>
+						<xs:element name="Address" type="HexDecValue"/>
+						<xs:element name="Size" type="HexDecValue"/>
+						<xs:element name="IrqNo" type="HexDecValue" minOccurs="0"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Isa">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Address" type="HexDecValue"/>
+						<xs:element name="Size" type="HexDecValue"/>
+						<xs:element name="IrqNo" type="HexDecValue" minOccurs="0"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Pci">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Address" type="HexDecValue"/>
+						<xs:element name="Size" type="HexDecValue"/>
+						<xs:element name="BusNo" type="HexDecValue"/>
+						<xs:element name="SlotNo" type="HexDecValue"/>
+						<xs:element name="VendorId" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="DeviceId" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="SubVendorId" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="SubSystemId" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="BaseAddr" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="IrqNo" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="FcChannel" type="HexDecValue" minOccurs="0"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Io_Pci">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Port" type="HexDecValue"/>
+						<xs:element name="Address" type="HexDecValue"/>
+						<xs:element name="BusNo" type="HexDecValue"/>
+						<xs:element name="SlotNo" type="HexDecValue"/>
+						<xs:element name="VendorId" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="DeviceId" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="SubVendorId" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="SubSystemId" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="IrqNo" type="HexDecValue" minOccurs="0"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Pnp">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="DeviceDesc" type="xs:string"/>
+						<xs:element name="DeviceName" type="xs:string"/>
+						<xs:element name="DeviceData" type="xs:hexBinary" minOccurs="0"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Ecat">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="EtherCATDeviceId" type="HexDecValue"/>
+						<xs:element name="EtherCATDeviceName" type="xs:string" minOccurs="0"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Ccat">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Address" type="HexDecValue"/>
+						<xs:element name="Offset" type="HexDecValue"/>
+						<xs:element name="Size" type="HexDecValue"/>
+						<xs:element name="BaseAddr" type="HexDecValue"/>
+						<xs:element name="BusNo" type="HexDecValue"/>
+						<xs:element name="SlotNo" type="HexDecValue"/>
+						<xs:element name="VendorId" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="DeviceId" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="Dma" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Address" type="HexDecValue"/>
+									<xs:element name="Offset" type="HexDecValue"/>
+									<xs:element name="Size" type="HexDecValue"/>
+									<xs:element name="BaseAddr" type="HexDecValue"/>
+									<xs:element name="RxChn" type="HexDecValue"/>
+									<xs:element name="TxChn" type="HexDecValue"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Identification" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Value" type="xs:int" minOccurs="0"/>
+									<xs:element name="Version" type="xs:int" minOccurs="0"/>
+									<xs:element name="Size" type="xs:int" minOccurs="0"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="TcCom">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ObjectId" type="HexDecValue"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:complexType name="Ax2000Type">
+		<xs:sequence>
+			<xs:element name="Startup" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="ChnI" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:attribute name="Id" type="xs:int"/>
+					<xs:attribute name="BitOffsAX" type="xs:int"/>
+					<xs:attribute name="BitOffsTC" type="xs:int"/>
+					<xs:attribute name="Motorola" type="xs:boolean"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ChnO" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:attribute name="Id" type="xs:int"/>
+					<xs:attribute name="BitOffsAX" type="xs:int"/>
+					<xs:attribute name="BitOffsTC" type="xs:int"/>
+					<xs:attribute name="Motorola" type="xs:boolean"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="Parameter" type="xs:string"/>
+		<xs:attribute name="IoType" type="xs:int"/>
+	</xs:complexType>
+	<xs:complexType name="BusCoupler">
+		<xs:sequence>
+			<xs:element name="Flags" minOccurs="0">
+				<xs:complexType>
+					<xs:attribute name="SupportVirtualTerms" type="xs:boolean"/>
+					<xs:attribute name="SupportFbbTerms" type="xs:boolean"/>
+					<xs:attribute name="HasNoEndTerm" type="xs:boolean"/>
+					<xs:attribute name="OnlyOneTerm" type="xs:boolean"/>
+					<xs:attribute name="NoCouplerState" type="xs:boolean"/>
+					<xs:attribute name="EconomyPlus" type="xs:boolean"/>
+					<xs:attribute name="DisplayCtrl" type="xs:boolean"/>
+					<xs:attribute name="LedButtonCnt" type="xs:int"/>
+					<xs:attribute name="KBusAutoReset" type="xs:boolean"/>
+					<xs:attribute name="StartUpParameterSupp" type="xs:boolean"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="AddNetId" type="AmsNetId" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>additional NetIds for routing</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Term" type="TcSmTermDef" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="PlcInterface" type="xs:boolean"/>
+		<xs:attribute name="Diagnosis" type="xs:boolean"/>
+		<xs:attribute name="ComplexTermSupport" type="xs:boolean"/>
+		<xs:attribute name="CheckTerminals" type="xs:boolean"/>
+		<xs:attribute name="NewHardware" type="xs:boolean"/>
+		<xs:attribute name="NoTermsAllowed" type="xs:boolean"/>
+		<xs:attribute name="RemoteName" type="xs:string"/>
+		<xs:attribute name="NetId" type="AmsNetId"/>
+		<xs:attribute name="TermConfigData" type="xs:hexBinary"/>
+	</xs:complexType>
+	<xs:complexType name="ProfibusSlave">
+		<xs:attribute name="Model" type="xs:string"/>
+		<xs:attribute name="StationNo" type="xs:int"/>
+		<xs:attribute name="MinSlaveInterval" type="xs:int"/>
+		<xs:attribute name="Ident" type="xs:int"/>
+		<xs:attribute name="Modular" type="xs:int"/>
+		<xs:attribute name="MaxModule" type="xs:int"/>
+		<xs:attribute name="MaxInputLen" type="xs:int"/>
+		<xs:attribute name="MaxUserPrmData" type="xs:int"/>
+		<xs:attribute name="MaxOutputLen" type="xs:int"/>
+		<xs:attribute name="MaxDataLen" type="xs:int"/>
+		<xs:attribute name="WatchDogTime" type="xs:int"/>
+		<xs:attribute name="SupportFlags" type="xs:int"/>
+		<xs:attribute name="Flags" type="xs:int"/>
+		<xs:attribute name="IoAccessDiv" type="xs:int"/>
+		<xs:attribute name="IoAccessMod" type="xs:int"/>
+		<xs:attribute name="WatchDog" type="xs:boolean"/>
+		<xs:attribute name="SlaveParaSet" type="xs:hexBinary"/>
+		<xs:attribute name="C2Settings" type="xs:hexBinary"/>
+		<xs:attribute name="PrmData" type="xs:hexBinary"/>
+		<xs:attribute name="CfgData" type="xs:hexBinary"/>
+		<xs:attribute name="C2sAddr" type="xs:hexBinary"/>
+		<xs:attribute name="C2dAddr" type="xs:hexBinary"/>
+		<xs:attribute name="EquiPara" type="xs:hexBinary"/>
+		<xs:attribute name="IMSupported" type="xs:boolean"/>
+		<xs:attribute name="C2RWSupported" type="xs:boolean"/>
+		<xs:attribute name="C2MaxChannelCnt" type="xs:int"/>
+		<xs:attribute name="OwnPrmData" type="xs:int"/>
+		<xs:attribute name="FixPresetModules" type="xs:boolean"/>
+	</xs:complexType>
+	<xs:complexType name="SercosValueType">
+		<xs:attribute name="Id" type="xs:int"/>
+		<xs:attribute name="IdsName" type="xs:int"/>
+		<xs:attribute name="Type" type="GUID"/>
+		<xs:attribute name="Flags" type="xs:int"/>
+		<xs:attribute name="Name" type="xs:hexBinary"/>
+		<xs:attribute name="FValue" type="xs:double"/>
+		<xs:attribute name="BValue" type="xs:hexBinary"/>
+		<xs:attribute name="NValue" type="xs:int"/>
+	</xs:complexType>
+	<xs:complexType name="EtherCATSlave">
+		<xs:sequence>
+			<xs:element name="SyncMan" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:hexBinary">
+							<xs:attribute name="SmStart" type="xs:int"/>
+							<xs:attribute name="SmLength" type="xs:int"/>
+							<xs:attribute name="SmControl" type="xs:int"/>
+							<xs:attribute name="SmStatus" type="xs:int"/>
+							<xs:attribute name="SmActivate" type="xs:int"/>
+							<xs:attribute name="SmPdi" type="xs:int"/>
+							<xs:attribute name="Type" type="xs:int"/>
+							<xs:attribute name="MinSize" type="xs:int"/>
+							<xs:attribute name="MaxSize" type="xs:int"/>
+							<xs:attribute name="DftSize" type="xs:int"/>
+							<xs:attribute name="Address" type="xs:int"/>
+							<xs:attribute name="Control" type="xs:int"/>
+							<xs:attribute name="Enable" type="xs:boolean"/>
+							<xs:attribute name="FixedContent" type="xs:boolean"/>
+							<xs:attribute name="VirtualSm" type="xs:boolean"/>
+							<xs:attribute name="OpOnly" type="xs:boolean"/>
+							<xs:attribute name="OnebyteMode" type="xs:boolean"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Fmmu" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:hexBinary">
+							<xs:attribute name="PhysStart" type="xs:int"/>
+							<xs:attribute name="PhysStartBit" type="xs:int"/>
+							<xs:attribute name="ReadEnable" type="xs:boolean"/>
+							<xs:attribute name="WriteEnable" type="xs:boolean"/>
+							<xs:attribute name="Enable" type="xs:boolean"/>
+							<xs:attribute name="Type" type="xs:int"/>
+							<xs:attribute name="OpOnly" type="xs:boolean"/>
+							<xs:attribute name="SmDefined" type="xs:boolean"/>
+							<xs:attribute name="SuDefined" type="xs:boolean"/>
+							<xs:attribute name="SyncManager" type="xs:int"/>
+							<xs:attribute name="SyncUnit" type="xs:int"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="EtherCATData1" type="xs:hexBinary" minOccurs="0"/>
+			<xs:element name="EtherCATData2" type="xs:hexBinary" minOccurs="0"/>
+			<xs:element name="SwitchPortData" type="xs:hexBinary" minOccurs="0"/>
+			<xs:element name="BootStrapData" type="xs:hexBinary" minOccurs="0"/>
+			<xs:element name="SuName" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="SuTask" type="HexDecValue" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="DcData" type="xs:hexBinary" minOccurs="0"/>
+			<xs:element name="DcMode" type="xs:hexBinary" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="HcData" type="xs:hexBinary" minOccurs="0"/>
+			<xs:element name="InitCmdData" type="xs:hexBinary" minOccurs="0"/>
+			<xs:element name="MBoxUserCmdData" type="xs:hexBinary" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="Pdo" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ExcludePdo" type="HexDecValue" minOccurs="0" maxOccurs="unbounded"/>
+						<xs:element name="Entry" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="DefaultDataMask" type="xs:hexBinary" minOccurs="0"/>
+									<xs:element name="Type" minOccurs="0">
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="xs:string">
+													<xs:attribute name="GUID" type="GUID"/>
+													<xs:attribute name="Namespace" type="xs:string"/>
+												</xs:extension>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+								</xs:sequence>
+								<xs:attribute name="Name" type="xs:string"/>
+								<xs:attribute name="BitLen" type="HexDecValue"/>
+								<xs:attribute name="Index" type="HexDecValue"/>
+								<xs:attribute name="Sub" type="HexDecValue"/>
+								<xs:attribute name="Flags" type="HexDecValue"/>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+					<xs:attribute name="Name" type="xs:string"/>
+					<xs:attribute name="Index" type="HexDecValue"/>
+					<xs:attribute name="InOut" type="HexDecValue"/>
+					<xs:attribute name="MaxEntries" type="HexDecValue"/>
+					<xs:attribute name="Flags" type="HexDecValue"/>
+					<xs:attribute name="SyncMan" type="HexDecValue"/>
+					<xs:attribute name="SyncUnit" type="HexDecValue"/>
+					<xs:attribute name="OverSampleFac" type="HexDecValue"/>
+					<xs:attribute name="OverSampleMin" type="HexDecValue"/>
+					<xs:attribute name="OverSampleMax" type="HexDecValue"/>
+					<xs:attribute name="OverSampleInc" type="HexDecValue"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="CoeProfile" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:attribute name="ProfileNo" type="HexDecValue"/>
+					<xs:attribute name="DisplayName" type="xs:string"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="SlotData" type="xs:hexBinary" minOccurs="0"/>
+			<xs:element name="Slot" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="SlotData" type="xs:hexBinary" minOccurs="0"/>
+						<xs:element name="ModuleIdent" type="HexDecValue" minOccurs="0" maxOccurs="unbounded"/>
+						<xs:element name="ModuleClass" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:attribute name="Class" type="xs:string" use="required"/>
+								<xs:attribute name="Name" type="xs:string" use="required"/>
+								<xs:attribute name="VendorId" type="HexDecValue"/>
+								<xs:attribute name="ImageId" type="HexDecValue"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Module" type="TcSmSlotModule" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+					<xs:attribute name="Name" type="xs:string" use="required"/>
+					<xs:attribute name="ImageId" type="HexDecValue"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ModulePdoGroup" type="xs:hexBinary" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="SlotGroupData" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="SlotGroup" type="HexDecValue"/>
+					</xs:sequence>
+					<xs:attribute name="Name"/>
+					<xs:attribute name="ImageId"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="EtherCatAddr" type="xs:int"/>
+		<xs:attribute name="SlaveType" type="xs:int"/>
+		<xs:attribute name="LoopControl" type="xs:int"/>
+		<xs:attribute name="AmsPort" type="xs:int"/>
+		<xs:attribute name="AdsServerAddress" type="xs:hexBinary"/>
+		<xs:attribute name="PdiType" type="HexDecValue"/>
+		<xs:attribute name="SuFlags" type="xs:int"/>
+		<xs:attribute name="CheckVendorId" type="xs:boolean"/>
+		<xs:attribute name="CheckProductCode" type="xs:boolean"/>
+		<xs:attribute name="CheckRevisionNo" type="xs:boolean"/>
+		<xs:attribute name="CheckSerialNo" type="xs:boolean"/>
+		<xs:attribute name="AutoRestoreState" type="xs:boolean"/>
+		<xs:attribute name="EtherCatAddrFixed" type="xs:boolean"/>
+		<xs:attribute name="EtherCatAddrFromSlaveRAM" type="xs:boolean"/>
+		<xs:attribute name="ExecIo" type="xs:boolean"/>
+		<xs:attribute name="SyncUnitBits" type="xs:boolean"/>
+		<xs:attribute name="ForceReInit" type="xs:boolean"/>
+		<xs:attribute name="AssignEeprom2Pdi_PREOP" type="xs:boolean"/>
+		<xs:attribute name="MboxDataLinkLayer" type="xs:boolean"/>
+		<xs:attribute name="MboxDataLinkLayerMessages" type="xs:boolean"/>
+		<xs:attribute name="SlavePresentChangeMassages" type="xs:boolean"/>
+		<xs:attribute name="CycleMBoxPolling" type="xs:boolean"/>
+		<xs:attribute name="StateMBoxPolling" type="xs:boolean"/>
+		<xs:attribute name="CfgModeSafeOp" type="xs:boolean"/>
+		<xs:attribute name="DcInfoAvailable" type="xs:boolean"/>
+		<xs:attribute name="DcModesAvailable" type="xs:boolean"/>
+		<xs:attribute name="DownloadPdoCfg" type="xs:boolean"/>
+		<xs:attribute name="SerializeSyncUnitNames" type="xs:boolean"/>
+		<xs:attribute name="UseLrdLwrInsteadOfLrw" type="xs:boolean"/>
+		<xs:attribute name="UnsupportedFrmw" type="xs:boolean"/>
+		<xs:attribute name="Unsupported64BitDc" type="xs:boolean"/>
+		<xs:attribute name="CycleMBoxPollingTime" type="xs:int"/>
+		<xs:attribute name="CoeType" type="xs:int"/>
+		<xs:attribute name="CoeMainProfile" type="xs:int"/>
+		<xs:attribute name="EoeType" type="xs:int"/>
+		<xs:attribute name="FoeType" type="xs:int"/>
+		<xs:attribute name="SoeChannels" type="xs:int"/>
+		<xs:attribute name="VendorId" type="HexDecValue"/>
+		<xs:attribute name="ProductCode" type="HexDecValue"/>
+		<xs:attribute name="RevisionNo" type="HexDecValue"/>
+		<xs:attribute name="SerialNo" type="HexDecValue"/>
+		<xs:attribute name="InfoDataState" type="xs:boolean"/>
+		<xs:attribute name="InfoDataAddr" type="xs:boolean"/>
+		<xs:attribute name="InfoDataNetId" type="xs:boolean"/>
+		<xs:attribute name="InfoDataSoeDS401" type="xs:boolean"/>
+		<xs:attribute name="InfoDataDcTimes" type="xs:boolean"/>
+		<xs:attribute name="NoAutoInc" type="xs:boolean"/>
+		<xs:attribute name="InputToggleBits" type="xs:boolean"/>
+		<xs:attribute name="DcPotentialRefClock" type="xs:boolean"/>
+		<xs:attribute name="OwnAddrExtern" type="xs:boolean"/>
+		<xs:attribute name="DiagHistory" type="xs:boolean"/>
+		<xs:attribute name="RepeatSupport" type="xs:boolean"/>
+		<xs:attribute name="WdDivider0400" type="xs:int"/>
+		<xs:attribute name="WdTime0410" type="xs:int"/>
+		<xs:attribute name="DdTime0420" type="xs:int"/>
+		<xs:attribute name="EnableWdDivider0400" type="xs:boolean"/>
+		<xs:attribute name="EnableWdTime0410" type="xs:boolean"/>
+		<xs:attribute name="EnableWdTime0420" type="xs:boolean"/>
+		<xs:attribute name="TimeoutOpenLink" type="xs:boolean"/>
+		<xs:attribute name="TimeoutStateChange1" type="xs:int"/>
+		<xs:attribute name="TimeoutStateChange2" type="xs:int"/>
+		<xs:attribute name="TimeoutStateChange3" type="xs:int"/>
+		<xs:attribute name="TimeoutStateChange4" type="xs:int"/>
+		<xs:attribute name="TimeoutMailbox1" type="xs:int"/>
+		<xs:attribute name="TimeoutMailbox2" type="xs:int"/>
+		<xs:attribute name="PhysOffset0108" type="xs:int"/>
+		<xs:attribute name="LimitToInit" type="xs:boolean"/>
+		<xs:attribute name="LimitToPreOp" type="xs:boolean"/>
+		<xs:attribute name="LimitToSafeOp" type="xs:boolean"/>
+		<xs:attribute name="GenerateOwnNetId" type="xs:boolean"/>
+		<xs:attribute name="InitializeOwnNetId" type="xs:boolean"/>
+		<xs:attribute name="RealTimeMailbox" type="xs:boolean"/>
+		<xs:attribute name="DisableWdStateMachine" type="xs:boolean"/>
+		<xs:attribute name="HidePdosInTree" type="xs:boolean"/>
+		<xs:attribute name="ExternalDcRefClock" type="xs:boolean"/>
+		<xs:attribute name="DownloadSlotCfg" type="xs:boolean"/>
+		<xs:attribute name="AutoRestoreAfterWcOk" type="xs:boolean"/>
+		<xs:attribute name="SkipDevice" type="xs:boolean"/>
+		<xs:attribute name="Ax2000" type="xs:boolean"/>
+		<xs:attribute name="TComSupport" type="xs:boolean"/>
+		<xs:attribute name="DownloadSlotAddress" type="xs:boolean"/>
+		<xs:attribute name="CheckRevisionNoType" type="xs:int"/>
+		<xs:attribute name="PortPhys" type="xs:int"/>
+		<xs:attribute name="PdoOvsFactor" type="xs:int"/>
+		<xs:attribute name="CheckIdentificationAdo" type="xs:boolean"/>
+		<xs:attribute name="IdentificationAdo" type="xs:int"/>
+		<xs:attribute name="IdentificationValue" type="xs:int"/>
+		<xs:attribute name="TimeoutOpenLink1" type="xs:int"/>
+		<xs:attribute name="TimeoutOpenLink2" type="xs:int"/>
+		<xs:attribute name="TimeoutOpenLink3" type="xs:int"/>
+		<xs:attribute name="SafetyLogicSupported" type="xs:boolean"/>
+		<xs:attribute name="DownloadSlotCfgIP" type="xs:boolean"/>
+		<xs:attribute name="ModulePdoGroup" type="xs:int"/>
+		<xs:attribute name="MaxSlotCount" type="xs:int"/>
+		<xs:attribute name="MaxSlotGroupCount" type="xs:int"/>
+		<xs:attribute name="SlotPdoIncrement" type="xs:int"/>
+		<xs:attribute name="SlotGroupPdoIncrement" type="xs:int"/>
+		<xs:attribute name="SlotIndexIncrement" type="xs:int"/>
+		<xs:attribute name="SlotGroupIndexIncrement" type="xs:int"/>
+		<xs:attribute name="ModuleOD" type="xs:boolean"/>
+		<xs:attribute name="Type" type="xs:string"/>
+		<xs:attribute name="Desc" type="xs:string"/>
+		<xs:attribute name="PortABoxInfo" type="HexDecValue"/>
+		<xs:attribute name="SmPdoVariables" type="xs:boolean"/>
+	</xs:complexType>
+	<xs:complexType name="TcSmEthernetDef">
+		<xs:sequence>
+			<xs:element name="Route" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="Esl" minOccurs="0">
+				<xs:complexType>
+					<xs:attribute name="SyncMasterProtocolPortMask" type="HexDecValue"/>
+					<xs:attribute name="SyncSlaveProtocolPort" type="HexDecValue"/>
+					<xs:attribute name="DcShift" type="HexDecValue"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="OpenModeDeviceItems" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="CCatInfo" minOccurs="0">
+				<xs:complexType>
+					<xs:attribute name="CCatEepromOffs" type="HexDecValue"/>
+					<xs:attribute name="CCatEepromSize" type="HexDecValue"/>
+					<xs:attribute name="CCatSwitchOffs" type="HexDecValue"/>
+					<xs:attribute name="CCatSwitchSize" type="HexDecValue"/>
+					<xs:attribute name="CCatGpioOffs" type="HexDecValue"/>
+					<xs:attribute name="CCatGpioSize" type="HexDecValue"/>
+					<xs:attribute name="CCatTimeOffs" type="HexDecValue"/>
+					<xs:attribute name="CCatTimeSize" type="HexDecValue"/>
+					<xs:attribute name="CCatIntCtrlOffs" type="HexDecValue"/>
+					<xs:attribute name="CCatIntCtrlSize" type="HexDecValue"/>
+					<xs:attribute name="PortCount" type="xs:int"/>
+					<xs:attribute name="PortSwitched" type="xs:boolean"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="DeviceDesc" type="xs:string"/>
+		<xs:attribute name="FreerunCycle" type="xs:int" default="4"/>
+		<xs:attribute name="VirtualDeviceName" type="xs:boolean"/>
+		<xs:attribute name="PromiscuousMode" type="xs:boolean"/>
+		<xs:attribute name="SpecialTask" type="xs:boolean"/>
+		<xs:attribute name="CycleTimeAdustable" type="xs:boolean"/>
+		<xs:attribute name="TaskPort" type="xs:int"/>
+		<xs:attribute name="SwitchToNdis" type="xs:boolean"/>
+		<xs:attribute name="Ports" type="xs:int"/>
+		<xs:attribute name="VLanMode" type="xs:int"/>
+		<xs:attribute name="TcpIpPort" type="xs:int"/>
+		<xs:attribute name="MaxSwitchPorts" type="xs:int"/>
+		<xs:attribute name="MaxSwitchFrames" type="xs:int"/>
+		<xs:attribute name="MaxSwitchMACs" type="xs:int"/>
+		<xs:attribute name="VLanIds" type="xs:hexBinary" default=""/>
+		<xs:attribute name="IpSettings" type="xs:hexBinary" default=""/>
+		<xs:attribute name="SupportedProtocols" type="HexDecValue"/>
+	</xs:complexType>
+	<xs:complexType name="TcSmTreeItem">
+		<xs:sequence>
+			<xs:element name="Name" type="xs:string" minOccurs="0"/>
+			<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+			<xs:sequence>
+				<xs:element name="ImageId" type="xs:int" minOccurs="0"/>
+				<xs:element name="ImageHash" type="GUID" minOccurs="0"/>
+				<xs:element name="ImageData" type="xs:hexBinary" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>hex binary data of a BMP file (dimensions 16x16 recomended)</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:sequence>
+			<xs:element name="ProjectVariant" type="ProjectVariantType" minOccurs="0"/>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="ClassName" type="xs:string"/>
+		<xs:attribute name="Id" type="HexDecValue"/>
+		<xs:attribute name="AmlId" type="GUID"/>
+		<xs:attribute name="Disabled" type="xs:boolean"/>
+		<xs:attribute name="CreateSymbols" type="xs:boolean"/>
+		<xs:attribute name="SaveInOwnFile" type="xs:boolean"/>
+		<xs:attribute name="ObjectProtectionLevel" type="GUID"/>
+	</xs:complexType>
+	<xs:complexType name="TcSmVarDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Type">
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:string">
+									<xs:attribute name="GUID" type="GUID"/>
+									<xs:attribute name="Namespace" type="xs:string"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="BitSize" type="xs:int" minOccurs="0"/>
+					<xs:element name="BitOffs" type="xs:int" minOccurs="0"/>
+					<xs:element name="InOut" type="xs:int" minOccurs="0"/>
+					<xs:element name="UserHandle" type="xs:int" minOccurs="0"/>
+					<xs:element name="ExternalAddress" type="xs:int" minOccurs="0"/>
+					<xs:element name="SubVar" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Name" type="xs:string"/>
+								<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+							</xs:sequence>
+							<xs:attribute name="Swapping" type="HexDecValue"/>
+							<xs:attribute name="DisplayScale" type="HexDecValue"/>
+							<xs:attribute name="TypeFormatIndex" type="HexDecValue"/>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:attribute name="Swapping" type="HexDecValue"/>
+				<xs:attribute name="DisplayScale" type="HexDecValue"/>
+				<xs:attribute name="TypeFormatIndex" type="HexDecValue"/>
+				<xs:attribute name="ChangeableAddress" type="xs:boolean"/>
+				<xs:attribute name="NotLinkable" type="xs:boolean"/>
+				<xs:attribute name="BoxStateVariable" type="xs:boolean"/>
+				<xs:attribute name="DependOnSlot" type="xs:boolean"/>
+				<xs:attribute name="DependOnSlotGrp" type="xs:boolean"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmCanPdoDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="TX" type="xs:boolean"/>
+				<xs:attribute name="CobId" type="xs:int"/>
+				<xs:attribute name="TransType" type="xs:int"/>
+				<xs:attribute name="InhibitTime" type="xs:int"/>
+				<xs:attribute name="Flags" type="xs:int"/>
+				<xs:attribute name="EventTime" type="xs:int"/>
+				<xs:attribute name="Modulo" type="xs:int"/>
+				<xs:attribute name="PdoStartAddress" type="xs:int"/>
+				<xs:attribute name="CfgData" type="xs:hexBinary"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmCCatSlotDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:attribute name="SlotType" type="xs:hexBinary"/>
+				<xs:attribute name="SlotData" type="xs:hexBinary"/>
+				<xs:attribute name="SlotName" type="xs:string"/>
+				<xs:attribute name="Ports" type="xs:int"/>
+				<xs:attribute name="MacOids" type="xs:hexBinary"/>
+				<xs:attribute name="SlotNo" type="xs:int"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmDnConnDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="Flags" type="xs:int"/>
+				<xs:attribute name="ConnectionType" type="xs:int"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmPnSubModuleDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Record" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="TransferSequence" type="HexDecValue"/>
+							<xs:attribute name="Length" type="HexDecValue"/>
+							<xs:attribute name="Index" type="HexDecValue"/>
+							<xs:attribute name="ConstData" type="xs:hexBinary"/>
+							<xs:attribute name="IsPROFISafeRecord" type="xs:boolean"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="GsdmlSubModuleData" type="TcSmPnGsdmlSubModule" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="SubModuleIdentNumber" type="HexDecValue"/>
+				<xs:attribute name="TypeOfSubModule" type="HexDecValue"/>
+				<xs:attribute name="SubSlotNumber" type="HexDecValue"/>
+				<xs:attribute name="IOCREnd" type="HexDecValue"/>
+				<xs:attribute name="IsFixSubmodule" type="xs:boolean"/>
+				<xs:attribute name="APINr" type="HexDecValue"/>
+				<xs:attribute name="P1005" type="HexDecValue"/>
+				<xs:attribute name="P0880" type="HexDecValue"/>
+				<xs:attribute name="P0922" type="HexDecValue"/>
+				<xs:attribute name="DriveObject" type="HexDecValue"/>
+				<xs:attribute name="SiemensSignalNo" type="xs:boolean"/>
+				<xs:attribute name="AllStdTeleNo" type="xs:boolean"/>
+				<xs:attribute name="IsDriveSubMod" type="xs:boolean"/>
+				<xs:attribute name="IsPROFIsafeSubMod" type="xs:boolean"/>
+				<xs:attribute name="SubModuleID" type="xs:string"/>
+				<xs:attribute name="ChnInfoIn" type="xs:hexBinary"/>
+				<xs:attribute name="ChnInfoOut" type="xs:hexBinary"/>
+				<xs:attribute name="VirtRealData" type="xs:hexBinary"/>
+				<xs:attribute name="PortData" type="xs:hexBinary"/>
+				<xs:attribute name="RemPeerPort" type="xs:string"/>
+				<xs:attribute name="InterfaceData" type="xs:hexBinary"/>
+				<xs:attribute name="IrtPropData" type="xs:hexBinary"/>
+				<xs:attribute name="IoInputMinFactor" type="HexDecValue"/>
+				<xs:attribute name="IoOutputMinFactor" type="HexDecValue"/>
+				<xs:attribute name="AddSubModFlags" type="HexDecValue"/>
+				<xs:attribute name="IMFunction" type="xs:string"/>
+				<xs:attribute name="IMLocation" type="xs:string"/>
+				<xs:attribute name="IMDate" type="xs:string"/>
+				<xs:attribute name="IMDescriptor" type="xs:string"/>
+				<xs:attribute name="IMSignature" type="xs:string"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmPnModuleDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="SubModule" type="TcSmPnSubModuleDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="DAP" type="xs:boolean"/>
+				<xs:attribute name="IsEmptySlot" type="xs:boolean"/>
+				<xs:attribute name="ModuleIdentNumber" type="HexDecValue"/>
+				<xs:attribute name="ModuleInfo" type="xs:string"/>
+				<xs:attribute name="ModuleID" type="xs:string"/>
+				<xs:attribute name="P1005Legacy" type="HexDecValue"/>
+				<xs:attribute name="P0880Legacy" type="HexDecValue"/>
+				<xs:attribute name="P0922Legacy" type="HexDecValue"/>
+				<xs:attribute name="SiemensSignalNoLegacy" type="xs:boolean"/>
+				<xs:attribute name="AllStdTeleNoLegacy" type="xs:boolean"/>
+				<xs:attribute name="DriveObjectLegacy" type="HexDecValue"/>
+				<xs:attribute name="DirectDeletable" type="xs:boolean"/>
+				<xs:attribute name="ChnInfoLegacyIn" type="xs:hexBinary"/>
+				<xs:attribute name="ChnInfoLegacyOut" type="xs:hexBinary"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmPnGsdmlSubModule">
+		<xs:sequence>
+			<xs:element name="Record" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ConstData" type="xs:int" minOccurs="0" maxOccurs="unbounded"/>
+						<xs:element name="RecordDataDef" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="AllowedValue" type="HexDecValue" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="DefaultValueArray" type="HexDecValue" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute name="Name" type="xs:string"/>
+								<xs:attribute name="ValueItemTarget" type="xs:string"/>
+								<xs:attribute name="DataType" type="xs:string"/>
+								<xs:attribute name="MinAllowedValue" type="HexDecValue"/>
+								<xs:attribute name="MaxAllowedValue" type="HexDecValue"/>
+								<xs:attribute name="DefaultValue" type="HexDecValue"/>
+								<xs:attribute name="DataLength" type="xs:int"/>
+								<xs:attribute name="ByteOffset" type="HexDecValue"/>
+								<xs:attribute name="BitOffset" type="xs:int"/>
+								<xs:attribute name="BitLength" type="xs:int"/>
+								<xs:attribute name="Visible" type="xs:boolean"/>
+								<xs:attribute name="Changeable" type="xs:boolean"/>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+					<xs:attribute name="Name" type="xs:string"/>
+					<xs:attribute name="TransferSequence" type="HexDecValue"/>
+					<xs:attribute name="Length" type="HexDecValue"/>
+					<xs:attribute name="Index" type="HexDecValue"/>
+					<xs:attribute name="IsPROFISafeRecord" type="xs:boolean"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DataItemIn" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="BitText" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+					<xs:attribute name="Name" type="xs:string"/>
+					<xs:attribute name="VarSize" type="HexDecValue"/>
+					<xs:attribute name="VarType" type="GUID"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DataItemOut" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="BitText" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+					<xs:attribute name="Name" type="xs:string"/>
+					<xs:attribute name="VarSize" type="HexDecValue"/>
+					<xs:attribute name="VarType" type="GUID"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="SubModuleIdentNumber" type="HexDecValue"/>
+		<xs:attribute name="SubSlotNumber" type="xs:int"/>
+		<xs:attribute name="TypeOfSubmodule" type="xs:int"/>
+		<xs:attribute name="Id" type="xs:string"/>
+		<xs:attribute name="SubModuleName" type="xs:string"/>
+		<xs:attribute name="APINr" type="HexDecValue"/>
+		<xs:attribute name="InfoText" type="xs:string"/>
+		<xs:attribute name="OrderNumber" type="xs:string"/>
+		<xs:attribute name="SubModuleCategory" type="xs:string"/>
+		<xs:attribute name="SubModuleSubCategory" type="xs:string"/>
+		<xs:attribute name="IsPROFISafeSubMod" type="xs:boolean"/>
+		<xs:attribute name="VirtRealData" type="xs:hexBinary"/>
+	</xs:complexType>
+	<xs:complexType name="TcSmPnGsdmlModule">
+		<xs:sequence>
+			<xs:element name="FixSubModules" type="TcSmPnGsdmlSubModule" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="SubSlot" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="PossibleSubModule" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+					<xs:attribute name="InsertedSubModuleID" type="xs:string"/>
+					<xs:attribute name="SubSlotNumber" type="xs:int"/>
+					<xs:attribute name="IsFixed" type="xs:boolean"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="ModuleIdentNumber" type="HexDecValue"/>
+		<xs:attribute name="Id" type="xs:string"/>
+		<xs:attribute name="ModuleName" type="xs:string"/>
+		<xs:attribute name="InfoText" type="xs:string"/>
+		<xs:attribute name="OrderNumber" type="xs:string"/>
+		<xs:attribute name="ModuleCategory" type="xs:string"/>
+		<xs:attribute name="ModuleSubCategory" type="xs:string"/>
+		<xs:attribute name="Slot" type="xs:hexBinary"/>
+	</xs:complexType>
+	<xs:complexType name="TcSmPbGsdModule">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="In" type="xs:int"/>
+				<xs:attribute name="Out" type="xs:int"/>
+				<xs:attribute name="ModIdx" type="xs:int"/>
+				<xs:attribute name="CfgData" type="xs:hexBinary"/>
+				<xs:attribute name="PrmData" type="xs:hexBinary"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmECatCmdDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="CmdType" type="xs:int"/>
+				<xs:attribute name="CmdData" type="xs:hexBinary"/>
+				<xs:attribute name="TaskOid" type="HexDecValue"/>
+				<xs:attribute name="ImageOid" type="HexDecValue"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmEipConnDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="ConnectionPara" type="xs:hexBinary"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmVarGrpDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Var" type="TcSmVarDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="VarGrpType" type="xs:int"/>
+				<xs:attribute name="InsertType" type="xs:int"/>
+				<xs:attribute name="MaxOffset" type="xs:int"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmNcAxis">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="AxisPara" minOccurs="0">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="General" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="UnitName" type="xs:string"/>
+										<xs:attribute name="UnitFlags" type="HexDecValue"/>
+										<xs:attribute name="IoDivider" type="xs:int"/>
+										<xs:attribute name="IoModulo" type="xs:int"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Dynamic" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="Acceleration" type="xs:double"/>
+										<xs:attribute name="Deceleration" type="xs:double"/>
+										<xs:attribute name="Jerk" type="xs:double"/>
+										<xs:attribute name="AccelerationMaximum" type="xs:double"/>
+										<xs:attribute name="DecelerationMaximum" type="xs:double"/>
+										<xs:attribute name="DelayTime" type="xs:double"/>
+										<xs:attribute name="SetpointGeneratorType" type="xs:int"/>
+										<xs:attribute name="OverrideType" type="xs:int"/>
+										<xs:attribute name="VeloJumpFactor" type="xs:double"/>
+										<xs:attribute name="ToleranceBallAuxAxis" type="xs:double"/>
+										<xs:attribute name="MaxPosDeviationAuxAxis" type="xs:double"/>
+										<xs:attribute name="FastAxisStopSignalType" type="xs:double"/>
+										<xs:attribute name="FastAcceleration" type="xs:double"/>
+										<xs:attribute name="FastDeceleration" type="xs:double"/>
+										<xs:attribute name="FastJerk" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Velo" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="RefSearch" type="xs:double"/>
+										<xs:attribute name="RefSync" type="xs:double"/>
+										<xs:attribute name="SlowManual" type="xs:double"/>
+										<xs:attribute name="FastManual" type="xs:double"/>
+										<xs:attribute name="Fast" type="xs:double"/>
+										<xs:attribute name="Maximum" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="PositionAreaControl" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="Enable" type="xs:boolean"/>
+										<xs:attribute name="Range" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="MotionControl" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="Enable" type="xs:boolean"/>
+										<xs:attribute name="Range" type="xs:double"/>
+										<xs:attribute name="Time" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Loop" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="Enable" type="xs:boolean"/>
+										<xs:attribute name="Range" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="TargetPosControl" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="Enable" type="xs:boolean"/>
+										<xs:attribute name="Range" type="xs:double"/>
+										<xs:attribute name="Time" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="PEHControl" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="Enable" type="xs:boolean"/>
+										<xs:attribute name="Time" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="BacklashCompensation" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="Enable" type="xs:boolean"/>
+										<xs:attribute name="Range" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="OtherSettings" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="ErrorReactionMode" type="xs:int"/>
+										<xs:attribute name="ErrorReactionDelay" type="xs:double"/>
+										<xs:attribute name="SwitchToActValuesIfDisabled" type="xs:boolean"/>
+										<xs:attribute name="NoMotionWindow" type="xs:double"/>
+										<xs:attribute name="NoMotionFilterTime" type="xs:double"/>
+										<xs:attribute name="EncGrpDeadTimeComp" type="xs:double"/>
+										<xs:attribute name="AllowMotionCmdToSlave" type="xs:boolean"/>
+										<xs:attribute name="AllowMotionCmdToExtSetGenAxis" type="xs:boolean"/>
+										<xs:attribute name="DataPersistence" type="xs:boolean"/>
+										<xs:attribute name="PulseDistancePos" type="xs:double"/>
+										<xs:attribute name="PulseDistanceNeg" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Discrete" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="PulseTimePos" type="xs:double" minOccurs="0"/>
+											<xs:element name="PulseTimeNeg" type="xs:double" minOccurs="0"/>
+											<xs:element name="CreepDistancePos" type="xs:double" minOccurs="0"/>
+											<xs:element name="CreepDistanceNeg" type="xs:double" minOccurs="0"/>
+											<xs:element name="BreakDistancePos" type="xs:double" minOccurs="0"/>
+											<xs:element name="BreakDistanceNeg" type="xs:double" minOccurs="0"/>
+											<xs:element name="BreakDelayPos" type="xs:double" minOccurs="0"/>
+											<xs:element name="BreakDelayNeg" type="xs:double" minOccurs="0"/>
+											<xs:element name="DelayFastToSlow" type="xs:double" minOccurs="0"/>
+											<xs:element name="CreepDistanceStop" type="xs:double" minOccurs="0"/>
+											<xs:element name="DelayBreakRelease" type="xs:double" minOccurs="0"/>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Stepper" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="StepperMode" type="xs:int" minOccurs="0"/>
+											<xs:element name="DistancePerStep" type="xs:double" minOccurs="0"/>
+											<xs:element name="VeloMinimum" type="xs:double" minOccurs="0"/>
+											<xs:element name="StepsPerLevel" type="xs:int" minOccurs="0"/>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="ParameterChanged" type="xs:int" minOccurs="0" maxOccurs="unbounded"/>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Encoder" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+								<xs:element name="LinkedTo" minOccurs="0">
+									<xs:complexType>
+										<xs:simpleContent>
+											<xs:extension base="xs:string">
+												<xs:attribute name="ObjectId" type="HexDecValue"/>
+											</xs:extension>
+										</xs:simpleContent>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="EncPara" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="FilterTime" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="TPos" type="xs:double"/>
+													<xs:attribute name="TVelo" type="xs:double"/>
+													<xs:attribute name="TAcc" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="SoftEndMinControl" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="Enable" type="xs:boolean"/>
+													<xs:attribute name="Range" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="SoftEndMaxControl" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="Enable" type="xs:boolean"/>
+													<xs:attribute name="Range" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="ActPosCorrection" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="Enable" type="xs:boolean"/>
+													<xs:attribute name="Time" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="Inc" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="RefSearchInverse" type="xs:boolean"/>
+													<xs:attribute name="RefSyncInverse" type="xs:boolean"/>
+													<xs:attribute name="RefPosition" type="xs:double"/>
+													<xs:attribute name="RefDistSearchToSyncEnabled" type="xs:boolean"/>
+													<xs:attribute name="RefDistanceSearchToSync" type="xs:int"/>
+													<xs:attribute name="RefExternSync" type="xs:boolean"/>
+													<xs:attribute name="RefMode" type="xs:int"/>
+													<xs:attribute name="RefSoftSyncMask" type="HexDecValue"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="Sim" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="RandScale" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="TimeComp" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="TimeCompMode" type="xs:int"/>
+													<xs:attribute name="IoTimeAbsolute" type="xs:boolean"/>
+													<xs:attribute name="EncDelayCycles" type="xs:int"/>
+													<xs:attribute name="AdditionalTimeShift" type="xs:int"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="ParameterChanged" type="xs:int" minOccurs="0" maxOccurs="unbounded"/>
+										</xs:sequence>
+										<xs:attribute name="ScaleFactorNumerator" type="xs:double"/>
+										<xs:attribute name="ScaleFactorDenominator" type="xs:double"/>
+										<xs:attribute name="Offset" type="xs:double"/>
+										<xs:attribute name="ModuloFactor" type="xs:double"/>
+										<xs:attribute name="ToleranceWndModuloStart" type="xs:double"/>
+										<xs:attribute name="Inverse" type="xs:boolean"/>
+										<xs:attribute name="EncMode" type="xs:int"/>
+										<xs:attribute name="MaxCount" type="HexDecValue"/>
+										<xs:attribute name="RejectionFilterMask" type="HexDecValue"/>
+										<xs:attribute name="ReferenceSystem" type="xs:int"/>
+										<xs:attribute name="EvaluationDirection" type="xs:int"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+							</xs:sequence>
+							<xs:attribute name="Disabled" type="xs:boolean"/>
+							<xs:attribute name="Name" type="xs:string"/>
+							<xs:attribute name="EncId" type="xs:int"/>
+							<xs:attribute name="EncType" type="xs:int"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Drive" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+								<xs:element name="LinkedTo" minOccurs="0">
+									<xs:complexType>
+										<xs:simpleContent>
+											<xs:extension base="xs:string">
+												<xs:attribute name="ObjectId" type="HexDecValue"/>
+											</xs:extension>
+										</xs:simpleContent>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="DrvPara" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Analog" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="VeloReferenz" type="xs:double"/>
+													<xs:attribute name="OutputReferenz" type="xs:double"/>
+													<xs:attribute name="VeloOffset" type="xs:double"/>
+													<xs:attribute name="VeloScale" type="xs:double"/>
+													<xs:attribute name="PosScale" type="xs:double"/>
+													<xs:attribute name="AccScale" type="xs:double"/>
+													<xs:attribute name="TorqueScale" type="xs:double"/>
+													<xs:attribute name="TorqueSetpointScale" type="xs:double"/>
+													<xs:attribute name="ScaleFactorActTorque" type="xs:double"/>
+													<xs:attribute name="FilterTimeActTorque" type="xs:double"/>
+													<xs:attribute name="FilterTimeActTorqueDerivative" type="xs:double"/>
+													<xs:attribute name="PosOutputDelay" type="xs:double"/>
+													<xs:attribute name="VeloOutputDelay" type="xs:double"/>
+													<xs:attribute name="AccOutputDelay" type="xs:double"/>
+													<xs:attribute name="TorqueOutputDelay" type="xs:double"/>
+													<xs:attribute name="QuadrantCompensation" type="xs:double"/>
+													<xs:attribute name="VeloBendPoint" type="xs:double"/>
+													<xs:attribute name="OutputBendPoint" type="xs:double"/>
+													<xs:attribute name="ProfiDrivePosKpc" type="xs:int"/>
+													<xs:attribute name="TabId" type="xs:int"/>
+													<xs:attribute name="TabIpolType" type="xs:int"/>
+													<xs:attribute name="OutputOffsetPercent" type="xs:double"/>
+													<xs:attribute name="ProfiDriveScaleXerr" type="xs:double"/>
+													<xs:attribute name="SmoothingFilterType" type="xs:int"/>
+													<xs:attribute name="SmoothingFilterOrder" type="xs:int"/>
+													<xs:attribute name="SmoothingFilterTime" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="Stepper" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="BitMaskCycle1" type="HexDecValue"/>
+													<xs:attribute name="BitMaskCycle2" type="HexDecValue"/>
+													<xs:attribute name="BitMaskCycle3" type="HexDecValue"/>
+													<xs:attribute name="BitMaskCycle4" type="HexDecValue"/>
+													<xs:attribute name="BitMaskCycle5" type="HexDecValue"/>
+													<xs:attribute name="BitMaskCycle6" type="HexDecValue"/>
+													<xs:attribute name="BitMaskCycle7" type="HexDecValue"/>
+													<xs:attribute name="BitMaskCycle8" type="HexDecValue"/>
+													<xs:attribute name="BitMaskHoldingLoad" type="HexDecValue"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="TimeComp" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="TimeCompMode" type="xs:int"/>
+													<xs:attribute name="IoTimeAbsolute" type="xs:boolean"/>
+													<xs:attribute name="DriveDelayCycles" type="xs:int"/>
+													<xs:attribute name="TaskDelayCycles" type="xs:int"/>
+													<xs:attribute name="AdditionalTimeShift" type="xs:int"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="ParameterChanged" type="xs:int" minOccurs="0" maxOccurs="unbounded"/>
+										</xs:sequence>
+										<xs:attribute name="Inverse" type="xs:boolean"/>
+										<xs:attribute name="DrvMode" type="xs:int"/>
+										<xs:attribute name="MinOutputLimit" type="xs:double"/>
+										<xs:attribute name="MaxOutputLimit" type="xs:double"/>
+										<xs:attribute name="MaxCount" type="HexDecValue"/>
+										<xs:attribute name="DriveControlDWord" type="HexDecValue"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+							</xs:sequence>
+							<xs:attribute name="Name" type="xs:string"/>
+							<xs:attribute name="DrvId" type="xs:int"/>
+							<xs:attribute name="DrvType" type="xs:int"/>
+							<xs:attribute name="Disabled" type="xs:boolean"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Controller" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+								<xs:element name="CtrPara" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="PosDiffControl" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="Enable" type="xs:boolean"/>
+													<xs:attribute name="Range" type="xs:double"/>
+													<xs:attribute name="Time" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="VeloDiffControl" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="Enable" type="xs:boolean"/>
+													<xs:attribute name="Range" type="xs:double"/>
+													<xs:attribute name="Time" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="PID" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="PosKp" type="xs:double"/>
+													<xs:attribute name="PosTn" type="xs:double"/>
+													<xs:attribute name="PosTv" type="xs:double"/>
+													<xs:attribute name="PosTd" type="xs:double"/>
+													<xs:attribute name="PosIOutputLimit" type="xs:double"/>
+													<xs:attribute name="PosDOutputLimit" type="xs:double"/>
+													<xs:attribute name="PosIDisableWhenMoving" type="xs:boolean"/>
+													<xs:attribute name="PosExtKp" type="xs:double"/>
+													<xs:attribute name="PosExtVelo" type="xs:double"/>
+													<xs:attribute name="VeloKp" type="xs:double"/>
+													<xs:attribute name="VeloTn" type="xs:double"/>
+													<xs:attribute name="VeloTv" type="xs:double"/>
+													<xs:attribute name="VeloTd" type="xs:double"/>
+													<xs:attribute name="VeloIOutputLimit" type="xs:double"/>
+													<xs:attribute name="VeloDOutputLimit" type="xs:double"/>
+													<xs:attribute name="AccKa" type="xs:double"/>
+													<xs:attribute name="CtrlOutputLimit" type="xs:double"/>
+													<xs:attribute name="DeadBandPosition" type="xs:double"/>
+													<xs:attribute name="DeadBandVelocity" type="xs:double"/>
+													<xs:attribute name="PosDiffCoupleKcp" type="xs:double"/>
+													<xs:attribute name="VeloPT2FilterTime" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="AutoOffset" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="Enable" type="xs:boolean"/>
+													<xs:attribute name="Range" type="xs:double"/>
+													<xs:attribute name="Time" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="Observer" minOccurs="0">
+												<xs:complexType>
+													<xs:attribute name="ObserverMode" type="xs:int"/>
+													<xs:attribute name="MotorTorqueConstant" type="xs:double"/>
+													<xs:attribute name="MotorMomentOfInertia" type="xs:double"/>
+													<xs:attribute name="BandWidth" type="xs:double"/>
+													<xs:attribute name="CorrectionFactor" type="xs:double"/>
+													<xs:attribute name="Order1FilterTimeConstant" type="xs:double"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="ParameterChanged" type="xs:int" minOccurs="0" maxOccurs="unbounded"/>
+										</xs:sequence>
+										<xs:attribute name="CtrMode" type="xs:int"/>
+										<xs:attribute name="PriorControlFactor" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+							<xs:attribute name="Disabled" type="xs:boolean"/>
+							<xs:attribute name="Name" type="xs:string"/>
+							<xs:attribute name="CtrId" type="xs:int"/>
+							<xs:attribute name="CtrType" type="xs:int"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="2"/>
+					<xs:element name="Module" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="AxisType" type="xs:int"/>
+				<xs:attribute name="AxisFolder" type="xs:string"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmNcGroup">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Parameter" minOccurs="0">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Dxd" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="VeloMode" type="xs:int"/>
+										<xs:attribute name="EnableSoftPositionLimits" type="xs:boolean"/>
+										<xs:attribute name="ItpOverrideType" type="xs:int"/>
+										<xs:attribute name="VeloVertexFactorC0" type="xs:double"/>
+										<xs:attribute name="VeloVertexFactorC1" type="xs:double"/>
+										<xs:attribute name="CriticalVertexAngleLow" type="xs:double"/>
+										<xs:attribute name="CriticalVertexAngleHigh" type="xs:double"/>
+										<xs:attribute name="ItpSafCycleTimeDivisor" type="xs:int"/>
+										<xs:attribute name="ItpSafTableLength" type="xs:int"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Encoder" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="DeadTimeCompensation" type="xs:double"/>
+										<xs:attribute name="NoMotionWindow" type="xs:double"/>
+										<xs:attribute name="NoMotionFilterTime" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Fifo" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="FifoDimension" type="xs:int"/>
+										<xs:attribute name="FifoLength" type="xs:int"/>
+										<xs:attribute name="FifoIpolType" type="xs:int"/>
+										<xs:attribute name="FifoOverrideType" type="xs:int"/>
+										<xs:attribute name="FifoOverrideChangeTime" type="xs:double"/>
+										<xs:attribute name="TimeUnitFifo" type="xs:double"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Kinematic" minOccurs="0">
+									<xs:complexType>
+										<xs:attribute name="OidKinematicTrafo" type="HexDecValue"/>
+										<xs:attribute name="OidTracking" type="HexDecValue"/>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="ParameterChanged" type="xs:int" minOccurs="0" maxOccurs="unbounded"/>
+							</xs:sequence>
+							<xs:attribute name="ChannelId" type="xs:int"/>
+							<xs:attribute name="NrInChn" type="xs:int"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Module" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="GroupType" type="xs:int"/>
+				<xs:attribute name="IoDivider" type="xs:int"/>
+				<xs:attribute name="IoModulo" type="xs:int"/>
+				<xs:attribute name="SetpointGeneratorType" type="xs:int"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmNcInterpreter">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="MFunc" type="xs:hexBinary" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="G70Factor" type="xs:double"/>
+				<xs:attribute name="G71Factor" type="xs:double"/>
+				<xs:attribute name="ProgName" type="xs:string"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmNcChannel">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="2"/>
+					<xs:element name="Group" type="TcSmNcGroup" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="Interpreter" type="TcSmNcInterpreter" minOccurs="0"/>
+				</xs:sequence>
+				<xs:attribute name="ChannelType" type="xs:int"/>
+				<xs:attribute name="InterpreterType" type="xs:int"/>
+				<xs:attribute name="LoadBufSize" type="xs:int"/>
+				<xs:attribute name="AxesColumns" type="HexDecValue"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmNcTable">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Slave" type="TcSmNcTableSlave" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="TableType" type="xs:int"/>
+				<xs:attribute name="AxisId" type="xs:int"/>
+				<xs:attribute name="Axisrotational" type="xs:boolean"/>
+				<xs:attribute name="MotionFunction" type="xs:boolean"/>
+				<xs:attribute name="Maximum" type="xs:double"/>
+				<xs:attribute name="Minimum" type="xs:double"/>
+				<xs:attribute name="MinIncr" type="xs:double"/>
+				<xs:attribute name="Velocity" type="xs:double"/>
+				<xs:attribute name="RoundValue" type="xs:double"/>
+				<xs:attribute name="VelScale" type="xs:double"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmNcTableSlave">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence/>
+				<xs:attribute name="TableType" type="xs:int"/>
+				<xs:attribute name="AxisId" type="xs:int"/>
+				<xs:attribute name="RgbColor" type="xs:int"/>
+				<xs:attribute name="FixedRatio" type="xs:boolean"/>
+				<xs:attribute name="VeloDisplayPercent" type="xs:boolean"/>
+				<xs:attribute name="YMaximum" type="xs:double"/>
+				<xs:attribute name="YMinimum" type="xs:double"/>
+				<xs:attribute name="VMaximum" type="xs:double"/>
+				<xs:attribute name="VMinimum" type="xs:double"/>
+				<xs:attribute name="AMaximum" type="xs:double"/>
+				<xs:attribute name="AMinimum" type="xs:double"/>
+				<xs:attribute name="JMaximum" type="xs:double"/>
+				<xs:attribute name="JMinimum" type="xs:double"/>
+				<xs:attribute name="RoundValue" type="xs:double"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmCncAxis">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="ChnInfoIn" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="Id" type="xs:int"/>
+							<xs:attribute name="Length" type="xs:int"/>
+							<xs:attribute name="Reference" type="xs:string"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="ChnInfoOut" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="Id" type="xs:int"/>
+							<xs:attribute name="Length" type="xs:int"/>
+							<xs:attribute name="Reference" type="xs:string"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Data" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:string">
+									<xs:attribute name="Name"/>
+									<xs:attribute name="Offset"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Module" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="AxisPara" type="xs:int"/>
+				<xs:attribute name="DefaultChannel" type="xs:int"/>
+				<xs:attribute name="DefaultIndex" type="xs:int"/>
+				<xs:attribute name="DefaultProgName" type="xs:string"/>
+				<xs:attribute name="OidTcomObjectId" type="HexDecValue"/>
+				<xs:attribute name="GeoContext" type="HexDecValue"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmMotionAxis">
+		<xs:complexContent>
+			<xs:extension base="TcSmNcAxis">
+				<xs:sequence>
+					<xs:element name="ChnInfoIn" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="Id" type="xs:int"/>
+							<xs:attribute name="Length" type="xs:int"/>
+							<xs:attribute name="Reference" type="xs:string"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="ChnInfoOut" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="Id" type="xs:int"/>
+							<xs:attribute name="Length" type="xs:int"/>
+							<xs:attribute name="Reference" type="xs:string"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Data" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:string">
+									<xs:attribute name="Name"/>
+									<xs:attribute name="Offset"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:attribute name="AxisPara" type="xs:int"/>
+				<xs:attribute name="DefaultChannel" type="xs:int"/>
+				<xs:attribute name="DefaultIndex" type="xs:int"/>
+				<xs:attribute name="DefaultProgName" type="xs:string"/>
+				<xs:attribute name="OidTcomObjectId" type="HexDecValue"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmCncChannel">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="Data" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:string">
+									<xs:attribute name="Name"/>
+									<xs:attribute name="Offset"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Module" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="SdaContext" type="HexDecValue"/>
+				<xs:attribute name="GeoContext" type="HexDecValue"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmCncVolComp">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="File" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:string">
+									<xs:attribute name="Format" type="xs:int"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:attribute name="AxisPara" type="xs:int"/>
+				<xs:attribute name="DefaultChannel" type="xs:int"/>
+				<xs:attribute name="DefaultIndex" type="xs:int"/>
+				<xs:attribute name="DefaultProgName" type="xs:string"/>
+				<xs:attribute name="OidTcomObjectId" type="HexDecValue"/>
+				<xs:attribute name="GeoContext" type="HexDecValue"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmTermDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="TermType" type="HexDecValue"/>
+				<xs:attribute name="Fieldbus" type="HexDecValue"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmBoxDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="BusCoupler" type="BusCoupler" minOccurs="0"/>
+					<xs:choice>
+						<xs:element name="EtherCAT">
+							<xs:complexType>
+								<xs:complexContent>
+									<xs:extension base="EtherCATSlave">
+										<xs:sequence>
+											<xs:element name="EL60xxComPort" minOccurs="0" maxOccurs="unbounded"/>
+										</xs:sequence>
+									</xs:extension>
+								</xs:complexContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Eap" type="EapSlaveType"/>
+						<xs:element name="Ethernet">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Ax2000" type="Ax2000Type" minOccurs="0"/>
+								</xs:sequence>
+								<xs:attribute name="HostName" type="xs:string"/>
+								<xs:attribute name="UDP" type="xs:boolean"/>
+								<xs:attribute name="NoRetries" type="xs:boolean"/>
+								<xs:attribute name="Bootp" type="xs:boolean"/>
+								<xs:attribute name="NoRtFlag" type="xs:boolean"/>
+								<xs:attribute name="WarnLevel" type="xs:boolean"/>
+								<xs:attribute name="IoDivider" type="xs:int"/>
+								<xs:attribute name="IoModulo" type="xs:int"/>
+								<xs:attribute name="MacAddr" type="xs:hexBinary"/>
+								<xs:attribute name="VlanInfo" type="xs:hexBinary"/>
+								<xs:attribute name="ArpRetryInterval" type="xs:int" default="1000"/>
+								<xs:attribute name="TsmBoxSettings" type="xs:hexBinary"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Profibus">
+							<xs:complexType>
+								<xs:complexContent>
+									<xs:extension base="ProfibusSlave">
+										<xs:sequence>
+											<xs:element name="UserPrm" minOccurs="0" maxOccurs="unbounded">
+												<xs:complexType>
+													<xs:simpleContent>
+														<xs:extension base="xs:hexBinary">
+															<xs:attribute name="Key" type="xs:int"/>
+														</xs:extension>
+													</xs:simpleContent>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="PrmText" minOccurs="0" maxOccurs="unbounded">
+												<xs:complexType>
+													<xs:simpleContent>
+														<xs:extension base="xs:string">
+															<xs:attribute name="Key" type="xs:int"/>
+														</xs:extension>
+													</xs:simpleContent>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="UserPrmRef" type="xs:hexBinary" minOccurs="0" maxOccurs="unbounded"/>
+											<xs:element name="GsdModuleDesc" minOccurs="0" maxOccurs="unbounded">
+												<xs:complexType>
+													<xs:attribute name="Name" type="xs:string" use="required"/>
+													<xs:attribute name="CfgData" type="xs:hexBinary"/>
+													<xs:attribute name="PrmData" type="xs:hexBinary"/>
+													<xs:attribute name="Flags" type="HexDecValue"/>
+													<xs:attribute name="FExtUserPrmLen" type="HexDecValue"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="GsdModule" type="TcSmPbGsdModule" minOccurs="0" maxOccurs="unbounded"/>
+										</xs:sequence>
+									</xs:extension>
+								</xs:complexContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Profinet">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="GsdmlValue" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="RecordText" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+											</xs:sequence>
+											<xs:attribute name="HelpInfo" type="xs:string"/>
+											<xs:attribute name="Id" type="xs:string"/>
+											<xs:attribute name="Content" type="xs:hexBinary"/>
+											<xs:attribute name="ContentLong" type="xs:hexBinary"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="GsdmlChannelDiag" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="ExtDiagText" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+											</xs:sequence>
+											<xs:attribute name="TypeInfo" type="xs:string"/>
+											<xs:attribute name="ErrorType" type="xs:int"/>
+											<xs:attribute name="API" type="HexDecValue"/>
+											<xs:attribute name="ExtDiagType" type="xs:hexBinary"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="GsdmlUnitDiag" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="UnitDiagData" minOccurs="0" maxOccurs="unbounded">
+													<xs:complexType>
+														<xs:attribute name="Name" type="xs:string"/>
+														<xs:attribute name="ValueItemTarget" type="xs:string"/>
+														<xs:attribute name="DataType" type="xs:string"/>
+														<xs:attribute name="DefaultValue" type="HexDecValue"/>
+														<xs:attribute name="DataLength" type="xs:int"/>
+														<xs:attribute name="ByteOffset" type="HexDecValue"/>
+														<xs:attribute name="BitOffset" type="xs:int"/>
+														<xs:attribute name="BitLength" type="xs:int"/>
+													</xs:complexType>
+												</xs:element>
+											</xs:sequence>
+											<xs:attribute name="UserStructureIdent" type="xs:int"/>
+											<xs:attribute name="ProfileAPI" type="HexDecValue"/>
+											<xs:attribute name="IsProfileDiag" type="xs:boolean"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="GsdmlModule" type="TcSmPnGsdmlModule" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="GsdmlSubModule" type="TcSmPnGsdmlSubModule" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="UsedGsdmlSubModule" type="TcSmPnGsdmlSubModule" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="API">
+										<xs:complexType>
+											<xs:complexContent>
+												<xs:extension base="TcSmTreeItem">
+													<xs:sequence>
+														<xs:element name="Module" minOccurs="0" maxOccurs="unbounded">
+															<xs:complexType>
+																<xs:complexContent>
+																	<xs:extension base="TcSmPnModuleDef"/>
+																</xs:complexContent>
+															</xs:complexType>
+														</xs:element>
+													</xs:sequence>
+												</xs:extension>
+											</xs:complexContent>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+								<xs:attribute name="DeviceId" type="HexDecValue"/>
+								<xs:attribute name="VendorId" type="HexDecValue"/>
+								<xs:attribute name="FrameOffset" type="HexDecValue"/>
+								<xs:attribute name="Flags" type="HexDecValue"/>
+								<xs:attribute name="IPAdd" type="xs:hexBinary"/>
+								<xs:attribute name="Subnet" type="xs:hexBinary"/>
+								<xs:attribute name="Gateway" type="xs:hexBinary"/>
+								<xs:attribute name="ProtocolType" type="HexDecValue"/>
+								<xs:attribute name="BoxOnDeviceTyp" type="HexDecValue"/>
+								<xs:attribute name="MaxPhysSlotNr" type="HexDecValue"/>
+								<xs:attribute name="InstanceServerPort" type="HexDecValue"/>
+								<xs:attribute name="InstanceClientPort" type="HexDecValue"/>
+								<xs:attribute name="InstanceId" type="HexDecValue"/>
+								<xs:attribute name="InstanceNumberOfARs" type="HexDecValue"/>
+								<xs:attribute name="InstanceNumberOfSubModules" type="HexDecValue"/>
+								<xs:attribute name="InstanceNumberOfAPIs" type="HexDecValue"/>
+								<xs:attribute name="MultipleWriteSupported" type="xs:boolean"/>
+								<xs:attribute name="MinDeviceInterval" type="xs:int"/>
+								<xs:attribute name="Phase" type="xs:int"/>
+								<xs:attribute name="WatchdogFaktor" type="xs:int"/>
+								<xs:attribute name="ReductionRatio" type="xs:int"/>
+								<xs:attribute name="SendClockFaktor" type="xs:int"/>
+								<xs:attribute name="RTClass" type="xs:int"/>
+								<xs:attribute name="MaxInputLen" type="xs:int"/>
+								<xs:attribute name="MaxOutputLen" type="xs:int"/>
+								<xs:attribute name="MaxDataLen" type="xs:int"/>
+								<xs:attribute name="MaxSupportedRecordSize" type="HexDecValue"/>
+								<xs:attribute name="SendClockFactorData" type="xs:hexBinary"/>
+								<xs:attribute name="SendClockFactorRTC3" type="xs:hexBinary"/>
+								<xs:attribute name="RedRatio" type="xs:hexBinary"/>
+								<xs:attribute name="RedRatioRTC3" type="xs:hexBinary"/>
+								<xs:attribute name="SavePnIoBoxValues" type="xs:hexBinary"/>
+								<xs:attribute name="BoxTypeInfo" type="xs:string"/>
+								<xs:attribute name="MacAdd5" type="xs:int"/>
+								<xs:attribute name="PDOmapping" type="xs:int"/>
+								<xs:attribute name="OutputErrorBehavior" type="xs:int"/>
+								<xs:attribute name="GSDMLPath" type="xs:string"/>
+								<xs:attribute name="ImagePath" type="xs:string"/>
+								<xs:attribute name="MainFamily" type="xs:string"/>
+								<xs:attribute name="ProductFamily" type="xs:string"/>
+								<xs:attribute name="OrderNr" type="xs:string"/>
+								<xs:attribute name="DefaultDNSName" type="xs:string"/>
+								<xs:attribute name="VendorName" type="xs:string"/>
+								<xs:attribute name="FamDescription" type="xs:string"/>
+								<xs:attribute name="GraphicFile" type="xs:string"/>
+								<xs:attribute name="SWVersion" type="xs:string"/>
+								<xs:attribute name="HWVersion" type="xs:string"/>
+								<xs:attribute name="AltLanguage" type="xs:string"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="CanOpen">
+							<xs:complexType>
+								<xs:complexContent>
+									<xs:extension base="ProfibusSlave">
+										<xs:sequence>
+											<xs:element name="Sdo" minOccurs="0" maxOccurs="unbounded">
+												<xs:complexType>
+													<xs:attribute name="Index" type="xs:int"/>
+													<xs:attribute name="SubIndex" type="xs:int"/>
+													<xs:attribute name="Length" type="xs:int"/>
+													<xs:attribute name="Value" type="xs:int"/>
+												</xs:complexType>
+											</xs:element>
+											<xs:element name="TxPdo" type="TcSmCanPdoDef" minOccurs="0" maxOccurs="unbounded"/>
+											<xs:element name="RxPdo" type="TcSmCanPdoDef" minOccurs="0" maxOccurs="unbounded"/>
+											<xs:element name="CanQueue" minOccurs="0">
+												<xs:complexType>
+													<xs:sequence>
+														<xs:element name="RxFilter" minOccurs="0" maxOccurs="unbounded">
+															<xs:complexType>
+																<xs:attribute name="StartCobId" type="xs:int"/>
+																<xs:attribute name="EndCobId" type="xs:int"/>
+															</xs:complexType>
+														</xs:element>
+													</xs:sequence>
+													<xs:attribute name="TxQueue" type="xs:int"/>
+													<xs:attribute name="RxQueue" type="xs:int"/>
+													<xs:attribute name="Flags" type="xs:int"/>
+												</xs:complexType>
+											</xs:element>
+										</xs:sequence>
+										<xs:attribute name="NodeId" type="xs:int"/>
+										<xs:attribute name="BaudSupport" type="xs:int"/>
+										<xs:attribute name="FixedSdos" type="xs:int"/>
+										<xs:attribute name="GenerateFixedSdos" type="xs:boolean"/>
+										<xs:attribute name="TxCobIds" type="xs:hexBinary"/>
+										<xs:attribute name="RxCobIds" type="xs:hexBinary"/>
+										<xs:attribute name="DvFlag_RestartWhenNoTxPdo" type="xs:boolean"/>
+										<xs:attribute name="DvFlag_RestartWhenNoRxPdo" type="xs:boolean"/>
+										<xs:attribute name="DvFlag_GeneralCanNode" type="xs:boolean"/>
+										<xs:attribute name="AddTypeInfo" type="xs:int"/>
+										<xs:attribute name="DevProfNum" type="xs:int"/>
+										<xs:attribute name="CobIDEmcy" type="xs:int"/>
+										<xs:attribute name="CobIDGuard" type="xs:int"/>
+										<xs:attribute name="GuardTime" type="xs:int"/>
+										<xs:attribute name="LifeTime" type="xs:int"/>
+										<xs:attribute name="VendorId" type="xs:int"/>
+										<xs:attribute name="ProductCode" type="xs:int"/>
+										<xs:attribute name="RevisionNumber" type="xs:int"/>
+										<xs:attribute name="SerialNumber" type="xs:int"/>
+										<xs:attribute name="EventTime" type="xs:int"/>
+										<xs:attribute name="SdoTimeout" type="xs:int"/>
+										<xs:attribute name="BootUpTimeout" type="xs:int"/>
+										<xs:attribute name="CanFlags" type="xs:int"/>
+									</xs:extension>
+								</xs:complexContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="DeviceNet">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="GeneralStrings" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="Attribute" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:attribute name="ClassId" type="xs:int"/>
+											<xs:attribute name="InstanceId" type="xs:int"/>
+											<xs:attribute name="AttribId" type="xs:int"/>
+											<xs:attribute name="Length" type="xs:int"/>
+											<xs:attribute name="Values" type="xs:hexBinary"/>
+											<xs:attribute name="Name" type="xs:hexBinary"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="ParamGroup" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:attribute name="Name" type="xs:int"/>
+											<xs:attribute name="Size" type="xs:int"/>
+											<xs:attribute name="Group" type="xs:hexBinary"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="Enums" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="xs:hexBinary">
+													<xs:attribute name="Key" type="xs:int"/>
+												</xs:extension>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="EDSParam" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="xs:hexBinary">
+													<xs:attribute name="Key" type="xs:int"/>
+												</xs:extension>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="TxIoInfo" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:attribute name="Size" type="xs:int"/>
+											<xs:attribute name="Significant" type="xs:int"/>
+											<xs:attribute name="ConnectType" type="xs:int"/>
+											<xs:attribute name="Name" type="xs:int"/>
+											<xs:attribute name="Comment" type="xs:int"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="RxIoInfo" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:attribute name="Size" type="xs:int"/>
+											<xs:attribute name="Significant" type="xs:int"/>
+											<xs:attribute name="ConnectType" type="xs:int"/>
+											<xs:attribute name="Name" type="xs:int"/>
+											<xs:attribute name="Comment" type="xs:int"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="Connection" type="TcSmDnConnDef" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute name="MacId" type="xs:int"/>
+								<xs:attribute name="Flags" type="xs:int"/>
+								<xs:attribute name="BaudSupport" type="xs:int"/>
+								<xs:attribute name="ConnectionType" type="HexDecValue"/>
+								<xs:attribute name="DvFlag_UcmmSupp" type="xs:boolean"/>
+								<xs:attribute name="DvFlag_PreadMstsl" type="xs:boolean"/>
+								<xs:attribute name="DvFlag_ExplFrag" type="xs:boolean"/>
+								<xs:attribute name="DvFlag_Active" type="xs:boolean"/>
+								<xs:attribute name="UcmmGroup" type="xs:int"/>
+								<xs:attribute name="FragTimeout" type="xs:int"/>
+								<xs:attribute name="CfgConnectionType" type="xs:int"/>
+								<xs:attribute name="WatchDogTimeoutAction" type="xs:int"/>
+								<xs:attribute name="ProdInhibitTime" type="xs:int"/>
+								<xs:attribute name="ExpPacketRate" type="xs:int"/>
+								<xs:attribute name="NumOfIoModules" type="xs:int"/>
+								<xs:attribute name="MacIdPara" type="xs:int"/>
+								<xs:attribute name="VendorId" type="xs:int"/>
+								<xs:attribute name="DeviceType" type="xs:int"/>
+								<xs:attribute name="ProductCode" type="xs:int"/>
+								<xs:attribute name="MajorRevision" type="xs:int"/>
+								<xs:attribute name="MinorRevision" type="xs:int"/>
+								<xs:attribute name="AdrCfgRec" type="xs:boolean"/>
+								<xs:attribute name="AdrAddrRec" type="xs:boolean"/>
+								<xs:attribute name="ScanAllocationChoice" type="xs:int"/>
+								<xs:attribute name="ScanFaultRetryTime" type="xs:int"/>
+								<xs:attribute name="ScanEPR" type="xs:hexBinary"/>
+								<xs:attribute name="ScanProdCnxnSize" type="xs:hexBinary"/>
+								<xs:attribute name="ScanProdType" type="xs:hexBinary"/>
+								<xs:attribute name="ScanConsType" type="xs:hexBinary"/>
+								<xs:attribute name="ScanProdAssembly" type="xs:hexBinary"/>
+								<xs:attribute name="ScanConsAssembly" type="xs:hexBinary"/>
+								<xs:attribute name="ScanElectronicKey" type="xs:int"/>
+								<xs:attribute name="HbIntervalTime" type="xs:int"/>
+								<xs:attribute name="ScanVendorID" type="xs:int"/>
+								<xs:attribute name="ScanDeviceType" type="xs:int"/>
+								<xs:attribute name="ScanProductCode" type="xs:int"/>
+								<xs:attribute name="ScanMajorRevision" type="xs:int"/>
+								<xs:attribute name="ScanMinorRevision" type="xs:int"/>
+								<xs:attribute name="ScanAckTimer" type="xs:int"/>
+								<xs:attribute name="ScanAckRetryLimit" type="xs:int"/>
+								<xs:attribute name="ScanEventChoice" type="xs:int"/>
+								<xs:attribute name="ScanInhibtTime" type="xs:int"/>
+								<xs:attribute name="ScanEventAssembly" type="xs:int"/>
+								<xs:attribute name="HbIntervalTimeLimit" type="xs:int"/>
+								<xs:attribute name="HbAssembly" type="xs:int"/>
+								<xs:attribute name="SdAssembly" type="xs:int"/>
+								<xs:attribute name="ConfigData" type="xs:hexBinary"/>
+								<xs:attribute name="ValidEdsFile" type="xs:boolean"/>
+								<xs:attribute name="EdsDefault" type="xs:int"/>
+								<xs:attribute name="Catalog" type="xs:string"/>
+								<xs:attribute name="Combine" type="xs:hexBinary"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="EthernetIp">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Connection" type="TcSmEipConnDef" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute name="InstanceId" type="xs:int"/>
+								<xs:attribute name="SlavePara" type="xs:hexBinary"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Interbus">
+							<xs:complexType>
+								<xs:attribute name="BusLevel" type="xs:int"/>
+								<xs:attribute name="IdentCode" type="xs:int"/>
+								<xs:attribute name="LengthCode" type="xs:int"/>
+								<xs:attribute name="CR" type="xs:int"/>
+								<xs:attribute name="Password" type="xs:int"/>
+								<xs:attribute name="Group" type="xs:int"/>
+								<xs:attribute name="Alternative" type="xs:int"/>
+								<xs:attribute name="DataConsist" type="xs:int"/>
+								<xs:attribute name="BusTerminal" type="xs:boolean"/>
+								<xs:attribute name="LocalBus" type="xs:boolean"/>
+								<xs:attribute name="StartupCAC" type="xs:int"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Sercos">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Startup" type="SercosValueType" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="ChnI" type="SercosValueType" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="ChnO" type="SercosValueType" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute name="Addr" type="xs:int"/>
+								<xs:attribute name="TelegramType" type="xs:int"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Lightbus">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Ax2000" type="Ax2000Type" minOccurs="0"/>
+								</xs:sequence>
+								<xs:attribute name="KBusUpdate" type="xs:int"/>
+								<xs:attribute name="AutoCheckState" type="xs:int"/>
+								<xs:attribute name="EnableStringComm" type="xs:boolean"/>
+								<xs:attribute name="CdlNo" type="xs:int"/>
+								<xs:attribute name="Telegrams" type="xs:int"/>
+								<xs:attribute name="InOut0" type="xs:int"/>
+								<xs:attribute name="InOut1" type="xs:int"/>
+								<xs:attribute name="Channel" type="xs:int"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Usb">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="EtherCAT" minOccurs="0">
+										<xs:complexType>
+											<xs:complexContent>
+												<xs:extension base="EtherCATSlave">
+													<xs:sequence>
+														<xs:element name="EL60xxComPort" minOccurs="0" maxOccurs="unbounded"/>
+													</xs:sequence>
+												</xs:extension>
+											</xs:complexContent>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+								<xs:attribute name="NoRetries" type="xs:boolean"/>
+								<xs:attribute name="WarnLevel" type="xs:int"/>
+								<xs:attribute name="DipSwitch" type="xs:int"/>
+								<xs:attribute name="Buttons" type="xs:int"/>
+								<xs:attribute name="Leds" type="xs:int"/>
+								<xs:attribute name="Divider" type="xs:int"/>
+								<xs:attribute name="AutoDivider" type="xs:boolean"/>
+								<xs:attribute name="VendorId" type="xs:int"/>
+								<xs:attribute name="ProductCode" type="xs:int"/>
+								<xs:attribute name="RevisionNo" type="xs:int"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="CCat">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Slot" type="TcSmCCatSlotDef" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute name="ProductCode" type="xs:int"/>
+								<xs:attribute name="RevisionNo" type="xs:int"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Serial">
+							<xs:complexType>
+								<xs:attribute name="MultiPoint" type="xs:int"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Ieee1588">
+							<xs:complexType>
+								<xs:attribute name="InstanceId" type="xs:int"/>
+								<xs:attribute name="SlavePara" type="xs:hexBinary"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="CxBk"/>
+						<xs:element name="Retain">
+							<xs:complexType>
+								<xs:attribute name="AreaOffs" type="HexDecValue"/>
+								<xs:attribute name="AreaSize" type="HexDecValue"/>
+								<xs:attribute name="DataSize" type="HexDecValue"/>
+								<xs:attribute name="ContextCnt" type="HexDecValue"/>
+							</xs:complexType>
+						</xs:element>
+					</xs:choice>
+					<xs:element name="Box" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:complexContent>
+								<xs:extension base="TcSmBoxDef">
+									<xs:attribute name="File" type="xs:string">
+										<xs:annotation>
+											<xs:documentation>Reference to a separate file</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+								</xs:extension>
+							</xs:complexContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Plc" minOccurs="0">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+							</xs:sequence>
+							<xs:attribute name="TermConfigData" type="xs:hexBinary"/>
+							<xs:attribute name="VarOffsIn" type="xs:int"/>
+							<xs:attribute name="VarOffsOut" type="xs:int"/>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:attribute name="BoxType" type="xs:int"/>
+				<xs:attribute name="BoxFlags" type="HexDecValue"/>
+				<xs:attribute name="ImageIn" type="xs:int"/>
+				<xs:attribute name="ImageOut" type="xs:int"/>
+				<xs:attribute name="AmsPort" type="xs:int"/>
+				<xs:attribute name="AmsPortTimeout" type="xs:int"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmImageDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:attribute name="ImageFlags" type="HexDecValue"/>
+				<xs:attribute name="AddrType" type="xs:int"/>
+				<xs:attribute name="ImageType" type="xs:int"/>
+				<xs:attribute name="SizeIn" type="xs:int"/>
+				<xs:attribute name="SizeOut" type="xs:int"/>
+				<xs:attribute name="OffsIn" type="xs:int"/>
+				<xs:attribute name="OffsOut" type="xs:int"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmDevDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="AdditionalNetId" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="DevData" type="xs:hexBinary" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Only for legacy device types</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="AddressInfo" type="AddressInfoType" minOccurs="0"/>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="Image" type="TcSmImageDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="InfoImage" type="TcSmImageDef" minOccurs="0"/>
+					<xs:element name="Module" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="Box" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:complexContent>
+								<xs:extension base="TcSmBoxDef">
+									<xs:attribute name="File" type="xs:string">
+										<xs:annotation>
+											<xs:documentation>Reference to a separate file</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+								</xs:extension>
+							</xs:complexContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:choice minOccurs="0">
+						<xs:element name="EtherCAT">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Redundancy" minOccurs="0">
+										<xs:complexType>
+											<xs:attribute name="Mode" type="xs:int"/>
+											<xs:attribute name="DeviceDesc" type="xs:string"/>
+											<xs:attribute name="Miniport" type="xs:string"/>
+											<xs:attribute name="IpAddress" type="HexDecValue"/>
+											<xs:attribute name="IpMask" type="HexDecValue"/>
+											<xs:attribute name="PreviousPort" type="HexDecValue"/>
+											<xs:attribute name="Mac" type="xs:hexBinary"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="SuNamePreDef" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="SyncUnit" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:attribute name="Name" type="xs:string"/>
+											<xs:attribute name="NoDeleteIfUnused" type="xs:boolean"/>
+											<xs:attribute name="HcName" type="xs:string"/>
+											<xs:attribute name="WcStateTolerance" type="xs:int"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="EtherCATCmd" type="TcSmECatCmdDef" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute name="DeviceDesc" type="xs:string"/>
+								<xs:attribute name="FreerunCycle" type="xs:int" default="7"/>
+								<xs:attribute name="VirtualDeviceName" type="xs:boolean"/>
+								<xs:attribute name="Mac" type="xs:hexBinary"/>
+								<xs:attribute name="VLanInfo" type="xs:hexBinary"/>
+								<xs:attribute name="EpMacAddr" type="xs:hexBinary"/>
+								<xs:attribute name="PromiscuousMode" type="xs:boolean"/>
+								<xs:attribute name="CheckSlaveCnt" type="xs:boolean"/>
+								<xs:attribute name="LogTopologyChanges" type="xs:boolean"/>
+								<xs:attribute name="DontAskForEtherCATDev" type="xs:boolean"/>
+								<xs:attribute name="DisableContMeasuring" type="xs:boolean"/>
+								<xs:attribute name="DisableContCrcCheck" type="xs:boolean"/>
+								<xs:attribute name="WaitForStartIo" type="xs:boolean"/>
+								<xs:attribute name="ForceReInit" type="xs:boolean"/>
+								<xs:attribute name="ShowCableLength" type="xs:boolean"/>
+								<xs:attribute name="AtLeastTwoFrameCmds" type="xs:boolean"/>
+								<xs:attribute name="ManualDcSelect" type="xs:boolean"/>
+								<xs:attribute name="AllowDcLeapInTime" type="xs:boolean"/>
+								<xs:attribute name="LogExtendedCrcCnt" type="xs:boolean"/>
+								<xs:attribute name="SuppressEBusPowerWrn" type="xs:boolean"/>
+								<xs:attribute name="DcCycDiag" type="xs:boolean"/>
+								<xs:attribute name="CheckEepromBusy" type="xs:boolean"/>
+								<xs:attribute name="StartupState" default="8">
+									<xs:simpleType>
+										<xs:restriction base="xs:NMTOKEN">
+											<xs:enumeration value="1"/>
+											<xs:enumeration value="2"/>
+											<xs:enumeration value="4"/>
+											<xs:enumeration value="8"/>
+										</xs:restriction>
+									</xs:simpleType>
+								</xs:attribute>
+								<xs:attribute name="MaxCdl" type="xs:int" default="4"/>
+								<xs:attribute name="Mtu" type="xs:int" default="1514"/>
+								<xs:attribute name="CycOnlyMode" type="xs:int"/>
+								<xs:attribute name="CycOnlyCdl" type="xs:int"/>
+								<xs:attribute name="FrameRepeatCnt" type="xs:int"/>
+								<xs:attribute name="WcStateTolerance" type="xs:int"/>
+								<xs:attribute name="DcSyncMode" type="xs:int" default="1"/>
+								<xs:attribute name="DcShiftTimeFixedPercent" type="xs:int" default="2"/>
+								<xs:attribute name="DcShiftTime" type="xs:int"/>
+								<xs:attribute name="DcSyncWindow" type="xs:int"/>
+								<xs:attribute name="DcUseTaskShiftTimes" type="xs:boolean"/>
+								<xs:attribute name="DcAdjRefClock" type="xs:boolean"/>
+								<xs:attribute name="CycOnlySize" type="xs:int"/>
+								<xs:attribute name="CycOnly100pFillSize" type="xs:int"/>
+								<xs:attribute name="CycOnly100pSyncFrmCnt" type="xs:int"/>
+								<xs:attribute name="DcShiftTimeInputs" type="xs:int"/>
+								<xs:attribute name="SkipDeviceCnt" type="xs:int"/>
+								<xs:attribute name="EpIpAddr" type="xs:int"/>
+								<xs:attribute name="EpMaxCon" type="xs:int"/>
+								<xs:attribute name="EpFirstConAddr" type="xs:int"/>
+								<xs:attribute name="BoxCntVariable1" type="xs:boolean"/>
+								<xs:attribute name="BoxCntVariable2" type="xs:boolean"/>
+								<xs:attribute name="DevIdVariable" type="xs:boolean"/>
+								<xs:attribute name="InfoDataSupport" type="xs:boolean"/>
+								<xs:attribute name="InfoDataId" type="xs:boolean"/>
+								<xs:attribute name="InfoDataNetId" type="xs:boolean"/>
+								<xs:attribute name="InfoDataChangeCnt" type="xs:boolean"/>
+								<xs:attribute name="InfoDataCfgSlaveCnt" type="xs:boolean"/>
+								<xs:attribute name="InfoDataDcTimeOffsets" type="xs:boolean"/>
+								<xs:attribute name="FlbCmdSupport" type="xs:boolean"/>
+								<xs:attribute name="SuNamePreDefSupport" type="xs:boolean"/>
+								<xs:attribute name="SuSortByName" type="xs:boolean"/>
+								<xs:attribute name="DisplayFrmItState" type="xs:boolean"/>
+								<xs:attribute name="DisplayDcRefClock64" type="xs:boolean"/>
+								<xs:attribute name="DisplayTaskWcState" type="xs:boolean"/>
+								<xs:attribute name="DisplayWCI" type="xs:boolean"/>
+								<xs:attribute name="DisplayWCO" type="xs:boolean"/>
+								<xs:attribute name="DisplayHeadI" type="xs:boolean"/>
+								<xs:attribute name="DisplayHeadO" type="xs:boolean"/>
+								<xs:attribute name="GenerateDisableCmd" type="xs:boolean"/>
+								<xs:attribute name="EnhLnkDetect" type="xs:boolean"/>
+								<xs:attribute name="SynUnitObjects" type="xs:boolean"/>
+								<xs:attribute name="EnableVirtualSwitch" type="xs:boolean"/>
+								<xs:attribute name="NoSwitchToNdis" type="xs:boolean"/>
+								<xs:attribute name="MaxSwitchPorts" type="xs:int"/>
+								<xs:attribute name="MaxSwitchFrames" type="xs:int"/>
+								<xs:attribute name="MaxSwitchMACs" type="xs:int"/>
+								<xs:attribute name="DcSyncTask" type="xs:int"/>
+								<xs:attribute name="IoIdleTask" type="xs:int"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="EtherCATXfc">
+							<xs:complexType>
+								<xs:attribute name="StartupState" default="8">
+									<xs:simpleType>
+										<xs:restriction base="xs:NMTOKEN">
+											<xs:enumeration value="1"/>
+											<xs:enumeration value="2"/>
+											<xs:enumeration value="4"/>
+											<xs:enumeration value="8"/>
+										</xs:restriction>
+									</xs:simpleType>
+								</xs:attribute>
+								<xs:attribute name="XfcMode" type="xs:int"/>
+								<xs:attribute name="BoxCntVariable1" type="xs:boolean" default="true"/>
+								<xs:attribute name="BoxCntVariable2" type="xs:boolean"/>
+								<xs:attribute name="DevIdVariable" type="xs:boolean"/>
+								<xs:attribute name="InfoDataSupport" type="xs:boolean" default="true"/>
+								<xs:attribute name="InfoDataId" type="xs:boolean" default="true"/>
+								<xs:attribute name="InfoDataChangeCnt" type="xs:boolean" default="true"/>
+								<xs:attribute name="InfoDataCfgSlaveCnt" type="xs:boolean" default="true"/>
+								<xs:attribute name="InfoDataDcTimeOffsets" type="xs:boolean" default="true"/>
+								<xs:attribute name="MaxCalcTime" type="xs:int"/>
+								<xs:attribute name="CdlStartTime1" type="xs:int"/>
+								<xs:attribute name="CdlStartTime2" type="xs:int"/>
+								<xs:attribute name="CdlStartTime3" type="xs:int"/>
+								<xs:attribute name="DisplayFrmItState" type="xs:boolean" default="true"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="EtherCATSlave">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Dma" minOccurs="0">
+										<xs:complexType>
+											<xs:attribute name="Enabled" type="xs:boolean"/>
+											<xs:attribute name="CopyOnSync0Event" type="xs:boolean"/>
+											<xs:attribute name="CopyOnSync1Event" type="xs:boolean"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="RouteIn" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+											</xs:sequence>
+											<xs:attribute name="Name" type="xs:string"/>
+											<xs:attribute name="SrcNetId" type="xs:string"/>
+											<xs:attribute name="DstNetId" type="xs:string"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="RouteOut" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+											</xs:sequence>
+											<xs:attribute name="Name" type="xs:string"/>
+											<xs:attribute name="SrcNetId" type="xs:string"/>
+											<xs:attribute name="DstNetId" type="xs:string"/>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+								<xs:attribute name="SyncShiftTime" type="HexDecValue"/>
+								<xs:attribute name="Flags" type="HexDecValue"/>
+								<xs:attribute name="ExplicidDeviceIdent" type="HexDecValue"/>
+								<xs:attribute name="ImportEsiDeviceName" type="xs:string"/>
+								<xs:attribute name="ImportEsiVendorId" type="HexDecValue"/>
+								<xs:attribute name="ImportEsiProductCode" type="HexDecValue"/>
+								<xs:attribute name="ImportEsiProductRevision" type="HexDecValue"/>
+								<xs:attribute name="ImportEsiDictionary" type="xs:string"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:sequence>
+							<xs:element name="Ethernet">
+								<xs:complexType>
+									<xs:complexContent>
+										<xs:extension base="TcSmEthernetDef"/>
+									</xs:complexContent>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Eap" minOccurs="0">
+								<xs:complexType>
+									<xs:attribute name="Recovery" type="xs:boolean"/>
+									<xs:attribute name="EapDeviceGuid" type="GUID"/>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+						<xs:element name="Profibus">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:choice>
+										<xs:element name="Fcxxxx">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="DeviceFcxxxxType"/>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:choice>
+									<xs:element name="BusParameter">
+										<xs:complexType>
+											<xs:attribute name="FdlAdd" type="xs:int"/>
+											<xs:attribute name="Baudrate" type="xs:int"/>
+											<xs:attribute name="TSlot" type="xs:int"/>
+											<xs:attribute name="MinTsdr" type="xs:int"/>
+											<xs:attribute name="MaxTsdr" type="xs:int"/>
+											<xs:attribute name="TQui" type="xs:int"/>
+											<xs:attribute name="TSetup" type="xs:int"/>
+											<xs:attribute name="Ttr" type="xs:int"/>
+											<xs:attribute name="G" type="xs:int"/>
+											<xs:attribute name="Hsa" type="xs:int"/>
+											<xs:attribute name="MaxRetryLimit" type="xs:int"/>
+											<xs:attribute name="BpFlag" type="xs:int"/>
+											<xs:attribute name="MinSlaveInterval" type="xs:int"/>
+											<xs:attribute name="PollTimeout" type="xs:int"/>
+											<xs:attribute name="DataControlTime" type="xs:int"/>
+											<xs:attribute name="AddFlags" type="xs:int"/>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+								<xs:attribute name="InfoDataSupport" type="xs:boolean"/>
+								<xs:attribute name="InfoDataId" type="xs:boolean"/>
+								<xs:attribute name="InfoDataNetId" type="xs:boolean"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="CanOpen">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:choice>
+										<xs:element name="Fcxxxx">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="DeviceFcxxxxType"/>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:choice>
+									<xs:element name="BusParameter">
+										<xs:complexType>
+											<xs:attribute name="NodeId" type="xs:int"/>
+											<xs:attribute name="Baudrate" type="xs:int"/>
+											<xs:attribute name="CobIdSync" type="xs:int"/>
+											<xs:attribute name="TxPdoWindowSize" type="xs:int"/>
+											<xs:attribute name="InputShiftDelay" type="xs:int"/>
+											<xs:attribute name="CycleDivider" type="xs:int"/>
+											<xs:attribute name="DeviceFlags" type="xs:int"/>
+											<xs:attribute name="MaxLoPrioQueue" type="xs:int"/>
+											<xs:attribute name="Bt0" type="xs:int"/>
+											<xs:attribute name="Bt1" type="xs:int"/>
+											<xs:attribute name="TimerTick" type="xs:int"/>
+											<xs:attribute name="BusActiveDivider" type="xs:int"/>
+											<xs:attribute name="TxBusyTime" type="xs:int"/>
+											<xs:attribute name="TimeIntegral" type="xs:int"/>
+											<xs:attribute name="WdTimeoutInCycleTime" type="xs:int"/>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+								<xs:attribute name="InfoDataSupport" type="xs:boolean"/>
+								<xs:attribute name="InfoDataId" type="xs:boolean"/>
+								<xs:attribute name="InfoDataNetId" type="xs:boolean"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="DeviceNet">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:choice>
+										<xs:element name="Fcxxxx">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="DeviceFcxxxxType"/>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:choice>
+									<xs:element name="BusParameter">
+										<xs:complexType>
+											<xs:attribute name="MacId" type="xs:int"/>
+											<xs:attribute name="Baudrate" type="xs:int"/>
+											<xs:attribute name="VendorID" type="xs:int"/>
+											<xs:attribute name="DeviceType" type="xs:int"/>
+											<xs:attribute name="ProductCode" type="xs:int"/>
+											<xs:attribute name="MajorRevision" type="xs:int"/>
+											<xs:attribute name="MinorRevision" type="xs:int"/>
+											<xs:attribute name="SerialNumber" type="xs:int"/>
+											<xs:attribute name="HeartbeatTimer" type="xs:int"/>
+											<xs:attribute name="IOCycleTime" type="xs:int"/>
+											<xs:attribute name="ProductName" type="xs:string"/>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+								<xs:attribute name="InfoDataSupport" type="xs:boolean"/>
+								<xs:attribute name="InfoDataId" type="xs:boolean"/>
+								<xs:attribute name="InfoDataNetId" type="xs:boolean"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Sercos">
+							<xs:complexType>
+								<xs:attribute name="NoPciBus" type="xs:boolean"/>
+								<xs:attribute name="DataRate" type="xs:int"/>
+								<xs:attribute name="LanguageSwitch" type="xs:boolean"/>
+								<xs:attribute name="Phase4" type="xs:boolean"/>
+								<xs:attribute name="SERCON816" type="xs:boolean"/>
+								<xs:attribute name="ENTXD" type="xs:int"/>
+								<xs:attribute name="DisableTimingCheck" type="xs:boolean"/>
+								<xs:attribute name="POLRXD" type="xs:boolean"/>
+								<xs:attribute name="REGMODE" type="xs:boolean"/>
+								<xs:attribute name="WaitTime" type="xs:int"/>
+								<xs:attribute name="CycleTimeCP34" type="xs:int"/>
+								<xs:attribute name="AxisCount" type="xs:int"/>
+								<xs:attribute name="InfoVarOffs" type="xs:int"/>
+								<xs:attribute name="LifeCounterDiff" type="xs:int"/>
+								<xs:attribute name="NcAccessTime" type="xs:int"/>
+								<xs:attribute name="IrqShiftTime" type="xs:int"/>
+								<xs:attribute name="CardSubType" type="xs:int"/>
+								<xs:attribute name="RegisterOffs" type="xs:int"/>
+								<xs:attribute name="FMCLK" type="xs:int"/>
+								<xs:attribute name="OpMode" type="xs:int"/>
+								<xs:attribute name="CycleTimeCP012" type="xs:int"/>
+								<xs:attribute name="EnableTINT0" type="xs:boolean"/>
+								<xs:attribute name="EnableTINT1" type="xs:boolean"/>
+								<xs:attribute name="EnableTINT2" type="xs:boolean"/>
+								<xs:attribute name="EnableTINT3" type="xs:boolean"/>
+								<xs:attribute name="EnableJT1User" type="xs:boolean"/>
+								<xs:attribute name="EnableJT2User" type="xs:boolean"/>
+								<xs:attribute name="EnableJTSCycUser" type="xs:boolean"/>
+								<xs:attribute name="EnableT3User" type="xs:boolean"/>
+								<xs:attribute name="EnableT4User" type="xs:boolean"/>
+								<xs:attribute name="EnablePhaseTimeout" type="xs:boolean"/>
+								<xs:attribute name="TINT0" type="xs:int"/>
+								<xs:attribute name="TINT1" type="xs:int"/>
+								<xs:attribute name="TINT2" type="xs:int"/>
+								<xs:attribute name="TINT3" type="xs:int"/>
+								<xs:attribute name="JT1User" type="xs:int"/>
+								<xs:attribute name="JT2User" type="xs:int"/>
+								<xs:attribute name="JTSCycUser" type="xs:int"/>
+								<xs:attribute name="T3User" type="xs:int"/>
+								<xs:attribute name="T4User" type="xs:int"/>
+								<xs:attribute name="DpramOffs" type="xs:int"/>
+								<xs:attribute name="LcrByPort" type="xs:boolean"/>
+								<xs:attribute name="EnableStartupListInConfigMode" type="xs:boolean"/>
+								<xs:attribute name="ParallelPhaseChange" type="xs:boolean"/>
+								<xs:attribute name="TelegramCfgBeforeTiming" type="xs:boolean"/>
+								<xs:attribute name="ShowCycleCounter" type="xs:boolean"/>
+								<xs:attribute name="ShowDcTimings" type="xs:boolean"/>
+								<xs:attribute name="PhaseTimeout" type="xs:int"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Lightbus">
+							<xs:complexType>
+								<xs:attribute name="Broadcast" type="xs:boolean"/>
+								<xs:attribute name="CdlInfo" type="xs:int"/>
+								<xs:attribute name="WarningOnBusErr" type="xs:boolean"/>
+								<xs:attribute name="FastCDL" type="xs:int"/>
+								<xs:attribute name="WatchDog" type="xs:boolean"/>
+								<xs:attribute name="CdlDiagVariables" type="xs:boolean"/>
+								<xs:attribute name="DevPara" type="xs:hexBinary"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Usb">
+							<xs:complexType>
+								<xs:attribute name="AsyncCycle" type="xs:int"/>
+								<xs:attribute name="VirtualDeviceName" type="xs:boolean"/>
+								<xs:attribute name="RemoteNetId" type="xs:string"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="CpLink">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="AddNetId" type="AmsNetId" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute name="RemoteName" type="xs:string"/>
+								<xs:attribute name="NetId" type="AmsNetId"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Serial">
+							<xs:complexType>
+								<xs:attribute name="Baud" type="xs:int"/>
+								<xs:attribute name="Port" type="xs:int"/>
+								<xs:attribute name="Parity" type="xs:int"/>
+								<xs:attribute name="StopBit" type="xs:int"/>
+								<xs:attribute name="RsType" type="xs:int"/>
+								<xs:attribute name="UPS" type="xs:boolean"/>
+								<xs:attribute name="UPSNoAbort" type="xs:boolean"/>
+								<xs:attribute name="UPSDisableSysShutdown" type="xs:boolean"/>
+								<xs:attribute name="UPSDelayShutdown" type="xs:int"/>
+								<xs:attribute name="WaitTimeToShutdown" type="xs:int"/>
+								<xs:attribute name="PinType" type="xs:int"/>
+								<xs:attribute name="DataSize" type="xs:int"/>
+								<xs:attribute name="BufSize" type="xs:int"/>
+								<xs:attribute name="DataBit" type="xs:int"/>
+								<xs:attribute name="Handshake" type="xs:int"/>
+								<xs:attribute name="SyncMode" type="xs:boolean"/>
+								<xs:attribute name="ModemCtrl" type="xs:boolean"/>
+								<xs:attribute name="Rts" type="xs:boolean"/>
+								<xs:attribute name="Is16950" type="xs:boolean"/>
+								<xs:attribute name="ExCS" type="xs:boolean"/>
+								<xs:attribute name="FifoSize" type="xs:int"/>
+								<xs:attribute name="ComPortNo" type="xs:int"/>
+								<xs:attribute name="Timeout" type="xs:int"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Profinet">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Ethernet">
+										<xs:complexType>
+											<xs:complexContent>
+												<xs:extension base="TcSmEthernetDef">
+													<xs:attribute name="CCatEepromOffs" type="HexDecValue"/>
+													<xs:attribute name="CCatEepromSize" type="HexDecValue"/>
+													<xs:attribute name="CCatSwitchOffs" type="HexDecValue"/>
+													<xs:attribute name="CCatSwitchSize" type="HexDecValue"/>
+													<xs:attribute name="CCatGpioOffs" type="HexDecValue"/>
+													<xs:attribute name="CCatGpioSize" type="HexDecValue"/>
+													<xs:attribute name="CCatTimeOffs" type="HexDecValue"/>
+													<xs:attribute name="CCatTimeSize" type="HexDecValue"/>
+													<xs:attribute name="CCatIntCtrlOffs" type="HexDecValue"/>
+													<xs:attribute name="CCatIntCtrlSize" type="HexDecValue"/>
+													<xs:attribute name="PortCount" type="HexDecValue"/>
+													<xs:attribute name="PortSwitched" type="xs:boolean"/>
+												</xs:extension>
+											</xs:complexContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="AddPortData" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:attribute name="DevDescRd" type="xs:string"/>
+											<xs:attribute name="IPAddrRd" type="xs:hexBinary"/>
+											<xs:attribute name="IPMaskRd" type="xs:hexBinary"/>
+											<xs:attribute name="AdapterOID" type="xs:hexBinary"/>
+											<xs:attribute name="NameMiniportRd" type="xs:string"/>
+											<xs:attribute name="MACAddrRd" type="xs:hexBinary"/>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="PNController" minOccurs="0">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="MRPData" minOccurs="0">
+													<xs:complexType>
+														<xs:attribute name="Role" type="xs:int"/>
+														<xs:attribute name="Priority" type="xs:int"/>
+														<xs:attribute name="TSTdefaultT" type="xs:int"/>
+														<xs:attribute name="MRRTTSTdefaultT" type="xs:int"/>
+														<xs:attribute name="TSTshortT" type="xs:int"/>
+														<xs:attribute name="TOPchgT" type="xs:int"/>
+														<xs:attribute name="LNKupT" type="xs:int"/>
+														<xs:attribute name="LNKdownT" type="xs:int"/>
+														<xs:attribute name="TSTnrMax" type="xs:int"/>
+														<xs:attribute name="MRRTTSTnrMax" type="xs:int"/>
+														<xs:attribute name="TOPnrMax" type="xs:int"/>
+														<xs:attribute name="LNKnrMax" type="xs:int"/>
+														<xs:attribute name="RTMode" type="HexDecValue"/>
+													</xs:complexType>
+												</xs:element>
+												<xs:element name="RTData" minOccurs="0">
+													<xs:complexType>
+														<xs:attribute name="OptionFlags" type="xs:int"/>
+														<xs:attribute name="RTClass" type="xs:int"/>
+														<xs:attribute name="CableLength" type="xs:int"/>
+														<xs:attribute name="AddInputOffs" type="xs:int"/>
+														<xs:attribute name="AddOutputOffs" type="xs:int"/>
+													</xs:complexType>
+												</xs:element>
+											</xs:sequence>
+											<xs:attribute name="ClientPort" type="xs:int"/>
+											<xs:attribute name="ServerPort" type="xs:int"/>
+											<xs:attribute name="VendorId" type="xs:int"/>
+											<xs:attribute name="DeviceId" type="xs:int"/>
+											<xs:attribute name="Flags" type="xs:int"/>
+											<xs:attribute name="IPData" type="xs:hexBinary"/>
+											<xs:attribute name="SystemName" type="xs:string"/>
+											<xs:attribute name="SyncDomainName" type="xs:string"/>
+											<xs:attribute name="IRTSendClock" type="xs:int"/>
+											<xs:attribute name="EngineeringFlags" type="xs:int"/>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+								<xs:attribute name="PLCPortNr" type="xs:int"/>
+								<xs:attribute name="PortMode" type="xs:int"/>
+								<xs:attribute name="PortSelect" type="xs:int"/>
+								<xs:attribute name="AddPortCount" type="xs:int"/>
+								<xs:attribute name="RedOn" type="xs:int"/>
+								<xs:attribute name="RedPortId" type="xs:int"/>
+								<xs:attribute name="PnProtocolFlags" type="xs:int"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="ModuleDev" type="ModuleType"/>
+						<xs:element name="DpRam">
+							<xs:complexType>
+								<xs:attribute name="AutoInitLinkedOutputs"/>
+							</xs:complexType>
+						</xs:element>
+					</xs:choice>
+				</xs:sequence>
+				<xs:attribute name="DevType" type="xs:int"/>
+				<xs:attribute name="DeviceFolder" type="xs:string"/>
+				<xs:attribute name="OpenFlags" type="HexDecValue"/>
+				<xs:attribute name="DevFlags" type="HexDecValue"/>
+				<xs:attribute name="AmsPort" type="xs:int"/>
+				<xs:attribute name="AmsNetId" type="xs:string"/>
+				<xs:attribute name="RemoteName" type="xs:string"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="SubProjectType">
+		<xs:sequence>
+			<xs:element name="ProjectVariant" type="ProjectVariantType" minOccurs="0"/>
+			<xs:element name="Instance" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="TcSmObjDef">
+							<xs:sequence>
+								<xs:element name="Contexts" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Context" type="ContextType" minOccurs="0" maxOccurs="unbounded"/>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="InitSymbols" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="InitSymbol" minOccurs="0" maxOccurs="unbounded">
+												<xs:complexType>
+													<xs:sequence>
+														<xs:element name="Name" type="xs:string"/>
+														<xs:element name="Type">
+															<xs:complexType>
+																<xs:simpleContent>
+																	<xs:extension base="xs:string">
+																		<xs:attribute name="GUID" type="GUID"/>
+																		<xs:attribute name="Namespace" type="xs:string"/>
+																	</xs:extension>
+																</xs:simpleContent>
+															</xs:complexType>
+														</xs:element>
+														<xs:element name="Flags" type="HexDecValue" minOccurs="0"/>
+														<xs:element name="AreaNo" type="HexDecValue" minOccurs="0"/>
+														<xs:element name="Data" type="xs:hexBinary"/>
+														<xs:element name="Properties" minOccurs="0">
+															<xs:complexType>
+																<xs:sequence>
+																	<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+																</xs:sequence>
+															</xs:complexType>
+														</xs:element>
+													</xs:sequence>
+												</xs:complexType>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="TaskPouOids" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="TaskPouOid" minOccurs="0" maxOccurs="unbounded">
+												<xs:complexType>
+													<xs:attribute name="Prio" type="HexDecValue"/>
+													<xs:attribute name="OTCID" type="HexDecValue"/>
+												</xs:complexType>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="VarFlags" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Var" minOccurs="0" maxOccurs="unbounded">
+												<xs:complexType>
+													<xs:sequence>
+														<xs:element name="Name" type="xs:string"/>
+														<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+														<xs:element name="SubVar" minOccurs="0" maxOccurs="unbounded">
+															<xs:complexType>
+																<xs:sequence>
+																	<xs:element name="Name" type="xs:string"/>
+																	<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+																</xs:sequence>
+																<xs:attribute name="Swapping" type="HexDecValue"/>
+																<xs:attribute name="DisplayScale" type="HexDecValue"/>
+															</xs:complexType>
+														</xs:element>
+													</xs:sequence>
+												</xs:complexType>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+							<xs:attribute name="File" type="xs:string">
+								<xs:annotation>
+									<xs:documentation>Reference to a separate file</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+							<xs:attribute name="AmsPort" type="xs:int"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="GUID" type="GUID"/>
+		<xs:attribute name="Name" type="xs:string"/>
+		<xs:attribute name="PrjPath" type="xs:string">
+			<xs:annotation>
+				<xs:documentation>LEGACY: saved with incorrect relative path</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="TmcPath" type="xs:string">
+			<xs:annotation>
+				<xs:documentation>LEGACY: saved with incorrect relative path</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="PrjFilePath" type="xs:string"/>
+		<xs:attribute name="TmcFilePath" type="xs:string"/>
+		<xs:attribute name="CompilerDefines" type="xs:string"/>
+		<xs:attribute name="EnableImplicitDefines" type="xs:boolean"/>
+		<xs:attribute name="ReloadTmc" type="xs:boolean"/>
+		<xs:attribute name="File" type="xs:string">
+			<xs:annotation>
+				<xs:documentation>Reference to a separate file</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+	</xs:complexType>
+	<xs:complexType name="TcSmObjDef">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:choice>
+						<xs:element name="TmcDesc" type="InstanceType" minOccurs="0"/>
+						<xs:sequence>
+							<xs:element name="CLSID" type="CLSIDType"/>
+							<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:choice>
+					<xs:element name="UnrestoredVarLinks" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:complexContent>
+								<xs:extension base="MappingsType">
+									<xs:attribute name="ImportTime" type="xs:dateTime"/>
+								</xs:extension>
+							</xs:complexContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="RetainDataMapping" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="AreaNo" type="xs:int" use="required"/>
+							<xs:attribute name="OTCID" type="HexDecValue" use="required"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="RedundancyDataMapping" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="AreaNo" type="xs:int" use="required"/>
+							<xs:attribute name="OTCID" type="HexDecValue" use="required"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Module" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="TcSmClass" type="xs:string"/>
+				<xs:attribute name="CopyTmiToTarget" type="xs:boolean"/>
+				<xs:attribute name="ShareTmcDesc" type="xs:boolean"/>
+				<xs:attribute name="KeepUnrestoredLinks" type="xs:int"/>
+				<xs:attribute name="AutoReloadTmc" type="xs:boolean"/>
+				<xs:attribute name="HideInstance" type="xs:boolean"/>
+				<xs:attribute name="ShowHiddenChilds" type="xs:boolean"/>
+				<xs:attribute name="TmcPath" type="xs:string"/>
+				<xs:attribute name="ClassFactoryId"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TxRxPdoType">
+		<xs:sequence>
+			<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="TX" type="xs:boolean"/>
+		<xs:attribute name="CobId" type="xs:int"/>
+		<xs:attribute name="TransType" type="xs:int"/>
+		<xs:attribute name="InhibitTime" type="xs:int"/>
+		<xs:attribute name="Flags" type="xs:int"/>
+		<xs:attribute name="EventTime" type="xs:int"/>
+		<xs:attribute name="Modulo" type="xs:int"/>
+		<xs:attribute name="PdoStartAddress" type="xs:int"/>
+		<xs:attribute name="CfgData" type="xs:hexBinary"/>
+	</xs:complexType>
+	<xs:complexType name="DeviceFcxxxxType">
+		<xs:sequence>
+			<xs:element name="DevSettings" minOccurs="0">
+				<xs:complexType>
+					<xs:attribute name="SyncMode" type="xs:boolean"/>
+					<xs:attribute name="SecondFC" type="xs:boolean"/>
+					<xs:attribute name="PerformReset" type="xs:boolean"/>
+					<xs:attribute name="Equidistant" type="xs:boolean"/>
+					<xs:attribute name="IrqEnabled" type="xs:int"/>
+					<xs:attribute name="SecondIRQ" type="xs:boolean"/>
+					<xs:attribute name="SlaveMode" type="xs:boolean"/>
+					<xs:attribute name="CdlMode" type="xs:boolean"/>
+					<xs:attribute name="LcrByPort" type="xs:boolean"/>
+					<xs:attribute name="BusyIntEnabled" type="xs:boolean"/>
+					<xs:attribute name="BufferMode" type="xs:boolean"/>
+					<xs:attribute name="FlexiblePab" type="xs:boolean"/>
+					<xs:attribute name="DisableBoxState" type="xs:boolean"/>
+					<xs:attribute name="DisableDiagFlag" type="xs:boolean"/>
+					<xs:attribute name="DisableStartUpCmds" type="xs:boolean"/>
+					<xs:attribute name="EnableMasterDiag" type="xs:boolean"/>
+					<xs:attribute name="EnablePdoState" type="xs:boolean"/>
+					<xs:attribute name="EnablePdoToggle" type="xs:boolean"/>
+					<xs:attribute name="ExtendedMapping" type="xs:boolean"/>
+					<xs:attribute name="ErrorHandling" type="xs:boolean"/>
+					<xs:attribute name="EnableCyclicTimes" type="xs:boolean"/>
+					<xs:attribute name="FastStartUp" type="xs:boolean"/>
+					<xs:attribute name="FixedPdosize" type="xs:boolean"/>
+					<xs:attribute name="EnableBusStatus" type="xs:boolean"/>
+					<xs:attribute name="EnableControl" type="xs:boolean"/>
+					<xs:attribute name="EnableMessage" type="xs:boolean"/>
+					<xs:attribute name="DisableSlots" type="xs:boolean"/>
+					<xs:attribute name="DisableBoxStateModification" type="xs:boolean"/>
+					<xs:attribute name="AdsServerStartUp" type="xs:boolean"/>
+					<xs:attribute name="NetId" type="xs:hexBinary"/>
+					<xs:attribute name="SizeOfDpRam" type="xs:int"/>
+					<xs:attribute name="EquiCycleTime" type="xs:int"/>
+					<xs:attribute name="FifoSize" type="xs:int"/>
+					<xs:attribute name="CycleDivider" type="xs:int"/>
+					<xs:attribute name="NcAccessTime" type="xs:int"/>
+					<xs:attribute name="InputSize" type="xs:int"/>
+					<xs:attribute name="OutputSize" type="xs:int"/>
+					<xs:attribute name="MessageSize" type="xs:int"/>
+					<xs:attribute name="PdControlOffset" type="xs:int"/>
+					<xs:attribute name="AdsServerAddress" type="xs:hexBinary"/>
+					<xs:attribute name="CcatParam" type="xs:int"/>
+					<xs:attribute name="CcatPort" type="xs:int"/>
+					<xs:attribute name="PciBase2Offs" type="xs:int"/>
+					<xs:attribute name="PciBase2Size" type="xs:int"/>
+					<xs:attribute name="PciBase3Offs" type="xs:int"/>
+					<xs:attribute name="PciBase3Size" type="xs:int"/>
+					<xs:attribute name="ProductCode" type="xs:int"/>
+					<xs:attribute name="Revision" type="xs:int"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DevParameter" minOccurs="0">
+				<xs:complexType>
+					<xs:attribute name="FailBehaviour" type="xs:int"/>
+					<xs:attribute name="OperationMode" type="xs:int"/>
+					<xs:attribute name="CycleTime" type="xs:int"/>
+					<xs:attribute name="WatchDog" type="xs:int"/>
+					<xs:attribute name="AddCycles" type="xs:int"/>
+					<xs:attribute name="AutoClearDelay" type="xs:int"/>
+					<xs:attribute name="OperateDelay" type="xs:int"/>
+					<xs:attribute name="AddDpRamAccess" type="xs:int"/>
+					<xs:attribute name="SyncShiftDelay" type="xs:int"/>
+					<xs:attribute name="MultiPab" type="xs:boolean"/>
+					<xs:attribute name="ControlledbyApplication" type="xs:boolean"/>
+					<xs:attribute name="AutoBaudDisabled" type="xs:boolean"/>
+					<xs:attribute name="StationNoBySwitch" type="xs:boolean"/>
+					<xs:attribute name="Layer2Mode" type="xs:boolean"/>
+					<xs:attribute name="DisableBusState" type="xs:boolean"/>
+					<xs:attribute name="DisableDiagFlag" type="xs:boolean"/>
+					<xs:attribute name="EnableRxPdoState" type="xs:boolean"/>
+					<xs:attribute name="EnableTxPdoState" type="xs:boolean"/>
+					<xs:attribute name="EnableTxPdoToggle" type="xs:boolean"/>
+					<xs:attribute name="EnableExtMasterDiag" type="xs:boolean"/>
+					<xs:attribute name="EnableCyclicTimes" type="xs:boolean"/>
+					<xs:attribute name="DisableECATRestart" type="xs:boolean"/>
+					<xs:attribute name="InputShift" type="xs:int"/>
+					<xs:attribute name="FixedPdoSize" type="xs:boolean"/>
+					<xs:attribute name="EnableBusStatus" type="xs:boolean"/>
+					<xs:attribute name="EnableControl" type="xs:boolean"/>
+					<xs:attribute name="EnableMessage" type="xs:boolean"/>
+					<xs:attribute name="ManualStartUp" type="xs:boolean"/>
+					<xs:attribute name="ExtendedMapping" type="xs:boolean"/>
+					<xs:attribute name="EnablePdoConfig" type="xs:boolean"/>
+					<xs:attribute name="DisableBoxStateModification" type="xs:boolean"/>
+					<xs:attribute name="FreeRunMode" type="xs:boolean"/>
+					<xs:attribute name="RedundancyMode" type="xs:boolean"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="EquiParameter" minOccurs="0">
+				<xs:complexType>
+					<xs:attribute name="LastEquiAction" type="xs:int"/>
+					<xs:attribute name="IrqMode" type="xs:int"/>
+					<xs:attribute name="EquiMode" type="xs:int"/>
+					<xs:attribute name="ReservedMode" type="xs:int"/>
+					<xs:attribute name="RelationShiftCycle" type="xs:int"/>
+					<xs:attribute name="EstimatedMappingTime" type="xs:int"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="MappingsType">
+		<xs:sequence>
+			<xs:element name="MappingInfo" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence/>
+					<xs:attribute name="Identifier" type="GUID" use="required"/>
+					<xs:attribute name="Id" type="HexDecValue" use="required"/>
+					<xs:attribute name="Watchdog" type="xs:hexBinary"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="OwnerA" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="OwnerB" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Link" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="PrivateType" type="DataTypeType" minOccurs="0"/>
+											</xs:sequence>
+											<xs:attribute name="VarA" type="xs:string"/>
+											<xs:attribute name="GrpA" type="xs:string"/>
+											<xs:attribute name="TypeA" type="xs:string"/>
+											<xs:attribute name="InOutA" type="xs:int"/>
+											<xs:attribute name="ParentTypeA" type="xs:string"/>
+											<xs:attribute name="GuidA" type="GUID"/>
+											<xs:attribute name="VarB" type="xs:string"/>
+											<xs:attribute name="IdB" type="xs:int"/>
+											<xs:attribute name="AutoLink" type="xs:boolean"/>
+											<xs:attribute name="Size" type="xs:int"/>
+											<xs:attribute name="OffsA" type="xs:int"/>
+											<xs:attribute name="OffsB" type="xs:int"/>
+											<xs:attribute name="RestoreInfo" type="xs:string"/>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+								<xs:attribute name="Name" type="xs:string"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Unlinked" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="VarA" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+					<xs:attribute name="Name" type="xs:string"/>
+					<xs:attribute name="Prefix" type="xs:string"/>
+					<xs:attribute name="Type" type="xs:int"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="ImageDatasType">
+		<xs:sequence>
+			<xs:element name="ImageData" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:hexBinary">
+							<xs:attribute name="Id" type="xs:int"/>
+							<xs:attribute name="Hash" type="GUID"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="EapSlaveType">
+		<xs:sequence>
+			<xs:element name="EapVar" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="TcSmTreeItem">
+							<xs:sequence>
+								<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+							</xs:sequence>
+							<xs:attribute name="VarInOut" type="xs:int"/>
+							<xs:attribute name="NvId" type="xs:int"/>
+							<xs:attribute name="NvHash" type="xs:int"/>
+							<xs:attribute name="NvLength" type="xs:int"/>
+							<xs:attribute name="NvQuality" type="xs:int"/>
+							<xs:attribute name="IoDivider" type="xs:int"/>
+							<xs:attribute name="IoModulo" type="xs:int"/>
+							<xs:attribute name="OnChangeTimeout" type="xs:int"/>
+							<xs:attribute name="IdChangeable" type="xs:boolean"/>
+							<xs:attribute name="IgnoreHash" type="xs:boolean"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="InOut" type="xs:int"/>
+		<xs:attribute name="Publisher" type="xs:string"/>
+		<xs:attribute name="Mac" type="xs:hexBinary"/>
+		<xs:attribute name="IoDivider" type="xs:int"/>
+		<xs:attribute name="IoModulo" type="xs:int"/>
+		<xs:attribute name="VlanInfo" type="xs:hexBinary"/>
+		<xs:attribute name="NetIdPublisherAsIpAddress" type="xs:boolean"/>
+		<xs:attribute name="DisableSubscriberMonitoring" type="xs:boolean"/>
+		<xs:attribute name="TargetChangeable" type="xs:boolean"/>
+		<xs:attribute name="TargetChangeableInTree" type="xs:boolean"/>
+		<xs:attribute name="ArpRetryInterval" type="xs:int" default="1000"/>
+		<xs:attribute name="InfoDataAddr" type="xs:boolean"/>
+		<xs:attribute name="ProtocolInstanceId" type="xs:int"/>
+		<xs:attribute name="GatewayIpAddr" type="xs:int"/>
+	</xs:complexType>
+	<xs:complexType name="TcSmTaskType">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Vars" type="TcSmVarGrpDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="FwdSymbol" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Name" type="xs:string"/>
+								<xs:element name="Type" type="TypeType"/>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Image" type="TcSmImageDef" minOccurs="0"/>
+				</xs:sequence>
+				<xs:attribute name="Priority" type="xs:int"/>
+				<xs:attribute name="CycleTime" type="xs:int"/>
+				<xs:attribute name="AmsPort" type="xs:int"/>
+				<xs:attribute name="FastCyclicTask" type="xs:boolean"/>
+				<xs:attribute name="Affinity" type="HexDecValue"/>
+				<xs:attribute name="AutoStart" type="xs:boolean"/>
+				<xs:attribute name="IoAtBegin" type="xs:boolean"/>
+				<xs:attribute name="Watchdog" type="xs:int"/>
+				<xs:attribute name="InPreTicks" type="xs:int"/>
+				<xs:attribute name="ExtSync" type="xs:boolean"/>
+				<xs:attribute name="TickModulo" type="xs:int"/>
+				<xs:attribute name="ExceedWarning" type="xs:int"/>
+				<xs:attribute name="DisableFpExceptions" type="xs:boolean"/>
+				<xs:attribute name="HostNameOrTpyPath" type="xs:string"/>
+				<xs:attribute name="AdtTasks" type="xs:boolean"/>
+				<xs:attribute name="JobTask" type="xs:boolean"/>
+				<xs:attribute name="VirtualTask" type="xs:boolean"/>
+				<xs:attribute name="AmsNetId" type="xs:string"/>
+				<xs:attribute name="WatchdogStackCapacity" type="xs:int"/>
+				<xs:attribute name="RealTaskOid" type="HexDecValue"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmCncGeoTaskType">
+		<xs:complexContent>
+			<xs:extension base="TcSmTaskType">
+				<xs:attribute name="CTM" type="xs:int"/>
+				<xs:attribute name="VE" type="xs:int"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmCamType">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:attribute name="CamType" type="xs:int"/>
+				<xs:attribute name="CamLine" type="xs:int"/>
+				<xs:attribute name="PresetTime" type="xs:int"/>
+				<xs:attribute name="CycleCount" type="xs:int"/>
+				<xs:attribute name="HystInc" type="xs:int"/>
+				<xs:attribute name="FrwActive" type="xs:boolean"/>
+				<xs:attribute name="RevActive" type="xs:boolean"/>
+				<xs:attribute name="Dynamic" type="xs:boolean"/>
+				<xs:attribute name="Hysteresis" type="xs:boolean"/>
+				<xs:attribute name="Start" type="xs:int"/>
+				<xs:attribute name="End" type="xs:int"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmNCType">
+		<xs:sequence>
+			<xs:choice minOccurs="0">
+				<xs:sequence>
+					<xs:element name="SafTask">
+						<xs:complexType>
+							<xs:complexContent>
+								<xs:extension base="TcSmTaskType">
+									<xs:attribute name="SafTaskInfo" type="xs:int"/>
+									<xs:attribute name="SemaMasterPort" type="xs:int"/>
+									<xs:attribute name="TimeCompShift" type="xs:int"/>
+								</xs:extension>
+							</xs:complexContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="SvbTask" type="TcSmTaskType"/>
+				</xs:sequence>
+				<xs:element name="Callers">
+					<xs:complexType>
+						<xs:attribute name="SafTaskId" type="xs:int"/>
+						<xs:attribute name="SvbTaskId" type="xs:int"/>
+					</xs:complexType>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="AxisFolder" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="SubFolder" type="NcAxisSubFolderType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+					<xs:attribute name="Name" type="xs:string"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Axis" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="TcSmNcAxis">
+							<xs:attribute name="File" type="xs:string">
+								<xs:annotation>
+									<xs:documentation>Reference to a separate file</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Channel" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="TcSmNcChannel">
+							<xs:attribute name="File" type="xs:string">
+								<xs:annotation>
+									<xs:documentation>Reference to a separate file</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Table" type="TcSmNcTable" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="Modules" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Module" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+						<xs:element name="Parameters" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Parameter" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="PTCID" type="HexDecValue"/>
+												<xs:element name="Data" type="xs:string"/>
+											</xs:sequence>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="File" type="xs:string">
+			<xs:annotation>
+				<xs:documentation>Reference to a separate file</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+	</xs:complexType>
+	<xs:complexType name="TcSmCNCType">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:choice>
+						<xs:sequence>
+							<xs:annotation>
+								<xs:documentation>old format for standard tasks settings</xs:documentation>
+							</xs:annotation>
+							<xs:element name="GeoTask" type="TcSmTaskType" minOccurs="0"/>
+							<xs:element name="SdaTask" type="TcSmTaskType" minOccurs="0"/>
+							<xs:element name="ComTask" type="TcSmTaskType" minOccurs="0"/>
+						</xs:sequence>
+						<xs:sequence>
+							<xs:annotation>
+								<xs:documentation>new format for advanced tasks settings</xs:documentation>
+							</xs:annotation>
+							<xs:element name="COM" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:attribute name="OTCID" type="HexDecValue"/>
+									<xs:attribute name="Priority" type="HexDecValue"/>
+									<xs:attribute name="CycleTime" type="HexDecValue"/>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="SDA" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:attribute name="OTCID" type="HexDecValue"/>
+									<xs:attribute name="Priority" type="HexDecValue"/>
+									<xs:attribute name="CycleTime" type="HexDecValue"/>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="GEO" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:attribute name="OTCID" type="HexDecValue"/>
+									<xs:attribute name="Priority" type="HexDecValue"/>
+									<xs:attribute name="CycleTime" type="HexDecValue"/>
+									<xs:attribute name="Scheduling" type="HexDecValue"/>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="Task" type="TcSmTaskType" minOccurs="0" maxOccurs="unbounded"/>
+						</xs:sequence>
+					</xs:choice>
+					<xs:element name="Data" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:string">
+									<xs:attribute name="Name"/>
+									<xs:attribute name="Offset"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="DefaultAxis" minOccurs="0">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Data" minOccurs="0" maxOccurs="unbounded">
+									<xs:complexType>
+										<xs:simpleContent>
+											<xs:extension base="xs:string">
+												<xs:attribute name="Name"/>
+												<xs:attribute name="Offset"/>
+											</xs:extension>
+										</xs:simpleContent>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Axis" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:complexContent>
+								<xs:extension base="TcSmCncAxis">
+									<xs:attribute name="File" type="xs:string">
+										<xs:annotation>
+											<xs:documentation>Reference to a separate file</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+								</xs:extension>
+							</xs:complexContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Channel" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:complexContent>
+								<xs:extension base="TcSmCncChannel">
+									<xs:attribute name="File" type="xs:string">
+										<xs:annotation>
+											<xs:documentation>Reference to a separate file</xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+								</xs:extension>
+							</xs:complexContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="VolComp" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:complexContent>
+								<xs:extension base="TcSmCncVolComp">
+									<xs:attribute name="WorkpieceAxes" type="xs:int"/>
+									<xs:attribute name="MaxRecords" type="xs:int" default="2000"/>
+									<xs:attribute name="Interpolation" type="xs:int"/>
+									<xs:attribute name="Splicing" type="xs:boolean"/>
+									<xs:attribute name="Chain" type="xs:string"/>
+									<xs:attribute name="Negate" type="xs:string"/>
+									<xs:attribute name="SetToZero" type="xs:string"/>
+									<xs:attribute name="AxisX" type="xs:int"/>
+									<xs:attribute name="AxisY" type="xs:int"/>
+									<xs:attribute name="AxisZ" type="xs:int"/>
+									<xs:attribute name="AxisA" type="xs:int"/>
+									<xs:attribute name="AxisB" type="xs:int"/>
+									<xs:attribute name="AxisC" type="xs:int"/>
+								</xs:extension>
+							</xs:complexContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Module" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:complexContent>
+								<xs:extension base="TcSmObjDef"/>
+							</xs:complexContent>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:attribute name="File" type="xs:string">
+					<xs:annotation>
+						<xs:documentation>Reference to a separate file</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="FileIdentifier" type="xs:hexBinary"/>
+				<xs:attribute name="CncEVersion" type="xs:boolean"/>
+				<xs:attribute name="TrafoLicense" type="xs:boolean"/>
+				<xs:attribute name="SplineLicense" type="xs:boolean"/>
+				<xs:attribute name="HSCLicense" type="xs:boolean"/>
+				<xs:attribute name="ToolMngAdsPort" type="xs:int"/>
+				<xs:attribute name="CTM" type="xs:int"/>
+				<xs:attribute name="VE" type="xs:int"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmMCType">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="NET" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="OTCID" type="HexDecValue"/>
+							<xs:attribute name="Priority" type="HexDecValue"/>
+							<xs:attribute name="CycleTime" type="HexDecValue"/>
+							<xs:attribute name="SortOrder" type="HexDecValue"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="NPT" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="OTCID" type="HexDecValue"/>
+							<xs:attribute name="Priority" type="HexDecValue"/>
+							<xs:attribute name="CycleTime" type="HexDecValue"/>
+							<xs:attribute name="SortOrder" type="HexDecValue"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="NAT" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="OTCID" type="HexDecValue"/>
+							<xs:attribute name="Priority" type="HexDecValue"/>
+							<xs:attribute name="CycleTime" type="HexDecValue"/>
+							<xs:attribute name="SortOrder" type="HexDecValue"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="NWT" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:attribute name="OTCID" type="HexDecValue"/>
+							<xs:attribute name="Priority" type="HexDecValue"/>
+							<xs:attribute name="CycleTime" type="HexDecValue"/>
+							<xs:attribute name="SortOrder" type="HexDecValue"/>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Axis" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="Group" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="Table" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="Object" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmSlotModule">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="ModuleData" type="xs:hexBinary" minOccurs="0"/>
+					<xs:element name="PdoIndex" type="HexDecValue" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="CoeProfile" minOccurs="0">
+						<xs:complexType>
+							<xs:attribute name="ProfileNo" type="HexDecValue"/>
+							<xs:attribute name="DisplayName" type="xs:string"/>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:attribute name="Type" type="xs:string" use="required"/>
+				<xs:attribute name="Class" type="xs:string" use="required"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmItemType">
+		<xs:sequence>
+			<xs:element name="DataTypes" type="DataTypesType" minOccurs="0"/>
+			<xs:element name="ModuleTmcs" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ModuleTmc" type="ModuleType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ImageDatas" type="ImageDatasType" minOccurs="0"/>
+			<xs:choice>
+				<xs:element name="NC" type="TcSmNCType"/>
+				<xs:element name="CNC" type="TcSmCNCType"/>
+				<xs:element name="Box" maxOccurs="unbounded">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcSmBoxDef"/>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Device" type="TcSmDevDef" maxOccurs="unbounded"/>
+				<xs:element name="Axis" type="TcSmMotionAxis" maxOccurs="unbounded"/>
+				<xs:element name="Project">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="SubProjectType">
+								<xs:attribute name="Encryption" type="xs:int"/>
+								<xs:attribute name="AmsPort" type="xs:int"/>
+								<xs:attribute name="GeneralArchiveSettings" type="HexDecValue"/>
+								<xs:attribute name="TargetArchiveSettings" type="HexDecValue"/>
+								<xs:attribute name="FileArchiveSettings" type="HexDecValue"/>
+								<xs:attribute name="CopyTmcToTarget" type="xs:string"/>
+								<xs:attribute name="CopyTpyToTarget" type="xs:string"/>
+								<xs:attribute name="SymbolicMapping" type="xs:boolean"/>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="Mappings" type="MappingsType" minOccurs="0"/>
+		</xs:sequence>
+		<xs:attribute name="ClassName" type="xs:string"/>
+		<xs:attribute name="SubType" type="xs:int"/>
+	</xs:complexType>
+	<xs:complexType name="NcAxisSubFolderType">
+		<xs:sequence>
+			<xs:element name="SubFolder" type="NcAxisSubFolderType" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="Name" type="xs:string"/>
+	</xs:complexType>
+	<xs:simpleType name="MacAddressType">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="TcSmVnCameraType">
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="GigE Vision"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="TcSmVnCamera">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Module" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="MacAddress" type="MacAddressType" minOccurs="0"/>
+				</xs:sequence>
+				<xs:attribute name="VisionObjectGUID" type="GUID"/>
+				<xs:attribute name="CameraType" type="TcSmVnCameraType"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmVnFileSource">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:element name="Module" type="TcSmObjDef" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+				<xs:attribute name="VisionObjectGUID" type="GUID"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcSmVnApp">
+		<xs:complexContent>
+			<xs:extension base="TcSmTreeItem">
+				<xs:sequence>
+					<xs:choice minOccurs="0" maxOccurs="unbounded">
+						<xs:element name="Camera" type="TcSmVnCamera"/>
+						<xs:element name="FileSource" type="TcSmVnFileSource"/>
+					</xs:choice>
+				</xs:sequence>
+				<xs:attribute name="VisionAppGUID" type="GUID"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="ProjectVariantType">
+		<xs:sequence>
+			<xs:element name="Variant" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Name" type="xs:string" maxOccurs="unbounded"/>
+						<xs:element name="Disable" type="xs:boolean" minOccurs="0"/>
+						<xs:element name="TargetNetId" type="xs:string" minOccurs="0"/>
+						<xs:element name="Defines" type="xs:string" minOccurs="0"/>
+						<xs:element name="IoMapping" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute name="Type"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Link" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute name="Type"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Parameters" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:anyAttribute/>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="PvUseDisable" type="xs:boolean"/>
+		<xs:attribute name="PvUseParameter" type="xs:boolean"/>
+		<xs:attribute name="PvUseSParameter" type="xs:int"/>
+		<xs:attribute name="PvUseLink" type="xs:boolean"/>
+		<xs:attribute name="PvUseDefine" type="xs:boolean"/>
+	</xs:complexType>
+</xs:schema>

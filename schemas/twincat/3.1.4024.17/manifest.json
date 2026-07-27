@@ -1,0 +1,47 @@
+{
+  "schemaSetVersion": 1,
+  "twinCatXaeVersion": "3.1.4024.17",
+  "sourceDirectory": "C:\\TwinCAT\\3.1\\Config\\Modules",
+  "capturedDate": "2026-07-28",
+  "supportedDocuments": {
+    "tcSmProject": {
+      "rootSchema": "Modules/TcSmProject.xsd",
+      "rootElement": "TcSmProject",
+      "tcSmVersions": [
+        "1.0"
+      ],
+      "tcVersions": [
+        "3.1.4024.17"
+      ]
+    },
+    "tcPlcObject": {
+      "rootSchema": "Modules/TcPlcObject.xsd",
+      "rootElement": "TcPlcObject",
+      "versions": [
+        "1.1.0.1"
+      ]
+    }
+  },
+  "files": [
+    {
+      "path": "Modules/TcModuleBase.xsd",
+      "sha256": "6eaa4bb5b8b37fd8ba9702c7a3acd4d25974f708253b0b4d593f7d433fe0ca56"
+    },
+    {
+      "path": "Modules/TcPlcObject.xsd",
+      "sha256": "c1714730049b84903c9e0cf597c2f41d889c54fc7de926b019f7e1bdc482f289"
+    },
+    {
+      "path": "Modules/TcSmItem.xsd",
+      "sha256": "f2340e7e70784b7d3d03ce67ff51f7dbcaab918ffbef1d872ece9fd2c753d88f"
+    },
+    {
+      "path": "Modules/TcSmProject.xsd",
+      "sha256": "0ef1bd3e5069b247a3eb9f541fc727ee61df3a87dac693f13757f177774ddc31"
+    },
+    {
+      "path": "Modules/TcUserManagement.xsd",
+      "sha256": "7b544b0ddc176288e5d0f675364fa53abfeebc1706a622bba0106a28b772beb3"
+    }
+  ]
+}

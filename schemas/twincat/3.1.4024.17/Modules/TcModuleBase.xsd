@@ -1,0 +1,2316 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<xs:simpleType name="GUID">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="LibraryId">
+		<xs:annotation>
+			<xs:documentation>vendor, library name and version: 'vendor'|'name'|d.d.d.d</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:pattern value="([0-9a-zA-Z_ ]){1,}\|([0-9a-zA-Z_ ]){1,}\|([0-9]){1,}\.([0-9]){1,}\.([0-9]){1,}\.([0-9]){1,}"/>
+			<xs:pattern value="([0-9a-zA-Z_ ]){1,}\|([0-9a-zA-Z_ ]){1,}\|\*"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="UniqueName">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="([0-9a-zA-Z_#@()])*"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="SeverityType">
+		<xs:restriction base="xs:NMTOKEN">
+			<xs:enumeration value="Verbose"/>
+			<xs:enumeration value="Info"/>
+			<xs:enumeration value="Warning"/>
+			<xs:enumeration value="Error"/>
+			<xs:enumeration value="Critical"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="HexDecValue">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="[+-]?[0-9]{1,}"/>
+			<xs:pattern value="#x[0-9|a-f|A-F]{1,}"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="HexDecGuidValue">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="[+-]?[0-9]{1,}"/>
+			<xs:pattern value="#x[0-9|a-f|A-F]{1,}"/>
+			<xs:pattern value="\{[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\}"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="HexDecFloatValue">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="[+-]?[0-9]{1,}"/>
+			<xs:pattern value="[+-]?[0-9]{1,}[eE][+-][0-9]{1,}"/>
+			<xs:pattern value="[+-]?[0-9]*.[0-9]{1,}"/>
+			<xs:pattern value="[+-]?[0-9]{1,}.[0-9]*"/>
+			<xs:pattern value="[+-]?[0-9]{1,}.[0-9]*[eE][+-][0-9]{1,}"/>
+			<xs:pattern value="#x[0-9|a-f|A-F]{1,}"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="DateTimeValue">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="(TIME|LTIME|T|LT)#[+-]?([0-9]{1,}(.[0-9]{1,})?(D|d))?([0-9]{1,}(.[0-9]{1,})?(H|h))?([0-9]{1,}(.[0-9]{1,})?(M|m))?([0-9]{1,}(.[0-9]{1,})?(S|s))?"/>
+			<xs:pattern value="(TIME_OF_DAY|LTIME_OF_DAY|TOD|LTOD)#[0-9]{1,}:[0-9]{1,}:[0-9]{1,}(.[0-9]{1,})?"/>
+			<xs:pattern value="(DATE|LDATE|D|LD)#[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}"/>
+			<xs:pattern value="(DATE_AND_TIME|LDATE_AND_TIME|DT|LDT)#[0-9]{4}-[0-9]{1,2}-[0-9]{1,2}-[0-9]{1,}:[0-9]{1,2}:[0-9]{1,2}(.[0-9]{1,})?"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="GenericDataType">
+		<xs:restriction base="xs:NMTOKEN">
+			<xs:enumeration value="BYTE"/>
+			<xs:enumeration value="WORD"/>
+			<xs:enumeration value="DWORD"/>
+			<xs:enumeration value="LWORD"/>
+			<xs:enumeration value="SINT"/>
+			<xs:enumeration value="INT"/>
+			<xs:enumeration value="DINT"/>
+			<xs:enumeration value="LINT"/>
+			<xs:enumeration value="USINT"/>
+			<xs:enumeration value="UINT"/>
+			<xs:enumeration value="UDINT"/>
+			<xs:enumeration value="ULINT"/>
+			<xs:enumeration value="REAL"/>
+			<xs:enumeration value="LREAL"/>
+			<xs:enumeration value="STRING"/>
+			<xs:enumeration value="OTCID"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="LangTextType">
+		<xs:simpleContent>
+			<xs:extension base="xs:string">
+				<xs:attribute name="TxtId">
+					<xs:annotation>
+						<xs:documentation>a reference to the translations section (if empty the actual text is used as a reference</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="ArrayInfoType">
+		<xs:sequence>
+			<xs:element name="LBound">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:integer">
+							<xs:attribute name="Constant" type="GUID">
+								<xs:annotation>
+									<xs:documentation>LBound depend on actual value of constant</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Elements">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:integer">
+							<xs:attribute name="Min" type="xs:integer"/>
+							<xs:attribute name="Max" type="xs:integer"/>
+							<xs:attribute name="MaxUnbounded" type="xs:boolean"/>
+							<xs:attribute name="Constant" type="GUID">
+								<xs:annotation>
+									<xs:documentation>Elements depend on actual value of constant</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="Level" type="xs:integer">
+			<xs:annotation>
+				<xs:documentation>ARRAY [] OF ARRAY [] level</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="PointerTo">
+			<xs:annotation>
+				<xs:documentation>0 = Normal type; 1 = POINTER TO; 2 = POINTER TO POINTER TO; 3 = POINTER TO POINTER TO POINTER TO</xs:documentation>
+			</xs:annotation>
+			<xs:simpleType>
+				<xs:restriction base="xs:int">
+					<xs:minInclusive value="0"/>
+					<xs:maxInclusive value="3"/>
+				</xs:restriction>
+			</xs:simpleType>
+		</xs:attribute>
+		<xs:attribute name="ReferenceTo" type="xs:boolean"/>
+	</xs:complexType>
+	<xs:complexType name="EnumInfoType">
+		<xs:sequence>
+			<xs:element name="Text" type="LangTextType"/>
+			<xs:element name="Enum" type="HexDecValue" minOccurs="0"/>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="PropertyType">
+		<xs:sequence>
+			<xs:element name="Name" type="xs:string"/>
+			<xs:element name="Value" type="xs:string" minOccurs="0"/>
+			<xs:element name="Desc" type="LangTextType" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="SubItemType">
+		<xs:sequence>
+			<xs:element name="Name">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="SubIdx" type="HexDecValue"/>
+							<xs:attribute name="HideSubItems" type="xs:boolean"/>
+							<xs:attribute name="Static" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Static subitem has no BitOffs . Reference to a symbol with 'DataType.Name'.'SubItem.Name'</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DisplayName" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Type" type="TypeType"/>
+			<xs:choice>
+				<xs:element name="ArrayInfo" type="ArrayInfoType" minOccurs="0" maxOccurs="3"/>
+				<xs:element name="EnumInfo" type="EnumInfoType" maxOccurs="unbounded"/>
+			</xs:choice>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:element name="BitSize" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Will be calculated automatically if not present</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:long">
+							<xs:attribute name="X64" type="xs:long"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="BitOffs" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Will be calculated automatically if not present</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:long">
+							<xs:attribute name="X64" type="xs:long"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Unit" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Default" type="DefaultType" minOccurs="0"/>
+			<xs:element name="Properties" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="EventIdType">
+		<xs:sequence>
+			<xs:element name="Name">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="Id" type="HexDecValue" use="required"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DisplayName" type="LangTextType" minOccurs="0"/>
+			<xs:element name="DescriptionText" type="LangTextType" minOccurs="0"/>
+			<xs:element name="DescriptionUrl" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Severity" type="SeverityType" minOccurs="0"/>
+			<xs:element name="CauseRemedy" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Cause" type="LangTextType" minOccurs="0"/>
+						<xs:element name="Remedy" type="LangTextType" minOccurs="0"/>
+					</xs:sequence>
+					<xs:attribute name="Idx" type="HexDecValue"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Properties" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DataTypeType">
+		<xs:sequence>
+			<xs:element name="Name">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="GUID" type="GUID">
+								<xs:annotation>
+									<xs:documentation>Will be generated if not set</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="Namespace" type="xs:string"/>
+							<xs:attribute name="GlobalType" type="xs:boolean"/>
+							<xs:attribute name="TcBaseType" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Used to load type independent from any reference</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="IecBaseType" type="xs:boolean"/>
+							<xs:attribute name="IecLibraryType" type="xs:boolean"/>
+							<xs:attribute name="SignedValue" type="xs:boolean"/>
+							<xs:attribute name="Hexadecimal" type="xs:boolean"/>
+							<xs:attribute name="FloatingPoint" type="xs:boolean"/>
+							<xs:attribute name="StringType" type="xs:boolean"/>
+							<xs:attribute name="WStringType" type="xs:boolean"/>
+							<xs:attribute name="BitType" type="xs:boolean"/>
+							<xs:attribute name="PersistentType" type="xs:boolean"/>
+							<xs:attribute name="AutoDeleteType" type="xs:boolean"/>
+							<xs:attribute name="OversampleType" type="xs:boolean"/>
+							<xs:attribute name="LegacyVType" type="xs:int"/>
+							<xs:attribute name="HideType" type="xs:boolean"/>
+							<xs:attribute name="HideSubItems" type="xs:boolean"/>
+							<xs:attribute name="CName" type="xs:string"/>
+							<xs:attribute name="CNameX64" type="xs:string"/>
+							<xs:attribute name="IecDeclaration" type="xs:string"/>
+							<xs:attribute name="IecDeclarationX64" type="xs:string"/>
+							<xs:attribute name="RemovableEnumPrefix" type="xs:string"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DisplayName" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:element name="BitSize" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Will be calculated automatically if not present</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:long">
+							<xs:attribute name="X64" type="xs:long"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:choice>
+				<xs:sequence>
+					<xs:element name="BaseType" type="TypeType"/>
+					<xs:choice>
+						<xs:element name="ArrayInfo" type="ArrayInfoType" minOccurs="0" maxOccurs="unbounded"/>
+						<xs:element name="EnumInfo" type="EnumInfoType" maxOccurs="unbounded"/>
+						<xs:element name="FunctionPointer">
+							<xs:annotation>
+								<xs:documentation>If present, indicates a function pointer type; BaseType must be PVOID or PVOID64</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="ReturnType" type="TypeType" minOccurs="0"/>
+									<xs:element name="Parameter" type="FuncParaType" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:choice>
+					<xs:element name="Unit" type="LangTextType" minOccurs="0"/>
+				</xs:sequence>
+				<xs:element name="EventId" type="EventIdType" minOccurs="0" maxOccurs="unbounded"/>
+				<xs:sequence>
+					<xs:element name="ExtendsType" minOccurs="0">
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:string">
+									<xs:attribute name="GUID" type="GUID">
+										<xs:annotation>
+											<xs:documentation>optional if "ExtendsType" is unambiguous inside this document </xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="Namespace" type="xs:string"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="Implements" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:string">
+									<xs:attribute name="GUID" type="GUID">
+										<xs:annotation>
+											<xs:documentation>optional if "Implements" is unambiguous inside this document </xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+									<xs:attribute name="Namespace" type="xs:string"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="SubItem" type="SubItemType" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="PropertyItem" type="PropertyItemType" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="Action" minOccurs="0" maxOccurs="unbounded">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Name" type="xs:string"/>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:element name="ArraySubItems">
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="LBound" type="xs:int" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>default: 0</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:choice>
+								<xs:element name="ItemCategory" type="xs:string"/>
+								<xs:element name="ItemType" type="TypeType" maxOccurs="unbounded"/>
+							</xs:choice>
+							<xs:element name="SubItem" minOccurs="0" maxOccurs="unbounded">
+								<xs:complexType>
+									<xs:simpleContent>
+										<xs:extension base="TypeType">
+											<xs:attribute name="FixedItem" type="xs:boolean"/>
+										</xs:extension>
+									</xs:simpleContent>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+						<xs:attribute name="Min" type="xs:integer"/>
+						<xs:attribute name="Max" type="xs:integer"/>
+						<xs:attribute name="MaxUnbounded" type="xs:boolean"/>
+					</xs:complexType>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="Method" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>If present, indicates an interface type or a FunctionBlock declaration</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Name">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="IecDeclaration" type="xs:string"/>
+										<xs:attribute name="PropertyType">
+											<xs:simpleType>
+												<xs:restriction base="xs:NMTOKEN">
+													<xs:enumeration value="none"/>
+													<xs:enumeration value="get"/>
+													<xs:enumeration value="set"/>
+													<xs:enumeration value="getarray"/>
+													<xs:enumeration value="setarray"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:attribute>
+										<xs:attribute name="RpcEnable">
+											<xs:simpleType>
+												<xs:restriction base="xs:NMTOKEN">
+													<xs:enumeration value="none"/>
+													<xs:enumeration value="cpp"/>
+													<xs:enumeration value="plc"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:attribute>
+										<xs:attribute name="RpcCallUnlocked" type="xs:boolean"/>
+										<xs:attribute name="VTableIndex" type="xs:int"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+						<xs:element name="ReturnType" minOccurs="0">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="TypeType">
+										<xs:attribute name="RpcDirection">
+											<xs:simpleType>
+												<xs:restriction base="xs:NMTOKEN">
+													<xs:enumeration value="none"/>
+													<xs:enumeration value="out"/>
+												</xs:restriction>
+											</xs:simpleType>
+										</xs:attribute>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="ReturnArrayInfo" type="ArrayInfoType" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>Only used for PLC calling convention</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ReturnBitSize" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Will be calculated automatically if not present</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:long">
+										<xs:attribute name="X64" type="xs:long"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Parameter" type="FuncParaType" minOccurs="0" maxOccurs="unbounded"/>
+						<xs:element name="Local" type="FuncParaType" minOccurs="0" maxOccurs="unbounded"/>
+						<xs:element name="Properties" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Default" type="DefaultType" minOccurs="0"/>
+			<xs:element name="NamedConstant" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Name">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="ReplaceView" type="xs:boolean"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Value" type="xs:string"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Format" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>Multiple formats possible - for user selection</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Printf">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="X64" type="xs:string"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Parameter" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="X64" type="xs:string"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+					<xs:attribute name="Name" type="xs:string">
+						<xs:annotation>
+							<xs:documentation>e.g. "Hex" or "Dec"</xs:documentation>
+						</xs:annotation>
+					</xs:attribute>
+					<xs:attribute name="Preview" type="xs:string"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Properties" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Translations" type="TranslationsType" minOccurs="0"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DataTypesType">
+		<xs:sequence>
+			<xs:element name="Constant" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Name">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="GUID" type="GUID"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Default" type="xs:long" minOccurs="0"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DataType" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="DataTypeType">
+							<xs:sequence>
+								<xs:element name="Hides" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Hide" minOccurs="0" maxOccurs="unbounded">
+												<xs:complexType>
+													<xs:simpleContent>
+														<xs:extension base="xs:string">
+															<xs:attribute name="GUID" type="GUID" use="required"/>
+														</xs:extension>
+													</xs:simpleContent>
+												</xs:complexType>
+											</xs:element>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Relations" type="RelationsType" minOccurs="0"/>
+							</xs:sequence>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="EntryType">
+		<xs:sequence>
+			<xs:element name="Index">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="HexDecValue">
+							<xs:attribute name="DependOnSlot" type="xs:boolean"/>
+							<xs:attribute name="DependOnSlotGroup" type="xs:boolean"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="SubIndex" type="HexDecValue" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Default value = 0</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="BitLen" type="xs:long"/>
+			<xs:element name="Name" type="LangTextType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Name is mandatory if Index != 0</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Comment" type="xs:string" minOccurs="0"/>
+			<xs:element name="DataType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>DataType is mandatory if Index != 0</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="DScale" use="optional">
+								<xs:simpleType>
+									<xs:restriction base="xs:string">
+										<xs:enumeration value="+/-10"/>
+										<xs:enumeration value="0-10"/>
+										<xs:enumeration value="0-20"/>
+										<xs:enumeration value="4-20"/>
+										<xs:enumeration value="0.1°"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:attribute>
+							<xs:attribute name="SwapData" type="xs:boolean" use="optional">
+								<xs:annotation>
+									<xs:documentation>1 = swap hi and lo bytes; 2 = swap hi and lo words; 3 =  swap both</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DictionaryType">
+		<xs:sequence>
+			<xs:element name="DataTypes" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="DataType" type="DataTypeType" minOccurs="0" maxOccurs="unbounded">
+							<xs:key name="SubItemKey">
+								<xs:selector xpath="./SubItem"/>
+								<xs:field xpath="Name"/>
+							</xs:key>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+				<xs:key name="DataTypeKey">
+					<xs:selector xpath="./DataType"/>
+					<xs:field xpath="Name"/>
+				</xs:key>
+				<xs:keyref name="BaseTypeRef" refer="DataTypeKey">
+					<xs:selector xpath="./DataType"/>
+					<xs:field xpath="BaseType"/>
+				</xs:keyref>
+				<xs:keyref name="SubItemTypeRef" refer="DataTypeKey">
+					<xs:selector xpath="./DataType/SubItem"/>
+					<xs:field xpath="Type"/>
+				</xs:keyref>
+			</xs:element>
+			<xs:element name="Objects">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Object" type="ObjectType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="ParaDataType">
+		<xs:choice>
+			<xs:choice>
+				<xs:element name="OTCID">
+					<xs:complexType>
+						<xs:simpleContent>
+							<xs:extension base="HexDecValue"/>
+						</xs:simpleContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="OTCCAT" type="xs:string" maxOccurs="unbounded"/>
+			</xs:choice>
+			<xs:element name="BYTE" type="HexDecMinMaxValue"/>
+			<xs:element name="USINT" type="HexDecMinMaxValue"/>
+			<xs:element name="SINT" type="HexDecMinMaxValue"/>
+			<xs:element name="WORD" type="HexDecMinMaxValue"/>
+			<xs:element name="UINT" type="HexDecMinMaxValue"/>
+			<xs:element name="INT" type="HexDecMinMaxValue"/>
+			<xs:element name="DWORD" type="HexDecMinMaxValue"/>
+			<xs:element name="UDINT" type="HexDecMinMaxValue"/>
+			<xs:element name="DINT" type="HexDecMinMaxValue"/>
+			<xs:element name="LWORD" type="HexDecMinMaxValue"/>
+			<xs:element name="ULINT" type="HexDecMinMaxValue"/>
+			<xs:element name="LINT" type="HexDecMinMaxValue"/>
+			<xs:element name="FLOAT" type="FloatMinMax"/>
+			<xs:element name="REAL" type="FloatMinMax"/>
+			<xs:element name="DOUBLE" type="DoubleMinMax"/>
+			<xs:element name="LREAL" type="DoubleMinMax"/>
+			<xs:element name="HEXBIN" type="xs:hexBinary"/>
+			<xs:element name="STRING">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="Len" type="xs:long"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="AdiPtr">
+				<xs:complexType>
+					<xs:sequence minOccurs="0">
+						<xs:element name="OTCID" type="HexDecValue"/>
+						<xs:element name="ADI_X" type="HexDecValue"/>
+						<xs:element name="OFFS" type="HexDecValue"/>
+						<xs:element name="SIZE" type="HexDecValue"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DataDesc" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Name">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="TxtId" type="xs:int"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Comment" minOccurs="0">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="TxtId" type="xs:int"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Unit" minOccurs="0">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="TxtId" type="xs:int"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Data" type="ParaDataType"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:complexType name="ObjectType">
+		<xs:sequence>
+			<xs:element name="Index">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="HexDecValue">
+							<xs:attribute name="DependOnSlot" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>If this attribute is True, the Index of this object in a module definition depends on the Slot of the module (only for configurators supporting V1.3)</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="DependOnSlotGroup" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>If this attribute is True, the Index of this object in a module definition depends on the SlotGroup of the module (only for configurators supporting V1.3)</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="OverwrittenByModule" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>If this attribute is True, the object shall not be considered if the configurator supports the modular device description because this object will be defined via the module definition (only for configurators supporting V1.3). </xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Name" type="LangTextType"/>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Type">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="IID" type="HexDecValue"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="BitSize" type="xs:long"/>
+			<xs:choice minOccurs="0">
+				<xs:element name="DefaultString" type="xs:string" minOccurs="0"/>
+				<xs:element name="DefaultData" type="xs:hexBinary" minOccurs="0"/>
+				<xs:sequence minOccurs="0">
+					<xs:element name="MinValue" type="HexDecValue" minOccurs="0"/>
+					<xs:element name="MaxValue" type="HexDecValue" minOccurs="0"/>
+					<xs:element name="DefaultValue" type="HexDecValue" minOccurs="0"/>
+				</xs:sequence>
+			</xs:choice>
+			<xs:element name="Flags" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Access" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>CoE Access Type</xs:documentation>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:NMTOKEN">
+									<xs:pattern value="(r)*([0-7])*(w)*([0-7])*(ro)*(wo)*(rw)*"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="Category" minOccurs="0">
+							<xs:simpleType>
+								<xs:restriction base="xs:NMTOKEN">
+									<xs:enumeration value="m"/>
+									<xs:enumeration value="o"/>
+									<xs:enumeration value="c"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="PdoMapping" minOccurs="0">
+							<xs:simpleType>
+								<xs:restriction base="xs:NMTOKEN">
+									<xs:enumeration value="T"/>
+									<xs:enumeration value="R"/>
+									<xs:enumeration value="TR"/>
+									<xs:enumeration value="RT"/>
+									<xs:enumeration value="t"/>
+									<xs:enumeration value="r"/>
+									<xs:enumeration value="tr"/>
+									<xs:enumeration value="rt"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="SafetyMapping" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>FSoE Mapping</xs:documentation>
+							</xs:annotation>
+							<xs:simpleType>
+								<xs:restriction base="xs:NMTOKEN">
+									<xs:enumeration value="si"/>
+									<xs:enumeration value="SI"/>
+									<xs:enumeration value="so"/>
+									<xs:enumeration value="SO"/>
+									<xs:enumeration value="sio"/>
+									<xs:enumeration value="SIO"/>
+									<xs:enumeration value="sp"/>
+									<xs:enumeration value="SP"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="Attribute" type="HexDecValue" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>SoE Attribute</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Transition" minOccurs="0">
+							<xs:simpleType>
+								<xs:restriction base="xs:NMTOKEN">
+									<xs:enumeration value="IP"/>
+									<xs:enumeration value="PS"/>
+									<xs:enumeration value="SO"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+						<xs:element name="SdoAccess" minOccurs="0">
+							<xs:simpleType>
+								<xs:restriction base="xs:NMTOKEN">
+									<xs:enumeration value="CompleteAccess"/>
+									<xs:enumeration value="SubIndexAccess"/>
+								</xs:restriction>
+							</xs:simpleType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Properties" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="TranslationsType">
+		<xs:sequence>
+			<xs:element name="Text" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Comment" type="xs:string" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>Hint for translation only</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="Text" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="LcId" type="xs:int" use="required"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+					<xs:attribute name="TxtId"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="HexDecMinMaxValue">
+		<xs:simpleContent>
+			<xs:extension base="HexDecValue">
+				<xs:attribute name="Min" type="HexDecValue"/>
+				<xs:attribute name="Max" type="HexDecValue"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="FloatMinMax">
+		<xs:simpleContent>
+			<xs:extension base="xs:float">
+				<xs:attribute name="Min" type="xs:double"/>
+				<xs:attribute name="Max" type="xs:double"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="DoubleMinMax">
+		<xs:simpleContent>
+			<xs:extension base="xs:double">
+				<xs:attribute name="Min" type="xs:double"/>
+				<xs:attribute name="Max" type="xs:double"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="DefaulSubItemType">
+		<xs:sequence>
+			<xs:element name="Name" type="xs:string">
+				<xs:annotation>
+					<xs:documentation>Syntax for array elements: [x], [x,y] or [x,y,z]</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:choice>
+				<xs:element name="String" type="xs:string"/>
+				<xs:element name="WString" type="xs:string"/>
+				<xs:element name="EnumText" type="xs:string"/>
+				<xs:element name="Data" type="xs:hexBinary"/>
+				<xs:element name="GUID" type="GUID"/>
+				<xs:sequence>
+					<xs:element name="Min" type="HexDecFloatValue" minOccurs="0"/>
+					<xs:element name="Max" type="HexDecFloatValue" minOccurs="0"/>
+					<xs:element name="Value" type="HexDecFloatValue"/>
+				</xs:sequence>
+			</xs:choice>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DefaultType">
+		<xs:sequence>
+			<xs:element name="Name" type="xs:string" minOccurs="0"/>
+			<xs:choice minOccurs="0">
+				<xs:element name="String" type="xs:string"/>
+				<xs:element name="WString" type="xs:string"/>
+				<xs:element name="EnumText" type="xs:string"/>
+				<xs:element name="Data" type="xs:hexBinary"/>
+				<xs:element name="Bool" type="xs:boolean"/>
+				<xs:element name="DateTime" type="DateTimeValue"/>
+				<xs:element name="GUID" type="GUID"/>
+				<xs:element name="Category" type="xs:string" maxOccurs="unbounded">
+					<xs:annotation>
+						<xs:documentation>Only valid for OTCID types</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:sequence>
+					<xs:element name="Min" type="HexDecFloatValue" minOccurs="0"/>
+					<xs:element name="Max" type="HexDecFloatValue" minOccurs="0"/>
+					<xs:element name="Value" type="HexDecFloatValue"/>
+				</xs:sequence>
+				<xs:element name="SubItem" type="DefaulSubItemType" maxOccurs="unbounded"/>
+			</xs:choice>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="ModuleType">
+		<xs:sequence>
+			<xs:element name="Name" type="xs:string"/>
+			<xs:element name="DisplayName" type="LangTextType" minOccurs="0"/>
+			<xs:choice minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>mandotory  except for virtual modules</xs:documentation>
+				</xs:annotation>
+				<xs:element name="CLSID" type="CLSIDType"/>
+				<xs:element name="CTCID" type="CTCIDType">
+					<xs:annotation>
+						<xs:documentation>LEGACY: UDINT value</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="Info" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="ImageData" type="xs:hexBinary" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>hex binary data of a BMP file (dimensions 16x14 recommended)</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ImageData16x14" type="xs:hexBinary" minOccurs="0">
+							<xs:annotation>
+								<xs:documentation>LEGACY: hex binary data of a BMP file (dimensions should be 16x14)</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="TabExtension" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:attribute name="GUID" type="GUID"/>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Licenses" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="License" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="LicenseId" type="GUID"/>
+									<xs:element name="OemId" type="GUID" minOccurs="0"/>
+									<xs:element name="NoTrialLicense" type="xs:boolean" minOccurs="0"/>
+									<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="InitSequence" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:NMTOKEN">
+						<xs:enumeration value="PO"/>
+						<xs:enumeration value="PSO"/>
+						<xs:enumeration value="SO"/>
+						<xs:enumeration value="O"/>
+						<xs:enumeration value="PS"/>
+						<xs:enumeration value="P"/>
+						<xs:enumeration value="S"/>
+						<xs:enumeration value="POlate"/>
+						<xs:enumeration value="PSlate"/>
+						<xs:enumeration value="PSOlate"/>
+						<xs:enumeration value="SOlate"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Contexts" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Context" type="ContextType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+					<xs:attribute name="DownloadConfig" type="xs:boolean"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Categories" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>LEGACY: use Properties with name "Category" or "ChildCategory" instead</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Category" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+						<xs:element name="ChildCategory" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Interfaces" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Interface" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:choice>
+										<xs:element name="IID" type="GUID">
+											<xs:annotation>
+												<xs:documentation>LEGACY: see GUID attribute of Type</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="ITCID" type="HexDecValue" minOccurs="0">
+											<xs:annotation>
+												<xs:documentation>LEGACY: UDINT value</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:choice>
+									<xs:element name="Type" minOccurs="0">
+										<xs:complexType>
+											<xs:simpleContent>
+												<xs:extension base="xs:string">
+													<xs:attribute name="GUID" type="GUID">
+														<xs:annotation>
+															<xs:documentation>IID of interface</xs:documentation>
+														</xs:annotation>
+													</xs:attribute>
+													<xs:attribute name="Namespace" type="xs:string"/>
+												</xs:extension>
+											</xs:simpleContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="ContextId" type="HexDecValue" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="Xml" minOccurs="0">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+											</xs:sequence>
+										</xs:complexType>
+									</xs:element>
+								</xs:sequence>
+								<xs:attribute name="DisableCodeGeneration" type="xs:boolean"/>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Parameters" type="ParametersType" minOccurs="0"/>
+			<xs:element name="DataAreas" type="DataAreasType" minOccurs="0"/>
+			<xs:element name="InterfacePointers" type="InterfacePointersType" minOccurs="0"/>
+			<xs:element name="DataPointers" type="DataPointersType" minOccurs="0"/>
+			<xs:element name="Deployment" type="DeploymentType" minOccurs="0"/>
+			<xs:element name="EventMessages" type="EventMessagesType" minOccurs="0"/>
+			<xs:element name="EventClasses" type="EventClassesType" minOccurs="0"/>
+			<xs:element name="Properties" type="PropertiesType" minOccurs="0"/>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="GUID" type="GUID"/>
+		<xs:attribute name="Select" type="xs:boolean" use="optional"/>
+		<xs:attribute name="Group" type="xs:string" use="optional"/>
+		<xs:attribute name="TcSmClass" type="xs:string" use="optional"/>
+		<xs:attribute name="ProjectVariant" type="xs:string" use="optional"/>
+		<xs:attribute name="TargetPlatform" type="xs:string" use="optional"/>
+		<xs:attribute name="Hidden" type="xs:boolean" use="optional"/>
+		<xs:attribute name="HideInstance" type="xs:boolean" use="optional"/>
+		<xs:attribute name="Singleton" type="HexDecValue" use="optional">
+			<xs:annotation>
+				<xs:documentation>OTCID of singlton object instrance</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:complexType>
+	<xs:complexType name="InstanceType">
+		<xs:complexContent>
+			<xs:extension base="ModuleType">
+				<xs:sequence>
+					<xs:element name="InstanceName" type="xs:string" minOccurs="0"/>
+					<xs:element name="OTCID" type="HexDecValue" minOccurs="0"/>
+					<xs:element name="ParentOTCID" type="HexDecValue" minOccurs="0"/>
+					<xs:element name="ParameterValues" minOccurs="0">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Value" minOccurs="0" maxOccurs="unbounded">
+									<xs:complexType>
+										<xs:complexContent>
+											<xs:extension base="DefaulSubItemType"/>
+										</xs:complexContent>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="DataAreaSymbolLinks" minOccurs="0">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Value" minOccurs="0" maxOccurs="unbounded">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="AreaNo" type="HexDecValue"/>
+											<xs:element name="SymbolName" type="xs:string"/>
+											<xs:choice>
+												<xs:sequence>
+													<xs:element name="LinkOTCID" type="HexDecValue"/>
+													<xs:element name="LinkAreaNo" type="HexDecValue"/>
+													<xs:element name="LinkSymbolName" type="xs:string"/>
+													<xs:element name="BitOffs" type="HexDecValue" minOccurs="0"/>
+													<xs:element name="LinkBitOffs" type="HexDecValue" minOccurs="0"/>
+													<xs:element name="BitSize" type="HexDecValue" minOccurs="0"/>
+												</xs:sequence>
+											</xs:choice>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="InterfacePointerValues" minOccurs="0">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Value" minOccurs="0" maxOccurs="unbounded">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Name" type="xs:string"/>
+											<xs:element name="OTCID" type="HexDecValue"/>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="DataPointerValues" minOccurs="0">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Value" minOccurs="0" maxOccurs="unbounded">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="Name" type="xs:string"/>
+											<xs:choice>
+												<xs:sequence>
+													<xs:element name="OTCID" type="HexDecValue"/>
+													<xs:element name="AreaNo" type="HexDecValue"/>
+													<xs:element name="ByteOffs" type="HexDecValue"/>
+													<xs:element name="ByteSize" type="HexDecValue"/>
+												</xs:sequence>
+												<xs:element name="Data" maxOccurs="unbounded">
+													<xs:complexType>
+														<xs:sequence>
+															<xs:element name="OTCID" type="HexDecValue"/>
+															<xs:element name="AreaNo" type="HexDecValue"/>
+															<xs:element name="ByteOffs" type="HexDecValue"/>
+															<xs:element name="ByteSize" type="HexDecValue"/>
+														</xs:sequence>
+														<xs:attribute name="ArrayIndex" type="xs:int"/>
+													</xs:complexType>
+												</xs:element>
+											</xs:choice>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="InitSymbolValues" minOccurs="0">
+						<xs:complexType>
+							<xs:sequence>
+								<xs:element name="Value" type="DefaultType" minOccurs="0" maxOccurs="unbounded"/>
+							</xs:sequence>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="ParameterType">
+		<xs:sequence>
+			<xs:element name="Name">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="Index" type="HexDecValue"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Unit" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:element name="BitSize" type="xs:long" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Will be calculated automatically if not set</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:choice>
+				<xs:sequence>
+					<xs:element name="BaseType">
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:string">
+									<xs:attribute name="GUID" type="GUID">
+										<xs:annotation>
+											<xs:documentation>optional if "BaseType" is unambiguous inside this document </xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="ArrayInfo" type="ArrayInfoType" minOccurs="0" maxOccurs="3"/>
+					<xs:element name="Unit" type="LangTextType" minOccurs="0"/>
+					<xs:element name="Default" type="DefaultType" minOccurs="0"/>
+				</xs:sequence>
+				<xs:element name="SubItem" type="SubItemType" maxOccurs="unbounded"/>
+				<xs:sequence>
+					<xs:element name="EnumType" minOccurs="0">
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:string">
+									<xs:attribute name="GUID" type="GUID">
+										<xs:annotation>
+											<xs:documentation>optional if "BaseType" is unambiguous inside this document </xs:documentation>
+										</xs:annotation>
+									</xs:attribute>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="EnumInfo" type="EnumInfoType" maxOccurs="unbounded"/>
+					<xs:element name="DefaultEnum" type="xs:int" minOccurs="0"/>
+				</xs:sequence>
+			</xs:choice>
+			<xs:element name="Properties" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="CTCIDType">
+		<xs:simpleContent>
+			<xs:extension base="HexDecValue">
+				<xs:attribute name="ClassFactory" type="xs:string" use="required"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="ContextType">
+		<xs:sequence>
+			<xs:element name="Id">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="HexDecValue">
+							<xs:attribute name="NeedCalleeCall" type="xs:boolean"/>
+							<xs:attribute name="OTCID" type="HexDecFloatValue">
+								<xs:annotation>
+									<xs:documentation>OTCID of context object (e.g. of TaskPouObject)</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Name" type="xs:string" minOccurs="0"/>
+			<xs:element name="SymbolAdsPort" type="xs:int" minOccurs="0"/>
+			<xs:element name="ManualConfig" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:choice>
+							<xs:element name="OTCID" type="HexDecFloatValue"/>
+							<xs:element name="ParentOTCID" type="xs:boolean"/>
+						</xs:choice>
+						<xs:element name="ContextId" type="HexDecValue" minOccurs="0"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Priority" type="xs:int" minOccurs="0"/>
+			<xs:element name="CycleTime" type="xs:int" minOccurs="0"/>
+			<xs:element name="SortOrder" type="xs:int" minOccurs="0"/>
+			<xs:element name="DependOn" minOccurs="0">
+				<xs:simpleType>
+					<xs:restriction base="xs:NMTOKEN">
+						<xs:enumeration value="ManualConfig"/>
+						<xs:enumeration value="ObjectSelection"/>
+						<xs:enumeration value="ParentObject"/>
+						<xs:enumeration value="DataArea"/>
+						<xs:enumeration value="InterfacePointer"/>
+						<xs:enumeration value="DataPointer"/>
+						<xs:enumeration value="TaskProperties"/>
+					</xs:restriction>
+				</xs:simpleType>
+			</xs:element>
+			<xs:element name="Category" type="xs:string" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DataPointerType">
+		<xs:sequence>
+			<xs:element name="PTCID" type="HexDecValue"/>
+			<xs:element name="Name" type="xs:string"/>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Type" minOccurs="0">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="GUID" type="GUID">
+								<xs:annotation>
+									<xs:documentation>optional if "Type" is unambiguous inside this document </xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="Namespace"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ArrayInfo" type="ArrayInfoType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="ContextId" type="HexDecValue" minOccurs="0"/>
+			<xs:element name="Default" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="OTCID" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="AreaNo" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="ByteOffs" type="HexDecValue" minOccurs="0"/>
+						<xs:element name="ByteSize" type="HexDecValue" minOccurs="0"/>
+					</xs:sequence>
+					<xs:attribute name="ArrayIndex" type="xs:int"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="InterfacePointerType">
+		<xs:sequence>
+			<xs:element name="PTCID" type="HexDecValue"/>
+			<xs:element name="Name" type="xs:string"/>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:choice>
+				<xs:element name="IID" type="GUID">
+					<xs:annotation>
+						<xs:documentation>LEGACY: see GUID attribute of Type</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+				<xs:element name="ITCID" type="HexDecValue" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>LEGACY: UDINT value</xs:documentation>
+					</xs:annotation>
+				</xs:element>
+			</xs:choice>
+			<xs:element name="Type" minOccurs="0">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="GUID" type="GUID" use="required">
+								<xs:annotation>
+									<xs:documentation>IID of interface</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="Namespace" type="xs:string"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ArrayInfo" type="ArrayInfoType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="ContextId" type="HexDecValue" minOccurs="0"/>
+			<xs:element name="Default" minOccurs="0">
+				<xs:complexType>
+					<xs:choice>
+						<xs:element name="Category" type="xs:string" maxOccurs="unbounded"/>
+						<xs:element name="OTCID" type="HexDecFloatValue" maxOccurs="unbounded"/>
+						<xs:element name="ParentOTCID" type="xs:boolean"/>
+					</xs:choice>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="CLSIDType">
+		<xs:simpleContent>
+			<xs:extension base="GUID">
+				<xs:attribute name="ClassFactory" type="xs:string" use="required"/>
+				<xs:attribute name="RealTimeInstantiable" type="xs:boolean">
+					<xs:annotation>
+						<xs:documentation>Has RT state machine</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="FuncParaType">
+		<xs:sequence>
+			<xs:element name="Name">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="Static" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Static subitem has no BitOffs . Reference to a symbol with 'DataType.Name'.'SubItem.Name'</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Type">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="TypeType">
+							<xs:attribute name="Direction">
+								<xs:simpleType>
+									<xs:restriction base="xs:NMTOKEN">
+										<xs:enumeration value="in"/>
+										<xs:enumeration value="out"/>
+										<xs:enumeration value="inout"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:attribute>
+							<xs:attribute name="RpcDirection">
+								<xs:simpleType>
+									<xs:restriction base="xs:NMTOKEN">
+										<xs:enumeration value="none"/>
+										<xs:enumeration value="in"/>
+										<xs:enumeration value="out"/>
+										<xs:enumeration value="inout"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:attribute>
+							<xs:attribute name="RpcLengthIs" type="xs:string">
+								<xs:annotation>
+									<xs:documentation>Name of parameter that holds the count of elements of this parameter (must be a parameter before this one); PVOID will be treated as POINTER TO BYTE</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="RpcArrayDim">
+								<xs:annotation>
+									<xs:documentation>Dimension of an optional anyzize array (ARRAY [*] OF XXX)</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="Optional" type="HexDecFloatValue"/>
+							<xs:attribute name="VA_LIST" type="xs:boolean"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ArrayInfo" type="ArrayInfoType" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>Only used for PLC calling convention</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="BitSize" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Will be calculated automatically if not present</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:long">
+							<xs:attribute name="X64" type="xs:long"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Default" type="DefaultType" minOccurs="0"/>
+			<xs:element name="Properties" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="TypeType">
+		<xs:simpleContent>
+			<xs:extension base="xs:string">
+				<xs:attribute name="GUID" type="GUID">
+					<xs:annotation>
+						<xs:documentation>optional if "Type" is unambiguous inside this document </xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="Namespace" type="xs:string"/>
+				<xs:attribute name="PointerTo">
+					<xs:annotation>
+						<xs:documentation>0 = Normal type; 1 = POINTER TO; 2 = POINTER TO POINTER TO; 3 = POINTER TO POINTER TO POINTER TO</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:int">
+							<xs:minInclusive value="0"/>
+							<xs:maxInclusive value="3"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:attribute>
+				<xs:attribute name="ReferenceTo" type="xs:boolean"/>
+				<xs:attribute name="Const" type="xs:byte">
+					<xs:annotation>
+						<xs:documentation>BitFiels: bit0 = const decl before type; bit 1 = decl after type; bit x used for pointer to pointer...</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="LicenseRestrictionType">
+		<xs:attribute name="NoOtherPC" type="xs:boolean"/>
+		<xs:attribute name="NoBeckhoffPC" type="xs:boolean"/>
+		<xs:attribute name="NoTermDongle" type="xs:boolean"/>
+		<xs:attribute name="NoUsbDong" type="xs:boolean"/>
+		<xs:attribute name="NoVolumeId" type="xs:boolean"/>
+	</xs:complexType>
+	<xs:complexType name="RelationsType">
+		<xs:sequence>
+			<xs:element name="Relation" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Type">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="GUID" type="GUID"/>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="MapEntry" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>No MapEntry signals identical relation</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="BitOffsOwn" type="xs:long" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>optional if 0</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="BitOffsType" type="xs:long" minOccurs="0">
+										<xs:annotation>
+											<xs:documentation>optional if 0</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="BitSize" type="xs:long"/>
+									<xs:element name="Level" type="xs:int" minOccurs="0"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Rename" minOccurs="0" maxOccurs="unbounded">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:element name="From" type="xs:string"/>
+									<xs:element name="To" type="xs:string"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+					<xs:attribute name="SignMismatch" type="xs:boolean"/>
+					<xs:attribute name="Counterpart32bit" type="xs:boolean"/>
+					<xs:attribute name="Counterpart64bit" type="xs:boolean"/>
+					<xs:attribute name="Priority" type="xs:int"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="OemCertificateType">
+		<xs:simpleContent>
+			<xs:extension base="xs:hexBinary">
+				<xs:attribute name="NodeSignature" type="xs:hexBinary" use="required">
+					<xs:annotation>
+						<xs:documentation>from Authority</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="OemId" type="GUID" use="required">
+					<xs:annotation>
+						<xs:documentation>MB5 hash of PublicKey</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="Name" type="xs:string" use="required">
+					<xs:annotation>
+						<xs:documentation>signature relevant</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="UniqueName" type="xs:string" use="required">
+					<xs:annotation>
+						<xs:documentation>signature relevant - domain name or e-mail address</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="OrderAddress" type="xs:string">
+					<xs:annotation>
+						<xs:documentation>Optional email address for sending request file(s)</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="IssueTime" type="xs:dateTime" use="required">
+					<xs:annotation>
+						<xs:documentation>signature relevant</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="ExpireTime" type="xs:dateTime" use="required">
+					<xs:annotation>
+						<xs:documentation>signature relevant</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="Issuer" type="xs:string" use="required">
+					<xs:annotation>
+						<xs:documentation>signature relevant</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="TcCert_SignDatabaseKey" type="xs:boolean">
+					<xs:annotation>
+						<xs:documentation>signature relevant - allows to sign new data bases</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="TcCert_SignLicenseReq" type="xs:boolean">
+					<xs:annotation>
+						<xs:documentation>signature relevant - allows to sign oem licenses</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="TcCert_SignTcDriver" type="xs:boolean">
+					<xs:annotation>
+						<xs:documentation>signature relevant - allows to sign TC driver</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="PrivateKey"/>
+				<xs:attribute name="PrivateKeyEncrypted"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="DataAreaType">
+		<xs:sequence>
+			<xs:element name="AreaNo">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="HexDecValue">
+							<xs:attribute name="AreaType">
+								<xs:simpleType>
+									<xs:restriction base="xs:NMTOKEN">
+										<xs:enumeration value="Standard"/>
+										<xs:enumeration value="InputSrc"/>
+										<xs:enumeration value="InputDst"/>
+										<xs:enumeration value="OutputSrc"/>
+										<xs:enumeration value="OutputDst"/>
+										<xs:enumeration value="Internal"/>
+										<xs:enumeration value="MArea"/>
+										<xs:enumeration value="RetainSrc"/>
+										<xs:enumeration value="RetainDst"/>
+										<xs:enumeration value="InfoData"/>
+										<xs:enumeration value="RedundancySrc"/>
+										<xs:enumeration value="RedundancyDst"/>
+									</xs:restriction>
+								</xs:simpleType>
+							</xs:attribute>
+							<xs:attribute name="ChildArea" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Module does not own this area. Will be allocated from a parent module - Child area location will be downloaded with IOFFS_TcIoChildAreaLocation</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="AllowChildAreas" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Module allows child modules to extend the area</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="CreateSymbols" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>create ADS symbols for all symbols of data area</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="CreateSymbolAreaType">
+								<xs:annotation>
+									<xs:documentation>creates a data type for all symbols and an instances for all - only if 'CreateSymbols' active</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="CreateDataType" type="xs:string">
+								<xs:annotation>
+									<xs:documentation>creates a data type from symbol information (attribute contains the name of the type)</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="ShowSymbols" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>default view option for data area views</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="AreaSpan" type="HexDecValue">
+								<xs:annotation>
+									<xs:documentation>Reserve span of area numbers, default is 1</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="DisableGet" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Disable set value via ADS symbol</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="DisableSet" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Disable get value via ADS symbol</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="DynamicArea" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Content changable</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="OptionalArea" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Area may enabled or disabled</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="Disabled" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Optional area disabled</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="FlexibleArea" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Area content may enabled or disabled</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="AlignmentBits" type="xs:int">
+								<xs:annotation>
+									<xs:documentation>used if symbol bitOffs not set - 8, 16, 32, 64 possible - 8 is default</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Name" type="xs:string"/>
+			<xs:element name="DisplayName" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:element name="ContextId" type="HexDecValue" minOccurs="0"/>
+			<xs:element name="ByteSize" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Will be calculated automatically if not present</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="HexDecValue">
+							<xs:attribute name="X64" type="HexDecValue"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Exclude" type="HexDecValue" minOccurs="0" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>if this area is active exclude areas not selectable</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Symbol" type="SymbolType" minOccurs="0" maxOccurs="unbounded"/>
+			<xs:element name="Properties" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Relations" type="RelationsType" minOccurs="0"/>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="DisableCodeGeneration" type="xs:boolean"/>
+	</xs:complexType>
+	<xs:complexType name="DeploymentType">
+		<xs:sequence>
+			<xs:element name="FileEntry" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Event" minOccurs="0">
+							<xs:complexType>
+								<xs:attribute name="ActivateConfiguration" type="xs:boolean"/>
+								<xs:attribute name="PlcDownload" type="xs:boolean"/>
+								<xs:attribute name="PlcOnlineChange" type="xs:boolean"/>
+							</xs:complexType>
+						</xs:element>
+						<xs:choice>
+							<xs:sequence>
+								<xs:annotation>
+									<xs:documentation>copy file from engineering to target system</xs:documentation>
+								</xs:annotation>
+								<xs:element name="SourceFile" type="xs:string"/>
+								<xs:element name="DestinationFile" type="xs:string"/>
+							</xs:sequence>
+							<xs:element name="Execute">
+								<xs:annotation>
+									<xs:documentation>execute commad on engineering system</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:simpleContent>
+										<xs:extension base="xs:string">
+											<xs:attribute name="RunAsAdmin" type="xs:boolean" default="true">
+												<xs:annotation>
+													<xs:documentation>default: true</xs:documentation>
+												</xs:annotation>
+											</xs:attribute>
+										</xs:extension>
+									</xs:simpleContent>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="ProjectFile" type="xs:string">
+								<xs:annotation>
+									<xs:documentation>file is part of the engineering project</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:choice>
+					</xs:sequence>
+					<xs:attribute name="TargetPlatform" type="xs:string"/>
+					<xs:attribute name="CheckSource">
+						<xs:simpleType>
+							<xs:restriction base="xs:NMTOKEN">
+								<xs:enumeration value="NoCheck"/>
+								<xs:enumeration value="Warning"/>
+								<xs:enumeration value="Error"/>
+							</xs:restriction>
+						</xs:simpleType>
+					</xs:attribute>
+					<xs:attribute name="RenameDestination" type="xs:boolean"/>
+					<xs:attribute name="EncryptionBehavior">
+						<xs:simpleType>
+							<xs:restriction base="xs:NMTOKEN">
+								<xs:enumeration value="default"/>
+								<xs:enumeration value="include"/>
+								<xs:enumeration value="exclude"/>
+							</xs:restriction>
+						</xs:simpleType>
+					</xs:attribute>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="DependsOn" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:choice>
+						<xs:element name="CLSID" type="CLSIDType"/>
+						<xs:element name="LibraryId" type="LibraryId">
+							<xs:annotation>
+								<xs:documentation>'vendor'|'name'|d.d.d.d</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+					</xs:choice>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="PropertyItemType">
+		<xs:sequence>
+			<xs:element name="Name">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="SubIdx" type="HexDecValue"/>
+							<xs:attribute name="NoGetter" type="xs:boolean"/>
+							<xs:attribute name="NoSetter" type="xs:boolean"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Type">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="TypeType">
+							<xs:attribute name="HideSubItems" type="xs:boolean"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="ArrayInfo" type="ArrayInfoType" minOccurs="0" maxOccurs="3"/>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:element name="BitSize" type="xs:long" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>Will be calculated automatically if not present</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="GetCodeOffs" type="xs:long" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>LEGACY</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="SetCodeOffs" type="xs:long" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>LEGACY</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="Unit" type="LangTextType" minOccurs="0"/>
+			<xs:element name="Properties" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Xml" minOccurs="0">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="LicenseType">
+		<xs:sequence>
+			<xs:element name="LicenseId" type="GUID"/>
+			<xs:element name="OemId" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>MD5 hash of PublicKey</xs:documentation>
+				</xs:annotation>
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="GUID">
+							<xs:attribute name="OemName" type="UniqueName" use="required"/>
+							<xs:attribute name="OrderAddress" type="xs:string">
+								<xs:annotation>
+									<xs:documentation>Optional email address for sending request file(s)</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="OrderNo" type="xs:string" minOccurs="0"/>
+			<xs:element name="DisplayName" type="LangTextType"/>
+			<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+			<xs:element name="ImageData" type="xs:hexBinary" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>hex binary data of a BMP file (dimensions 16x16 recomended)</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+			<xs:element name="ContainsLicense" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="GUID">
+							<xs:attribute name="Instances" type="xs:int"/>
+							<xs:attribute name="Comment" type="xs:string"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="RequiresLicense" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="GUID">
+							<xs:attribute name="Instances" type="xs:int"/>
+							<xs:attribute name="Comment" type="xs:string"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="AlternativeLicense" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="GUID">
+							<xs:attribute name="MoreThan"/>
+							<xs:attribute name="Comment" type="xs:string"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="Instances" type="xs:int">
+			<xs:annotation>
+				<xs:documentation>license includes one or multiple instances - if 0 (default) the license is per cpu</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="NoSelfGeneration" type="xs:boolean">
+			<xs:annotation>
+				<xs:documentation>license can not be self generated (e.g. via System Manager - 7 day license)</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="SortOrder" type="xs:string">
+			<xs:annotation>
+				<xs:documentation>Helps to display multiple licenses in the order intended by the vendor</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="Restriction" type="HexDecValue">
+			<xs:annotation>
+				<xs:documentation>0x0001:NoOtherPC 0x0002:NoBeckhoffPC 0x0004:NoTermDongle 0x0008:NoUsbDongle 0x0010:NoVolumeId</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:complexType>
+	<xs:complexType name="ParametersType">
+		<xs:sequence>
+			<xs:element name="Group" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:simpleContent>
+						<xs:extension base="xs:string">
+							<xs:attribute name="TxtId"/>
+							<xs:attribute name="Collapsed" type="xs:boolean"/>
+						</xs:extension>
+					</xs:simpleContent>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="Parameter" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="DataTypeType">
+							<xs:sequence>
+								<xs:element name="PTCID" type="HexDecValue"/>
+								<xs:element name="ContextId" minOccurs="0">
+									<xs:complexType>
+										<xs:simpleContent>
+											<xs:extension base="HexDecValue">
+												<xs:attribute name="OnlineAccess" type="xs:boolean"/>
+											</xs:extension>
+										</xs:simpleContent>
+									</xs:complexType>
+								</xs:element>
+								<xs:element name="Url" type="LangTextType" minOccurs="0"/>
+								<xs:element name="DependOn" minOccurs="0">
+									<xs:complexType>
+										<xs:sequence>
+											<xs:element name="PTCID" type="HexDecValue"/>
+											<xs:element name="Equals" type="DefaultType" maxOccurs="unbounded"/>
+										</xs:sequence>
+									</xs:complexType>
+								</xs:element>
+							</xs:sequence>
+							<xs:attribute name="OnlineParameter" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Not used for initialization</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="HideParameter" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>Hide parameter in list</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="ShowSubItems" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>default view option for parameter views</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="CreateSymbol" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>create ADS symbol for this parameter</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="ReadOnly" type="xs:boolean"/>
+							<xs:attribute name="DisableCodeGeneration" type="xs:boolean"/>
+							<xs:attribute name="Group" type="xs:string"/>
+							<xs:attribute name="RefreshableValue" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>value do not need to be saved</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+							<xs:attribute name="RedundancyParameter" type="xs:boolean">
+								<xs:annotation>
+									<xs:documentation>only array element for redundancy device</xs:documentation>
+								</xs:annotation>
+							</xs:attribute>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DataAreasType">
+		<xs:sequence>
+			<xs:element name="DataArea" type="DataAreaType" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="InterfacePointersType">
+		<xs:sequence>
+			<xs:element name="InterfacePointer" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="InterfacePointerType">
+							<xs:attribute name="DisableCodeGeneration" type="xs:boolean"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="DataPointersType">
+		<xs:sequence>
+			<xs:element name="DataPointer" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:complexContent>
+						<xs:extension base="DataPointerType">
+							<xs:attribute name="DisableCodeGeneration" type="xs:boolean"/>
+						</xs:extension>
+					</xs:complexContent>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="EventMessagesType">
+		<xs:sequence>
+			<xs:element name="EventMessage" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Id" type="HexDecValue"/>
+						<xs:element name="Message" type="LangTextType">
+							<xs:annotation>
+								<xs:documentation>uses %1, %2... for parameter locations; type of parameter defined in the event message coming from the source</xs:documentation>
+							</xs:annotation>
+						</xs:element>
+						<xs:element name="ParaFormat" minOccurs="0" maxOccurs="unbounded">
+							<xs:annotation>
+								<xs:documentation>defines specific parameter formats like '%08x' or '%.4f'</xs:documentation>
+							</xs:annotation>
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="ParaNo" type="xs:int" use="required">
+											<xs:annotation>
+												<xs:documentation>1 based</xs:documentation>
+											</xs:annotation>
+										</xs:attribute>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="EventClassesType">
+		<xs:sequence>
+			<xs:element name="EventClass" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:sequence>
+						<xs:element name="Comment" type="LangTextType" minOccurs="0"/>
+						<xs:element name="Type" minOccurs="0">
+							<xs:complexType>
+								<xs:simpleContent>
+									<xs:extension base="xs:string">
+										<xs:attribute name="Namespace" type="xs:string"/>
+										<xs:attribute name="GUID" type="GUID">
+											<xs:annotation>
+												<xs:documentation>optional if "Type" is unambiguous inside this document </xs:documentation>
+											</xs:annotation>
+										</xs:attribute>
+									</xs:extension>
+								</xs:simpleContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Xml" minOccurs="0">
+							<xs:complexType>
+								<xs:sequence>
+									<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded"/>
+								</xs:sequence>
+							</xs:complexType>
+						</xs:element>
+					</xs:sequence>
+					<xs:attribute name="DisableCodeGeneration" type="xs:boolean"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="PropertiesType">
+		<xs:sequence>
+			<xs:element name="Property" type="PropertyType" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:complexType name="SymbolType">
+		<xs:complexContent>
+			<xs:extension base="DataTypeType">
+				<xs:sequence>
+					<xs:element name="PTCID" type="HexDecValue" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Will be calculated automatically if not present with following rule: 0x80000000 + AreaNo shift 24 + ByteOffs or 0xc0000000 + AreaNo shift 24 + BitOffs (only 32 Areas possible)</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="BitOffs" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Will be calculated automatically if not present</xs:documentation>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="xs:long">
+									<xs:attribute name="X64" type="xs:long"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:attribute name="CreateSymbol" type="xs:boolean">
+					<xs:annotation>
+						<xs:documentation>create ADS symbol for this data area symbol</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="DublicatedSymbol" type="xs:boolean">
+					<xs:annotation>
+						<xs:documentation>no ADS symbol - already defined in another data ares</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="FixedSymbol" type="xs:boolean">
+					<xs:annotation>
+						<xs:documentation>Symbol not defeatable in a flexible area</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="Disabled" type="xs:boolean">
+					<xs:annotation>
+						<xs:documentation>Optional symbol disabled</xs:documentation>
+					</xs:annotation>
+				</xs:attribute>
+				<xs:attribute name="TcContextMask" type="HexDecValue"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+</xs:schema>

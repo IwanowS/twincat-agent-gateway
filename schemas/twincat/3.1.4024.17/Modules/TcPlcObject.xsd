@@ -1,0 +1,563 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSpy v2006 sp2 U (http://www.altova.com) by Tobias Gövert (BECKHOFF Automation GmbH) -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<!--
+<xs:complexType name="TcPlcObjectMethodType">
+<xs:complexContent>
+<xs:extension base="TcPlcObjectBaseDeclImplSubType"></xs:extension>
+</xs:complexContent>
+</xs:complexType>
+
+<xs:complexType name="TcPlcObjectActionType">
+<xs:complexContent>
+<xs:extension base="TcPlcObjectBaseImplSubType"></xs:extension>
+</xs:complexContent>
+</xs:complexType>
+-->
+	<xs:element name="TcPlcObject">
+		<xs:complexType>
+			<xs:choice>
+				<xs:element name="POU" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseDeclImplType">
+								<xs:sequence>
+									<xs:choice id="SubObjects" minOccurs="0" maxOccurs="unbounded">
+										<!--<xs:element name="Action" type="TcPlcObjectActionType" minOccurs="0" maxOccurs="unbounded"/>-->
+										<xs:element name="Action" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="TcPlcObjectBaseImplSubType">
+														<xs:sequence>
+															<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+														</xs:sequence>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Transition" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="TcPlcObjectBaseImplSubType">
+														<xs:sequence>
+															<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+														</xs:sequence>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Property" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="PropertyType"/>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+										<!--<xs:element name="Method" type="TcPlcObjectMethodType" minOccurs="0" maxOccurs="unbounded"/> -->
+										<xs:element name="Method" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="TcPlcObjectBaseDeclImplSubType">
+														<xs:sequence>
+															<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+														</xs:sequence>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:choice>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+									<xs:element name="LineIds" type="LineIdsType" minOccurs="0" maxOccurs="unbounded"/>
+								</xs:sequence>
+								<xs:attribute name="SpecialFunc" type="xs:string" use="optional"/>
+								<xs:attribute name="AddAttributeSubsequent" type="BOOL"/>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Itf" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseDeclType">
+								<xs:sequence>
+									<xs:choice minOccurs="0" maxOccurs="unbounded">
+										<xs:element name="Method" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="TcPlcObjectBaseDeclSubType">
+														<xs:sequence>
+															<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+														</xs:sequence>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="Property" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="TcPlcObjectBaseDeclSubType">
+														<xs:sequence>
+															<xs:choice minOccurs="0" maxOccurs="2">
+																<xs:element name="Get" minOccurs="0">
+																	<xs:complexType>
+																		<xs:complexContent>
+																			<xs:extension base="TcPlcObjectBaseDeclSubType">
+																				<xs:sequence>
+																					<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+																				</xs:sequence>
+																			</xs:extension>
+																		</xs:complexContent>
+																	</xs:complexType>
+																</xs:element>
+																<xs:element name="Set" minOccurs="0">
+																	<xs:complexType>
+																		<xs:complexContent>
+																			<xs:extension base="TcPlcObjectBaseDeclSubType">
+																				<xs:sequence>
+																					<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+																				</xs:sequence>
+																			</xs:extension>
+																		</xs:complexContent>
+																	</xs:complexType>
+																</xs:element>
+															</xs:choice>
+															<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+														</xs:sequence>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:choice>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="GVL" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseDeclType">
+								<xs:sequence>
+									<xs:choice minOccurs="0" maxOccurs="unbounded">
+										<xs:element name="Property" minOccurs="0" maxOccurs="unbounded">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="PropertyType"/>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:choice>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+								<xs:attribute name="ParameterList" type="BOOL"/>
+								<xs:attribute name="AddAttributeSubsequent" type="BOOL"/>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="DUT" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseDeclType">
+								<xs:sequence>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Task" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseType">
+								<xs:sequence>
+									<xs:element name="CycleTime" type="xs:unsignedInt">
+										<xs:annotation>
+											<xs:documentation>in micro seconds</xs:documentation>
+										</xs:annotation>
+									</xs:element>
+									<xs:element name="Priority" type="xs:unsignedInt"/>
+									<xs:element name="PouCall" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:sequence>
+												<xs:element name="Name" type="xs:string"/>
+											</xs:sequence>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="TaskFBGuid" type="GUID" minOccurs="0"/>
+									<xs:element name="Fb_init" type="GUID" minOccurs="0"/>
+									<xs:element name="Fb_exit" type="GUID" minOccurs="0"/>
+									<xs:element name="CycleUpdate" type="GUID" minOccurs="0"/>
+									<xs:element name="PostCycleUpdate" type="GUID" minOccurs="0"/>
+									<xs:element name="Folder" type="FolderType" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Visu" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseObjType">
+								<xs:sequence>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="VisuManager" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseObjType">
+								<xs:sequence>
+									<xs:choice minOccurs="0" maxOccurs="2">
+										<xs:element name="TargetVisu" minOccurs="0">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="TcPlcObjectBaseObjSubType">
+														<xs:sequence>
+															<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+														</xs:sequence>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+										<xs:element name="WebVisu" minOccurs="0">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:extension base="TcPlcObjectBaseObjSubType">
+														<xs:sequence>
+															<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+														</xs:sequence>
+													</xs:extension>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:choice>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+								<xs:attribute name="SpecialFunc" type="xs:string" use="optional"/>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="TextList" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseObjType">
+								<xs:sequence>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ImagePool" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseObjType">
+								<xs:sequence>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="GlobalTextList" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseObjType">
+								<xs:sequence>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="ClassDiagram" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseObjType">
+								<xs:sequence>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="RecipeManager" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseObjType">
+								<xs:sequence>
+									<xs:element name="RecipeDefinition" minOccurs="0" maxOccurs="unbounded">
+										<xs:complexType>
+											<xs:complexContent>
+												<xs:extension base="TcPlcObjectBaseObjSubType">
+													<xs:sequence>
+														<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+													</xs:sequence>
+												</xs:extension>
+											</xs:complexContent>
+										</xs:complexType>
+									</xs:element>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="GlobalImagePool" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseObjType">
+								<xs:sequence>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="EnumerationTextList" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseType">
+								<xs:sequence>
+									<xs:element name="Declaration" type="xs:string"/>
+									<xs:any processContents="skip"/>
+									<xs:element name="Folder" type="FolderType" minOccurs="0" maxOccurs="unbounded"/>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="Object" minOccurs="0">
+					<xs:complexType>
+						<xs:complexContent>
+							<xs:extension base="TcPlcObjectBaseObjType">
+								<xs:sequence>
+									<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+								</xs:sequence>
+							</xs:extension>
+						</xs:complexContent>
+					</xs:complexType>
+				</xs:element>
+			</xs:choice>
+			<xs:attribute name="Version" type="Version" use="required" fixed="1.1.0.1"/>
+			<xs:attribute name="ProductVersion" type="Version" use="optional"/>
+			<xs:attribute name="FileIdentifier" type="xs:string"/>
+			<xs:attribute name="FileSignature"/>
+		</xs:complexType>
+	</xs:element>
+	<xs:complexType name="ImplementationType">
+		<xs:choice>
+			<xs:element name="ST" type="xs:string"/>
+			<xs:element name="NWL">
+				<xs:complexType mixed="true">
+					<xs:sequence maxOccurs="unbounded">
+						<xs:any processContents="skip"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="SFC">
+				<xs:complexType mixed="true">
+					<xs:sequence maxOccurs="unbounded">
+						<xs:any processContents="skip"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="CFC">
+				<!--				
+				<xs:complexType mixed="true">
+					<xs:sequence maxOccurs="unbounded">
+						<xs:any processContents="skip"/>
+					</xs:sequence>
+				</xs:complexType>-->
+				<xs:complexType mixed="true">
+					<xs:sequence maxOccurs="unbounded">
+						<xs:any processContents="skip"/>
+					</xs:sequence>
+					<xs:attribute name="PageOriented" type="BOOL"/>
+				</xs:complexType>
+			</xs:element>
+			<xs:element name="StateChart">
+				<xs:complexType mixed="true">
+					<xs:sequence maxOccurs="unbounded">
+						<xs:any processContents="skip"/>
+					</xs:sequence>
+				</xs:complexType>
+			</xs:element>
+		</xs:choice>
+	</xs:complexType>
+	<xs:complexType name="PropertyType">
+		<xs:complexContent>
+			<xs:extension base="TcPlcObjectBaseDeclSubType">
+				<xs:sequence>
+					<xs:choice minOccurs="0" maxOccurs="2">
+						<xs:element name="Get" minOccurs="0">
+							<xs:complexType>
+								<xs:complexContent>
+									<xs:extension base="TcPlcObjectBaseDeclImplSubType">
+										<xs:sequence>
+											<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+										</xs:sequence>
+									</xs:extension>
+								</xs:complexContent>
+							</xs:complexType>
+						</xs:element>
+						<xs:element name="Set" minOccurs="0">
+							<xs:complexType>
+								<xs:complexContent>
+									<xs:extension base="TcPlcObjectBaseDeclImplSubType">
+										<xs:sequence>
+											<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+										</xs:sequence>
+									</xs:extension>
+								</xs:complexContent>
+							</xs:complexType>
+						</xs:element>
+					</xs:choice>
+					<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:attributeGroup name="ObjectAttributes">
+		<xs:attribute name="Id" type="GUID" use="optional"/>
+		<xs:attribute name="Name" type="xs:string" use="required">
+			<xs:annotation>
+				<xs:documentation>if differs from file name</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+	</xs:attributeGroup>
+	<xs:attributeGroup name="SubObjectAttributes" xml:base="ObjectAttr">
+		<xs:attributeGroup ref="ObjectAttributes"/>
+		<xs:attribute name="FolderPath" type="xs:string" use="optional"/>
+	</xs:attributeGroup>
+	<xs:complexType name="LineIdsType">
+		<xs:sequence>
+			<xs:element name="LineId" minOccurs="0" maxOccurs="unbounded">
+				<xs:complexType>
+					<xs:attribute name="Id" type="xs:unsignedInt" use="required"/>
+					<xs:attribute name="Count" type="xs:unsignedInt" use="required"/>
+				</xs:complexType>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="Name" type="xs:string" use="required"/>
+	</xs:complexType>
+	<xs:complexType name="TcPlcObjectBaseDeclImplType">
+		<xs:complexContent>
+			<xs:extension base="TcPlcObjectBaseType">
+				<xs:sequence>
+					<xs:element name="Declaration" type="xs:string"/>
+					<xs:element name="Implementation" type="ImplementationType"/>
+					<xs:element name="Folder" type="FolderType" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcPlcObjectBaseImplType">
+		<xs:complexContent>
+			<xs:extension base="TcPlcObjectBaseType">
+				<xs:sequence>
+					<xs:element name="Implementation" type="ImplementationType"/>
+					<xs:element name="Folder" type="FolderType" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcPlcObjectBaseObjType">
+		<xs:complexContent>
+			<xs:extension base="TcPlcObjectBaseType">
+				<xs:sequence>
+					<xs:any processContents="skip"/>
+					<xs:element name="Folder" type="FolderType" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+			</xs:extension>
+			<!--				<xs:sequence>
+					<xs:any processContents="skip"/>
+					<xs:element name="Folder" type="FolderType" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>-->
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcPlcObjectBaseDeclType">
+		<xs:complexContent>
+			<xs:extension base="TcPlcObjectBaseType">
+				<xs:sequence>
+					<xs:element name="Declaration" type="xs:string"/>
+					<xs:element name="Folder" type="FolderType" minOccurs="0" maxOccurs="unbounded"/>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcPlcObjectBaseDeclImplSubType">
+		<xs:complexContent>
+			<xs:extension base="TcPlcObjectBaseDeclImplType">
+				<xs:attribute name="FolderPath" type="xs:string" use="optional"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcPlcObjectBaseDeclSubType">
+		<xs:complexContent>
+			<xs:extension base="TcPlcObjectBaseDeclType">
+				<xs:attribute name="FolderPath" type="xs:string" use="optional"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcPlcObjectBaseImplSubType">
+		<xs:complexContent>
+			<xs:extension base="TcPlcObjectBaseImplType">
+				<xs:attribute name="FolderPath" type="xs:string" use="optional"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcPlcObjectBaseObjSubType">
+		<xs:complexContent>
+			<xs:extension base="TcPlcObjectBaseObjType">
+				<xs:attribute name="FolderPath" type="xs:string" use="optional"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="FolderType">
+		<xs:complexContent>
+			<xs:extension base="TcPlcObjectBaseType">
+				<xs:sequence>
+					<xs:element name="Folder" type="FolderType" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+				</xs:sequence>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="TcPlcObjectBaseType" abstract="true">
+		<xs:attributeGroup ref="ObjectAttributes"/>
+		<!--
+					<xs:sequence>
+						<xs:element name="Folder" type="FolderType" minOccurs="0" maxOccurs="unbounded"/>
+					<xs:element name="ObjectProperties" type="ObjectPropertiesType" minOccurs="0"/>
+					</xs:sequence>-->
+	</xs:complexType>
+	<xs:complexType name="ObjectPropertiesType">
+		<xs:sequence>
+			<xs:any processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+	</xs:complexType>
+	<xs:simpleType name="GUID">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="\{[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}\}"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="BOOL" final="restriction">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="True|true|False|false"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="Version">
+		<xs:restriction base="xs:string">
+			<xs:pattern value="[0-9]{1,6}\.[0-9]{1,6}(\.[0-9]{1,6}){0,2}"/>
+		</xs:restriction>
+	</xs:simpleType>
+</xs:schema>
