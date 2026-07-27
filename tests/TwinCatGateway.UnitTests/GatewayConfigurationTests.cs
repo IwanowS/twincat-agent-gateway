@@ -81,6 +81,72 @@ public sealed class GatewayConfigurationTests
     }
 
     [Fact]
+    public void SaveAtomicallyPersistsCamelCasePolicy()
+    {
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            "TwinCatGatewayTests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string path = Path.Combine(directory, "gateway.json");
+        try
+        {
+            File.WriteAllText(path, "{}");
+            GatewayConfiguration configuration =
+                CreateValidConfiguration();
+            configuration.Profiles[0].UnsavedDocuments =
+                UnsavedDocumentPolicy.Reject;
+            GatewayConfigurationLoader loader = new();
+
+            loader.Save(path, configuration);
+
+            string json = File.ReadAllText(path);
+            GatewayConfiguration saved = loader.Load(path);
+            Assert.Contains(
+                "\"unsavedDocuments\": \"reject\"",
+                json);
+            Assert.DoesNotContain(
+                "\"UnsavedDocuments\"",
+                json);
+            Assert.Equal(
+                UnsavedDocumentPolicy.Reject,
+                saved.Profiles[0].UnsavedDocuments);
+            Assert.Empty(
+                Directory.GetFiles(directory, "*.tmp"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SaveRejectsInvalidConfigurationBeforeReplacingFile()
+    {
+        string path = Path.GetTempFileName();
+        try
+        {
+            const string original = "operator-owned content";
+            File.WriteAllText(path, original);
+            GatewayConfiguration configuration =
+                CreateValidConfiguration();
+            configuration.Profiles[0].UnsavedDocuments =
+                (UnsavedDocumentPolicy)99;
+
+            Assert.Throws<ArgumentException>(
+                () => new GatewayConfigurationLoader().Save(
+                    path,
+                    configuration));
+
+            Assert.Equal(original, File.ReadAllText(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void ActivationProfileRequiresExactTargetIdentity()
     {
         GatewayConfiguration configuration = CreateValidConfiguration();
