@@ -12,13 +12,15 @@ public sealed class GatewayApplicationService
     private readonly OperationStore _operations;
     private readonly OperationQueue _queue;
     private readonly LocalLogStore _logs;
+    private readonly Func<GatewayDiagnosticsResult>? _diagnosticsProvider;
 
     public GatewayApplicationService(
         string version,
         GatewayStatusSnapshotStore status,
         OperationStore operations,
         OperationQueue queue,
-        LocalLogStore logs)
+        LocalLogStore logs,
+        Func<GatewayDiagnosticsResult>? diagnosticsProvider = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -30,6 +32,7 @@ public sealed class GatewayApplicationService
             ?? throw new ArgumentNullException(nameof(queue));
         _logs = logs
             ?? throw new ArgumentNullException(nameof(logs));
+        _diagnosticsProvider = diagnosticsProvider;
     }
 
     public HealthResult GetHealth()
@@ -53,19 +56,20 @@ public sealed class GatewayApplicationService
 
     public GatewayDiagnosticsResult GetDiagnostics()
     {
-        return new GatewayDiagnosticsResult
+        GatewayDiagnosticsResult result =
+            _diagnosticsProvider?.Invoke()
+            ?? new GatewayDiagnosticsResult();
+        result.Status = _status.Read();
+        result.Ipc = new ComponentHealth
         {
-            Status = _status.Read(),
-            Ipc = new ComponentHealth
-            {
-                Healthy = true,
-            },
-            LogStore = new ComponentHealth
-            {
-                Healthy = true,
-                Message = _logs.RootDirectory,
-            },
+            Healthy = true,
         };
+        result.LogStore = new ComponentHealth
+        {
+            Healthy = true,
+            Message = _logs.RootDirectory,
+        };
+        return result;
     }
 
     public OperationDetails<object> GetOperation(string operationId)

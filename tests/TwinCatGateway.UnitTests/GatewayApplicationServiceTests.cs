@@ -93,6 +93,45 @@ public sealed class GatewayApplicationServiceTests
         Assert.Equal(8, second.NextOffset);
     }
 
+    [Fact]
+    public void DiagnosticsMergeRuntimeEvidenceWithCurrentStatus()
+    {
+        using ServiceFixture fixture = new(
+            () => new GatewayDiagnosticsResult
+            {
+                DteInstances =
+                {
+                    new DteInstanceInfo
+                    {
+                        Moniker = "!TcXaeShell.DTE.15.0:1234",
+                    },
+                },
+                Xae = new XaeDiagnostics
+                {
+                    SysManagerAvailable = true,
+                },
+                Com = new ComDiagnostics
+                {
+                    RetryCount = 2,
+                },
+            });
+        fixture.Status.Update(status =>
+        {
+            status.Gateway.State = GatewayState.Ready;
+            return status;
+        });
+
+        GatewayDiagnosticsResult diagnostics =
+            fixture.Service.GetDiagnostics();
+
+        Assert.Equal(GatewayState.Ready, diagnostics.Status.Gateway.State);
+        Assert.Single(diagnostics.DteInstances);
+        Assert.True(diagnostics.Xae.SysManagerAvailable);
+        Assert.Equal(2, diagnostics.Com.RetryCount);
+        Assert.True(diagnostics.Ipc.Healthy);
+        Assert.True(diagnostics.LogStore.Healthy);
+    }
+
     private static TaskCompletionSource<bool> NewCompletionSource()
     {
         return new TaskCompletionSource<bool>(
@@ -114,7 +153,8 @@ public sealed class GatewayApplicationServiceTests
     {
         private readonly string _temporaryDirectory;
 
-        public ServiceFixture()
+        public ServiceFixture(
+            Func<GatewayDiagnosticsResult>? diagnosticsProvider = null)
         {
             _temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -131,7 +171,8 @@ public sealed class GatewayApplicationServiceTests
                 Status,
                 Operations,
                 Queue,
-                Logs);
+                Logs,
+                diagnosticsProvider);
         }
 
         public GatewayStatusSnapshotStore Status { get; }
