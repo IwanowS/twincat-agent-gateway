@@ -178,6 +178,17 @@ public sealed class XaeSession : IDisposable
             cancellationToken);
     }
 
+    public Task<AgentWorkspaceOwnershipResult> AcquireAgentWorkspaceAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _dispatcher.InvokeAsync(
+            AcquireAgentWorkspaceOnSta,
+            timeout,
+            cancellationToken);
+    }
+
     public ComDiagnostics GetComDiagnostics()
     {
         ThrowIfDisposed();
@@ -520,6 +531,19 @@ public sealed class XaeSession : IDisposable
             return null;
         }
 
+        AgentWorkspaceOwnershipResult ownership;
+        try
+        {
+            ownership = AgentWorkspaceOwnership.Acquire(
+                _dte!,
+                normalizedSolution);
+        }
+        catch
+        {
+            ComObject.Release(sysManager);
+            throw;
+        }
+
         ComObject.Release(_sysManager);
         _sysManager = sysManager;
         info.Selected = true;
@@ -531,6 +555,9 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(info),
             SysManagerAvailable = true,
             LaunchedByGateway = true,
+            AgentWorkspaceOwned = true,
+            ClosedDocumentCount = ownership.ClosedDocuments.Count,
+            DiscardedDocumentCount = ownership.DiscardedDocuments.Count,
             DiscoveredInstances = new[] { CloneInfo(info)! },
         };
         return CloneSnapshot(_snapshot);
@@ -562,6 +589,7 @@ public sealed class XaeSession : IDisposable
         RunningXaeCandidate selected = scan.Candidates[selectedIndex];
         DTE2 selectedDte = selected.TakeDte();
         ITcSysManager? selectedSysManager = null;
+        AgentWorkspaceOwnershipResult? ownership = null;
         try
         {
             using (TwinCatSilentModeLease.Enable(
@@ -569,6 +597,9 @@ public sealed class XaeSession : IDisposable
                 restoreOnDispose: true))
             {
                 selectedSysManager = AcquireSysManager(
+                    selectedDte,
+                    normalizedSolution);
+                ownership = AgentWorkspaceOwnership.Acquire(
                     selectedDte,
                     normalizedSolution);
             }
@@ -602,6 +633,11 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(instances[selectedIndex]),
             SysManagerAvailable = true,
             LaunchedByGateway = false,
+            AgentWorkspaceOwned = true,
+            ClosedDocumentCount =
+                ownership?.ClosedDocuments.Count ?? 0,
+            DiscardedDocumentCount =
+                ownership?.DiscardedDocuments.Count ?? 0,
             DiscoveredInstances = instances,
         };
         return CloneSnapshot(_snapshot);
@@ -647,6 +683,9 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(info),
             SysManagerAvailable = true,
             LaunchedByGateway = _snapshot.LaunchedByGateway,
+            AgentWorkspaceOwned = _snapshot.AgentWorkspaceOwned,
+            ClosedDocumentCount = _snapshot.ClosedDocumentCount,
+            DiscardedDocumentCount = _snapshot.DiscardedDocumentCount,
             DiscoveredInstances = _snapshot.DiscoveredInstances
                 .Select(instance =>
                     instance.Selected
@@ -739,6 +778,35 @@ public sealed class XaeSession : IDisposable
 
             ComObject.Release(projects);
             ComObject.Release(solution);
+        }
+    }
+
+    private AgentWorkspaceOwnershipResult AcquireAgentWorkspaceOnSta()
+    {
+        DTE2 dte = _dte
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: "xae.workspace.acquire");
+        string solutionPath = _snapshot.SelectedInstance?.Solution
+            ?? throw new GatewayOperationException(
+                ErrorCodes.SolutionMismatch,
+                "The attached XAE solution path is unavailable.",
+                retryable: true,
+                stage: "xae.workspace.acquire");
+        using (CreateUserSilentModeLease())
+        {
+            AgentWorkspaceOwnershipResult ownership =
+                AgentWorkspaceOwnership.Acquire(
+                    dte,
+                    solutionPath);
+            _snapshot.AgentWorkspaceOwned = true;
+            _snapshot.ClosedDocumentCount =
+                ownership.ClosedDocuments.Count;
+            _snapshot.DiscardedDocumentCount =
+                ownership.DiscardedDocuments.Count;
+            return ownership;
         }
     }
 
@@ -940,6 +1008,9 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(source.SelectedInstance),
             SysManagerAvailable = source.SysManagerAvailable,
             LaunchedByGateway = source.LaunchedByGateway,
+            AgentWorkspaceOwned = source.AgentWorkspaceOwned,
+            ClosedDocumentCount = source.ClosedDocumentCount,
+            DiscardedDocumentCount = source.DiscardedDocumentCount,
             DiscoveredInstances = source.DiscoveredInstances
                 .Select(instance => CloneInfo(instance)!)
                 .ToArray(),

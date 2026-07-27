@@ -82,6 +82,8 @@ public sealed class GatewayStatusSnapshotStore
                 Connected = source.Xae.Connected,
                 Version = source.Xae.Version,
                 Solution = source.Xae.Solution,
+                AgentWorkspaceOwned =
+                    source.Xae.AgentWorkspaceOwned,
             },
             TwinCat = new TwinCatStatus
             {

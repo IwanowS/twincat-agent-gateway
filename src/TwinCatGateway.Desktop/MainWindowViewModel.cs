@@ -20,6 +20,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _target = string.Empty;
     private string _activationPolicy = string.Empty;
     private string _currentOperation = string.Empty;
+    private string _workspaceOwnership = string.Empty;
 
     public MainWindowViewModel(GatewayDesktopHost host)
     {
@@ -78,11 +79,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public string LogDirectory => _host.LogDirectory;
 
-    public string WorkspaceOwnership =>
-        _host.ActiveProfile is null
-            ? "Unavailable until a valid project profile is loaded."
-            : "Agent owns project files while connected. "
-                + "Unsaved XAE editor changes are discarded.";
+    public string WorkspaceOwnership
+    {
+        get => _workspaceOwnership;
+        private set => SetField(
+            ref _workspaceOwnership,
+            value);
+    }
 
     public void Refresh()
     {
@@ -92,6 +95,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ? $"Connected · {status.Xae.Version ?? "unknown version"}"
             : "Disconnected";
         Solution = status.Xae.Solution ?? "No XAE solution attached";
+        WorkspaceOwnership = status.Xae.AgentWorkspaceOwned
+            ? "Agent owns project files. "
+                + "Unsaved XAE editor changes are discarded."
+            : "Inactive until XAE ownership is acquired.";
         ProjectProfile? profile = _host.ActiveProfile;
         Profile = profile?.Name ?? "No valid profile";
         Target = FormatTarget(profile?.ExpectedTarget);

@@ -80,6 +80,7 @@ public sealed class MvpContractSerializationTests
                 Connected = true,
                 Version = "16.0",
                 Solution = @"C:\Projects\Machine\Machine.sln",
+                AgentWorkspaceOwned = true,
             },
             TwinCat = new TwinCatStatus
             {
@@ -95,6 +96,7 @@ public sealed class MvpContractSerializationTests
         Assert.NotNull(result);
         Assert.Null(result.TwinCat.Started);
         Assert.Equal(RuntimeMode.Unknown, result.TwinCat.Mode);
+        Assert.True(result.Xae.AgentWorkspaceOwned);
         Assert.Contains("\"mode\":\"unknown\"", json);
     }
 

@@ -25,6 +25,8 @@ public sealed class XaeStatus
     public string? Version { get; set; }
 
     public string? Solution { get; set; }
+
+    public bool AgentWorkspaceOwned { get; set; }
 }
 
 public sealed class TwinCatStatus

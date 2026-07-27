@@ -215,7 +215,7 @@ public sealed class XaeExternalEditTests
     }
 
     [XaeLaunchFact]
-    public async Task DirtyDocumentIsDetectedBeforeExternalWrite()
+    public async Task AgentOwnershipDiscardsAndClosesDirtyDocument()
     {
         string sourceSolution = Path.GetFullPath(
             Environment.GetEnvironmentVariable(
@@ -255,11 +255,24 @@ public sealed class XaeExternalEditTests
                 dispatcher,
                 processId,
                 documentPath);
+            using XaeSession attachedSession = new();
+            XaeSessionSnapshot attached =
+                await attachedSession.AttachAsync(
+                    copy.SolutionPath,
+                    TimeSpan.FromSeconds(10),
+                    CancellationToken.None);
 
             Assert.True(dirty);
+            Assert.True(attached.AgentWorkspaceOwned);
+            Assert.Equal(1, attached.ClosedDocumentCount);
+            Assert.Equal(1, attached.DiscardedDocumentCount);
+            Assert.False(
+                await IsDocumentOpenAsync(
+                    dispatcher,
+                    processId,
+                    documentPath));
             Assert.Empty(
                 XaeWindowProbe.FindModalDialogs(processId));
-            await SaveAllAsync(dispatcher, processId);
         }
         finally
         {
@@ -302,38 +315,6 @@ public sealed class XaeExternalEditTests
                 document.Saved = saved;
                 return true;
             });
-    }
-
-    private static Task<bool> SaveAllAsync(
-        ComStaDispatcher dispatcher,
-        int processId)
-    {
-        return dispatcher.InvokeAsync(
-            () =>
-            {
-                using RotScanResult scan =
-                    RunningObjectTableScanner.Scan(
-                        requiredProcessId: processId);
-                RunningXaeCandidate candidate =
-                    Assert.Single(
-                        scan.Candidates,
-                        item => item.Info.ProcessId == processId);
-                DTE2 dte = candidate.TakeDte();
-                Documents? documents = null;
-                try
-                {
-                    documents = dte.Documents;
-                    documents.SaveAll();
-                    return true;
-                }
-                finally
-                {
-                    ComObject.Release(documents);
-                    ComObject.Release(dte);
-                }
-            },
-            TimeSpan.FromSeconds(10),
-            CancellationToken.None);
     }
 
     private static Task<bool> IgnoreDocumentFileChangesAsync(

@@ -13,6 +13,12 @@ public sealed class XaeSessionSnapshot
 
     public bool LaunchedByGateway { get; set; }
 
+    public bool AgentWorkspaceOwned { get; set; }
+
+    public int ClosedDocumentCount { get; set; }
+
+    public int DiscardedDocumentCount { get; set; }
+
     public IReadOnlyList<DteInstanceInfo> DiscoveredInstances { get; set; } =
         new List<DteInstanceInfo>();
 }

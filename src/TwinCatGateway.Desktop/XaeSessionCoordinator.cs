@@ -178,6 +178,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             status.Xae.Connected = true;
             status.Xae.Version = selected.Version;
             status.Xae.Solution = selected.Solution;
+            status.Xae.AgentWorkspaceOwned =
+                snapshot.AgentWorkspaceOwned;
             return status;
         });
         if (logConnection)
@@ -194,6 +196,14 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         ?? "unknown",
                     ["progId"] = selected.ProgId ?? "unknown",
                     ["solution"] = selected.Solution ?? "unknown",
+                    ["agentWorkspaceOwned"] =
+                        snapshot.AgentWorkspaceOwned.ToString(),
+                    ["closedDocumentCount"] =
+                        snapshot.ClosedDocumentCount.ToString(
+                            CultureInfo.InvariantCulture),
+                    ["discardedDocumentCount"] =
+                        snapshot.DiscardedDocumentCount.ToString(
+                            CultureInfo.InvariantCulture),
                 });
         }
     }
@@ -236,6 +246,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             status.Xae.Connected = false;
             status.Xae.Version = null;
             status.Xae.Solution = null;
+            status.Xae.AgentWorkspaceOwned = false;
             if (newFailure)
             {
                 status.UnreadErrors++;
@@ -342,6 +353,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 : CloneInfo(source.SelectedInstance),
             SysManagerAvailable = source.SysManagerAvailable,
             LaunchedByGateway = source.LaunchedByGateway,
+            AgentWorkspaceOwned = source.AgentWorkspaceOwned,
+            ClosedDocumentCount = source.ClosedDocumentCount,
+            DiscardedDocumentCount =
+                source.DiscardedDocumentCount,
             DiscoveredInstances = source.DiscoveredInstances
                 .Select(CloneInfo)
                 .ToArray(),
