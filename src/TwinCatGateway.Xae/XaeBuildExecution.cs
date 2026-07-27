@@ -20,6 +20,7 @@ public sealed class XaeBuildExecutionResult
         vsBuildScope eventScope,
         vsBuildAction eventAction,
         IEnumerable<BuildDiagnostic> diagnostics,
+        IEnumerable<XaeOutputDelta> output,
         ExternalChangeSynchronizationResult synchronization)
     {
         Action = action;
@@ -29,6 +30,7 @@ public sealed class XaeBuildExecutionResult
         EventScope = eventScope;
         EventAction = eventAction;
         Diagnostics = diagnostics.ToArray();
+        Output = output.ToArray();
         Synchronization = synchronization;
     }
 
@@ -46,6 +48,8 @@ public sealed class XaeBuildExecutionResult
 
     public IReadOnlyList<BuildDiagnostic> Diagnostics { get; }
 
+    public IReadOnlyList<XaeOutputDelta> Output { get; }
+
     public ExternalChangeSynchronizationResult Synchronization { get; }
 }
 
@@ -61,6 +65,8 @@ internal sealed class XaeBuildEventLease : IDisposable
     private readonly BuildEvents _buildEvents;
     private readonly Solution _solution;
     private readonly SolutionBuild _solutionBuild;
+    private readonly XaeOutputSnapshot _outputSnapshot;
+    private readonly XaeProjectFileChangeLease _projectFileLease;
     private vsBuildAction _expectedAction;
     private bool _disposed;
 
@@ -75,7 +81,34 @@ internal sealed class XaeBuildEventLease : IDisposable
         _solution = dte.Solution;
         _solutionBuild = _solution.SolutionBuild;
         _doneHandler = OnBuildDone;
-        _buildEvents.OnBuildDone += _doneHandler;
+        XaeProjectFileChangeLease? projectFileLease = null;
+        bool subscribed = false;
+        try
+        {
+            projectFileLease =
+                XaeProjectFileChangeLease.Acquire(
+                    dte,
+                    _solution.FullName);
+            _projectFileLease = projectFileLease;
+            _outputSnapshot =
+                XaeOutputCollector.Capture(dte);
+            _buildEvents.OnBuildDone += _doneHandler;
+            subscribed = true;
+        }
+        catch
+        {
+            if (subscribed)
+            {
+                _buildEvents.OnBuildDone -= _doneHandler;
+            }
+
+            projectFileLease?.Dispose();
+            ComObject.Release(_solutionBuild);
+            ComObject.Release(_solution);
+            ComObject.Release(_buildEvents);
+            ComObject.Release(_events);
+            throw;
+        }
     }
 
     public Task<XaeBuildEventEvidence> Completion =>
@@ -113,13 +146,44 @@ internal sealed class XaeBuildEventLease : IDisposable
                 stage: "xae.build.verify");
         }
 
+        _projectFileLease.VerifyUnchangedAndRelease();
         int failedProjects = _requestedAction == BuildAction.Clean
             ? 0
             : _solutionBuild.LastBuildInfo;
-        IEnumerable<BuildDiagnostic> diagnostics =
+        List<BuildDiagnostic> diagnostics =
             _requestedAction == BuildAction.Clean
-                ? Array.Empty<BuildDiagnostic>()
+                ? new List<BuildDiagnostic>()
                 : ReadErrorList();
+        IReadOnlyList<XaeOutputDelta> output =
+            XaeOutputCollector.ReadDelta(
+                _dte,
+                _outputSnapshot);
+        if (_requestedAction != BuildAction.Clean)
+        {
+            foreach (BuildDiagnostic diagnostic in output
+                .SelectMany(pane =>
+                    BuildOutputDiagnosticParser.Parse(
+                        pane.Text)))
+            {
+                BuildDiagnostic? existing =
+                    diagnostics.FirstOrDefault(item =>
+                        IsEquivalentDiagnostic(
+                            item,
+                            diagnostic));
+                if (existing is null)
+                {
+                    diagnostics.Add(diagnostic);
+                    continue;
+                }
+
+                existing.Source = diagnostic.Source;
+                existing.Code ??= diagnostic.Code;
+                existing.Line =
+                    diagnostic.Line ?? existing.Line;
+                existing.Column =
+                    diagnostic.Column ?? existing.Column;
+            }
+        }
         return new XaeBuildExecutionResult(
             _requestedAction,
             _stopwatch.ElapsedMilliseconds,
@@ -128,6 +192,7 @@ internal sealed class XaeBuildEventLease : IDisposable
             evidence.Scope,
             evidence.Action,
             diagnostics,
+            output,
             synchronization);
     }
 
@@ -150,7 +215,14 @@ internal sealed class XaeBuildEventLease : IDisposable
         _disposed = true;
         try
         {
-            _buildEvents.OnBuildDone -= _doneHandler;
+            try
+            {
+                _buildEvents.OnBuildDone -= _doneHandler;
+            }
+            finally
+            {
+                _projectFileLease.Dispose();
+            }
         }
         finally
         {
@@ -302,6 +374,27 @@ internal sealed class XaeBuildEventLease : IDisposable
             default:
                 return DiagnosticSeverity.Info;
         }
+    }
+
+    private static bool IsEquivalentDiagnostic(
+        BuildDiagnostic left,
+        BuildDiagnostic right)
+    {
+        return left.Severity == right.Severity
+            && (string.IsNullOrWhiteSpace(left.Code)
+                || string.IsNullOrWhiteSpace(right.Code)
+                || string.Equals(
+                    left.Code,
+                    right.Code,
+                    StringComparison.OrdinalIgnoreCase))
+            && string.Equals(
+                left.Message,
+                right.Message,
+                StringComparison.Ordinal)
+            && string.Equals(
+                left.File,
+                right.File,
+                StringComparison.OrdinalIgnoreCase);
     }
 }
 

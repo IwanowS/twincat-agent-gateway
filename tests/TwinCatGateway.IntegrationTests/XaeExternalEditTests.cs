@@ -132,6 +132,18 @@ public sealed class XaeExternalEditTests
                 StringComparer.OrdinalIgnoreCase);
 
             Assert.True(build.FailedProjects > 0);
+            BuildDiagnostic diagnostic = Assert.Single(
+                build.Diagnostics,
+                item => item.Severity
+                    == DiagnosticSeverity.Error
+                    && string.Equals(
+                        item.File,
+                        documentPath,
+                        StringComparison.OrdinalIgnoreCase));
+            Assert.Equal(7, diagnostic.Line);
+            Assert.Contains(
+                "Expression expected",
+                diagnostic.Message);
             Assert.Equal(
                 vsBuildState.vsBuildStateDone,
                 build.BuildState);
