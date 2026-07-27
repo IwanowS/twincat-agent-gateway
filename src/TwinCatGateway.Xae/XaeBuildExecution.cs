@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using EnvDTE;
 using EnvDTE80;
@@ -17,6 +19,7 @@ public sealed class XaeBuildExecutionResult
         vsBuildState buildState,
         vsBuildScope eventScope,
         vsBuildAction eventAction,
+        IEnumerable<BuildDiagnostic> diagnostics,
         ExternalChangeSynchronizationResult synchronization)
     {
         Action = action;
@@ -25,6 +28,7 @@ public sealed class XaeBuildExecutionResult
         BuildState = buildState;
         EventScope = eventScope;
         EventAction = eventAction;
+        Diagnostics = diagnostics.ToArray();
         Synchronization = synchronization;
     }
 
@@ -39,6 +43,8 @@ public sealed class XaeBuildExecutionResult
     public vsBuildScope EventScope { get; }
 
     public vsBuildAction EventAction { get; }
+
+    public IReadOnlyList<BuildDiagnostic> Diagnostics { get; }
 
     public ExternalChangeSynchronizationResult Synchronization { get; }
 }
@@ -56,7 +62,6 @@ internal sealed class XaeBuildEventLease : IDisposable
     private readonly Solution _solution;
     private readonly SolutionBuild _solutionBuild;
     private vsBuildAction _expectedAction;
-    private bool _rebuildCleanCompleted;
     private bool _disposed;
 
     private XaeBuildEventLease(
@@ -111,6 +116,10 @@ internal sealed class XaeBuildEventLease : IDisposable
         int failedProjects = _requestedAction == BuildAction.Clean
             ? 0
             : _solutionBuild.LastBuildInfo;
+        IEnumerable<BuildDiagnostic> diagnostics =
+            _requestedAction == BuildAction.Clean
+                ? Array.Empty<BuildDiagnostic>()
+                : ReadErrorList();
         return new XaeBuildExecutionResult(
             _requestedAction,
             _stopwatch.ElapsedMilliseconds,
@@ -118,6 +127,7 @@ internal sealed class XaeBuildEventLease : IDisposable
             _solutionBuild.BuildState,
             evidence.Scope,
             evidence.Action,
+            diagnostics,
             synchronization);
     }
 
@@ -179,9 +189,9 @@ internal sealed class XaeBuildEventLease : IDisposable
                 break;
             case BuildAction.Rebuild:
                 _expectedAction =
-                    vsBuildAction.vsBuildActionClean;
-                _solutionBuild.Clean(
-                    WaitForCleanToFinish: false);
+                    vsBuildAction.vsBuildActionRebuildAll;
+                _dte.ExecuteCommand(
+                    "Build.RebuildSolution");
                 break;
             default:
                 throw new ArgumentOutOfRangeException(
@@ -198,19 +208,23 @@ internal sealed class XaeBuildEventLease : IDisposable
             return;
         }
 
+        if ((action == vsBuildAction.vsBuildActionBuild
+                || action
+                    == vsBuildAction.vsBuildActionRebuildAll)
+            && scope != vsBuildScope.vsBuildScopeSolution)
+        {
+            return;
+        }
+
+        if (action == vsBuildAction.vsBuildActionClean
+            && _solutionBuild.BuildState
+                != vsBuildState.vsBuildStateDone)
+        {
+            return;
+        }
+
         try
         {
-            if (_requestedAction == BuildAction.Rebuild
-                && !_rebuildCleanCompleted)
-            {
-                _rebuildCleanCompleted = true;
-                _expectedAction =
-                    vsBuildAction.vsBuildActionBuild;
-                _solutionBuild.Build(
-                    WaitForBuildToFinish: false);
-                return;
-            }
-
             _completion.TrySetResult(
                 new XaeBuildEventEvidence(
                     scope,
@@ -219,6 +233,74 @@ internal sealed class XaeBuildEventLease : IDisposable
         catch (Exception exception)
         {
             _completion.TrySetException(exception);
+        }
+    }
+
+    private List<BuildDiagnostic> ReadErrorList()
+    {
+        ToolWindows? toolWindows = null;
+        ErrorList? errorList = null;
+        ErrorItems? items = null;
+        List<BuildDiagnostic> diagnostics = new();
+        try
+        {
+            toolWindows = _dte.ToolWindows;
+            errorList = toolWindows.ErrorList;
+            items = errorList.ErrorItems;
+            int count = items.Count;
+            for (int index = 1; index <= count; index++)
+            {
+                ErrorItem? item = null;
+                try
+                {
+                    item = items.Item(index);
+                    diagnostics.Add(
+                        new BuildDiagnostic
+                        {
+                            Severity = MapSeverity(
+                                item.ErrorLevel),
+                            Source = "xae-error-list",
+                            Message = item.Description
+                                ?? string.Empty,
+                            File = string.IsNullOrWhiteSpace(
+                                item.FileName)
+                                ? null
+                                : item.FileName,
+                            Line = item.Line > 0
+                                ? item.Line
+                                : null,
+                            Column = item.Column > 0
+                                ? item.Column
+                                : null,
+                        });
+                }
+                finally
+                {
+                    ComObject.Release(item);
+                }
+            }
+
+            return diagnostics;
+        }
+        finally
+        {
+            ComObject.Release(items);
+            ComObject.Release(errorList);
+            ComObject.Release(toolWindows);
+        }
+    }
+
+    private static DiagnosticSeverity MapSeverity(
+        vsBuildErrorLevel level)
+    {
+        switch (level)
+        {
+            case vsBuildErrorLevel.vsBuildErrorLevelHigh:
+                return DiagnosticSeverity.Error;
+            case vsBuildErrorLevel.vsBuildErrorLevelMedium:
+                return DiagnosticSeverity.Warning;
+            default:
+                return DiagnosticSeverity.Info;
         }
     }
 }

@@ -59,7 +59,10 @@ public sealed class XaeExternalEditTests
                 Assert.Equal(
                     action == BuildAction.Clean
                         ? vsBuildAction.vsBuildActionClean
-                        : vsBuildAction.vsBuildActionBuild,
+                        : action == BuildAction.Rebuild
+                            ? vsBuildAction
+                                .vsBuildActionRebuildAll
+                            : vsBuildAction.vsBuildActionBuild,
                     build.EventAction);
                 Assert.Empty(
                     XaeWindowProbe.FindModalDialogs(processId));
@@ -67,10 +70,7 @@ public sealed class XaeExternalEditTests
         }
         finally
         {
-            await session.CloseGatewayLaunchedAsync(
-                TimeSpan.FromSeconds(15),
-                CancellationToken.None);
-            session.Dispose();
+            await CloseSessionAsync(session, copy);
         }
     }
 
@@ -140,11 +140,23 @@ public sealed class XaeExternalEditTests
         }
         finally
         {
-            await session.CloseGatewayLaunchedAsync(
-                TimeSpan.FromSeconds(15),
-                CancellationToken.None);
-            session.Dispose();
+            await CloseSessionAsync(session, copy);
         }
+    }
+
+    private static async Task CloseSessionAsync(
+        XaeSession session,
+        TemporarySolution copy)
+    {
+        bool closed = await session.CloseGatewayLaunchedAsync(
+            TimeSpan.FromSeconds(15),
+            CancellationToken.None);
+        if (!closed)
+        {
+            copy.Preserve();
+        }
+
+        session.Dispose();
     }
 
     private static Task<bool> IsDocumentOpenAsync(
@@ -272,10 +284,7 @@ public sealed class XaeExternalEditTests
         }
         finally
         {
-            await session.CloseGatewayLaunchedAsync(
-                TimeSpan.FromSeconds(15),
-                CancellationToken.None);
-            session.Dispose();
+            await CloseSessionAsync(session, copy);
         }
     }
 
@@ -341,10 +350,7 @@ public sealed class XaeExternalEditTests
         }
         finally
         {
-            await session.CloseGatewayLaunchedAsync(
-                TimeSpan.FromSeconds(15),
-                CancellationToken.None);
-            session.Dispose();
+            await CloseSessionAsync(session, copy);
         }
     }
 
@@ -710,6 +716,8 @@ public sealed class XaeExternalEditTests
 
         public string SolutionPath { get; }
 
+        private bool PreserveOnDispose { get; set; }
+
         public static TemporarySolution Create(
             string sourceSolution)
         {
@@ -729,10 +737,15 @@ public sealed class XaeExternalEditTests
 
         public void Dispose()
         {
-            if (Directory.Exists(Root))
+            if (!PreserveOnDispose && Directory.Exists(Root))
             {
                 Directory.Delete(Root, recursive: true);
             }
+        }
+
+        public void Preserve()
+        {
+            PreserveOnDispose = true;
         }
 
         private static void CopyDirectory(
@@ -742,6 +755,13 @@ public sealed class XaeExternalEditTests
             Directory.CreateDirectory(destination);
             foreach (string file in Directory.GetFiles(source))
             {
+                if (file.EndsWith(
+                    ".project.~u",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
                 File.Copy(
                     file,
                     Path.Combine(
@@ -752,12 +772,44 @@ public sealed class XaeExternalEditTests
             foreach (string directory in
                 Directory.GetDirectories(source))
             {
+                string directoryName =
+                    Path.GetFileName(directory);
+                if (IsGeneratedDirectory(directoryName))
+                {
+                    continue;
+                }
+
                 CopyDirectory(
                     directory,
                     Path.Combine(
                         destination,
-                        Path.GetFileName(directory)));
+                        directoryName));
             }
+        }
+
+        private static bool IsGeneratedDirectory(
+            string directoryName)
+        {
+            return string.Equals(
+                    directoryName,
+                    ".vs",
+                    StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    directoryName,
+                    "_Boot",
+                    StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    directoryName,
+                    "_CompileInfo",
+                    StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    directoryName,
+                    "_Config",
+                    StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    directoryName,
+                    "_Libraries",
+                    StringComparison.OrdinalIgnoreCase);
         }
     }
 }
