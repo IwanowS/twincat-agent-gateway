@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Contracts;
@@ -23,6 +24,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly ProjectProfile _profile;
     private readonly GatewayStatusSnapshotStore _status;
     private readonly StructuredFileLogger _logger;
+    private readonly LocalLogStore _logs;
     private readonly XaeSession _session = new();
     private XaeSessionSnapshot _lastSnapshot = new();
     private ComDiagnostics _lastComDiagnostics = new();
@@ -35,7 +37,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
     public XaeSessionCoordinator(
         ProjectProfile profile,
         GatewayStatusSnapshotStore status,
-        StructuredFileLogger logger)
+        StructuredFileLogger logger,
+        LocalLogStore logs)
     {
         _profile = profile
             ?? throw new ArgumentNullException(nameof(profile));
@@ -43,6 +46,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ?? throw new ArgumentNullException(nameof(status));
         _logger = logger
             ?? throw new ArgumentNullException(nameof(logger));
+        _logs = logs
+            ?? throw new ArgumentNullException(nameof(logs));
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -178,6 +183,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
         int warnings = diagnostics.Count(diagnostic =>
             diagnostic.Severity == DiagnosticSeverity.Warning);
         const int maximumDiagnostics = 50;
+        ResourceReference log = _logs.WriteText(
+            operationId,
+            ResourceKind.BuildLog,
+            FormatBuildOutput(execution.Output));
         BuildResult result = new()
         {
             Ok = execution.FailedProjects == 0
@@ -196,6 +205,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             MoreDiagnostics = Math.Max(
                 0,
                 diagnostics.Count - maximumDiagnostics),
+            Log = log,
         };
         _logger.Write(
             result.Ok
@@ -222,6 +232,40 @@ internal sealed class XaeSessionCoordinator : IDisposable
                             CultureInfo.InvariantCulture),
             });
         return result;
+    }
+
+    private static string FormatBuildOutput(
+        IReadOnlyList<XaeOutputDelta> output)
+    {
+        if (output.Count == 0)
+        {
+            return "XAE produced no Output pane delta for this operation."
+                + Environment.NewLine;
+        }
+
+        StringBuilder text = new();
+        foreach (XaeOutputDelta pane in output)
+        {
+            text.Append("=== Output pane: ");
+            text.Append(pane.PaneName);
+            if (!string.IsNullOrWhiteSpace(pane.PaneGuid))
+            {
+                text.Append(" [");
+                text.Append(pane.PaneGuid);
+                text.Append(']');
+            }
+
+            text.AppendLine(" ===");
+            text.Append(pane.Text);
+            if (!pane.Text.EndsWith(
+                Environment.NewLine,
+                StringComparison.Ordinal))
+            {
+                text.AppendLine();
+            }
+        }
+
+        return text.ToString();
     }
 
     public void Dispose()

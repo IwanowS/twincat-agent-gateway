@@ -256,9 +256,15 @@ public sealed class GatewayApplicationService
                 };
                 return status;
             });
+            IReadOnlyList<ResourceReference> resources =
+                result.Log is null
+                    ? Array.Empty<ResourceReference>()
+                    : new[] { result.Log };
             if (result.Ok)
             {
-                return OperationExecutionResult.Success(result);
+                return OperationExecutionResult.Success(
+                    result,
+                    resources);
             }
 
             return OperationExecutionResult.Failure(
@@ -268,8 +274,10 @@ public sealed class GatewayApplicationService
                     Message = "XAE completed the build with errors.",
                     Retryable = false,
                     Stage = "build.verify",
+                    RawLogRef = result.Log?.Uri,
                 },
-                result);
+                result,
+                resources);
         }
         finally
         {

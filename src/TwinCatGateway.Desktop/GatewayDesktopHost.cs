@@ -53,7 +53,8 @@ public sealed class GatewayDesktopHost : IDisposable
             : new XaeSessionCoordinator(
                 ActiveProfile,
                 _status,
-                _logger);
+                _logger,
+                logs);
         Func<GatewayDiagnosticsResult>? diagnosticsProvider =
             _xaeCoordinator is null
                 ? null

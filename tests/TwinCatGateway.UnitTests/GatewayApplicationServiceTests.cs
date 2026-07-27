@@ -204,6 +204,12 @@ public sealed class GatewayApplicationServiceTests
                         {
                             Errors = 1,
                         },
+                        Log = new ResourceReference
+                        {
+                            Uri = "twincat-log://operation-placeholder/build",
+                            OperationId = "operation-placeholder",
+                            Kind = ResourceKind.BuildLog,
+                        },
                     }));
         fixture.Status.Update(status =>
         {
@@ -226,6 +232,12 @@ public sealed class GatewayApplicationServiceTests
         Assert.Equal(
             ErrorCodes.BuildFailed,
             completed.Summary.Error?.Code);
+        Assert.Equal(
+            "twincat-log://operation-placeholder/build",
+            completed.Summary.Error?.RawLogRef);
+        Assert.Equal(
+            ResourceKind.BuildLog,
+            Assert.Single(completed.Summary.Resources).Kind);
         BuildResult result =
             Assert.IsType<BuildResult>(completed.Result);
         Assert.False(result.Ok);

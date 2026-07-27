@@ -205,6 +205,19 @@ public sealed class DesktopGatewayHostTests
                 client,
                 accepted.Result!.OperationId,
                 TimeSpan.FromSeconds(75));
+        Assert.NotNull(completed.Result?.Log);
+        GatewayResponse<ResourceContent> log =
+            await client.SendAsync<
+                GetResourceParameters,
+                ResourceContent>(
+                GatewayMethods.GetResource,
+                new GetResourceParameters
+                {
+                    Uri = completed.Result!.Log!.Uri,
+                    MaximumCharacters = 64 * 1024,
+                },
+                wait: true,
+                CancellationToken.None);
         GatewayDiagnosticsResult diagnostics =
             host.ApplicationService.GetDiagnostics();
         int processId = Assert.IsType<int>(
@@ -221,6 +234,14 @@ public sealed class DesktopGatewayHostTests
         Assert.True(completed.Result?.Ok);
         Assert.Equal(BuildAction.Build, completed.Result?.Action);
         Assert.Equal(0, completed.Result?.Counts.Errors);
+        Assert.Equal(
+            ResourceKind.BuildLog,
+            Assert.Single(
+                completed.Operation.Resources).Kind);
+        Assert.True(log.Ok);
+        Assert.False(
+            string.IsNullOrWhiteSpace(
+                log.Result?.Content));
         Assert.Empty(
             XaeWindowProbe.FindModalDialogs(processId));
     }
