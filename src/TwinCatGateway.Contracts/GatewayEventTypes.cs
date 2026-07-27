@@ -63,6 +63,27 @@ public static class GatewayEventTypes
     public const string ActivationCancelled =
         "activation.cancelled";
 
+    public const string ActivationRecoveryStarted =
+        "activation.recoveryStarted";
+
+    public const string ActivationRecoverySucceeded =
+        "activation.recoverySucceeded";
+
+    public const string ActivationConfigurationStarted =
+        "activation.configurationStarted";
+
+    public const string ActivationConfigurationActivated =
+        "activation.configurationActivated";
+
+    public const string ActivationRestartStarted =
+        "activation.restartStarted";
+
+    public const string ActivationRestartRequested =
+        "activation.restartRequested";
+
+    public const string ActivationRuntimeReady =
+        "activation.runtimeReady";
+
     public const string RecoveryQueued = "recovery.queued";
 
     public const string RecoveryStarted = "recovery.started";

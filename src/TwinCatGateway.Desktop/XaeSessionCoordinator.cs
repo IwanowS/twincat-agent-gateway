@@ -302,6 +302,218 @@ internal sealed class XaeSessionCoordinator : IDisposable
         return result;
     }
 
+    public async Task<ActivationResult> ExecuteActivationAsync(
+        string operationId,
+        ActivateParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(
+            parameters.Profile,
+            _profile.Name,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileNotFound,
+                $"Project profile '{parameters.Profile}' is not active.",
+                stage: "activation.validate");
+        }
+
+        if (!_profile.AllowActivation)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ActivationNotAllowed,
+                $"Activation is disabled for profile '{_profile.Name}'.",
+                stage: "activation.validate");
+        }
+
+        string expectedAmsNetId =
+            _profile.ExpectedTarget?.AmsNetId
+            ?? throw new GatewayOperationException(
+                ErrorCodes.ProfileInvalid,
+                "The activation profile has no expected AMS NetId.",
+                stage: "activation.validate");
+        bool waitForTcUnit = parameters.WaitForTcUnit
+            ?? _profile.AutoWaitForTcUnit;
+        if (waitForTcUnit)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "Linked TcUnit execution is not available yet.",
+                stage: "activation.tcunit");
+        }
+
+        DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
+        DateTimeOffset deadlineUtc = startedAtUtc.AddSeconds(
+            parameters.TimeoutSeconds ?? 120);
+        XaeSessionSnapshot snapshot =
+            await _session.VerifyAttachedAsync(
+                _profile.Solution,
+                GetRemaining(
+                    deadlineUtc,
+                    "activation.preflight"),
+                cancellationToken).ConfigureAwait(false);
+        VerifyTarget(
+            snapshot,
+            expectedAmsNetId,
+            "activation.preflight");
+        AdsRuntimeStatusReadResult runtime =
+            ReadRuntimeStatus(snapshot);
+        if (runtime.Status.Mode == RuntimeMode.Unknown)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.TwinCatStateUnknown,
+                "Activation requires a readable TwinCAT runtime state.",
+                retryable: true,
+                stage: "activation.preflight");
+        }
+
+        bool recoveryAttempted =
+            runtime.Status.Mode == RuntimeMode.Exception;
+        if (recoveryAttempted)
+        {
+            RecordActivationEvent(
+                operationId,
+                GatewayEventTypes.ActivationRecoveryStarted,
+                "activation.recoverToConfig",
+                "TwinCAT Config Mode recovery started.",
+                expectedAmsNetId);
+            await _session.RestartTwinCatConfigModeAsync(
+                _profile.Solution,
+                expectedAmsNetId,
+                GetRemaining(
+                    deadlineUtc,
+                    "activation.recoverToConfig"),
+                cancellationToken).ConfigureAwait(false);
+            runtime = await WaitForRuntimeModeAsync(
+                expectedAmsNetId,
+                RuntimeMode.Config,
+                deadlineUtc,
+                ErrorCodes.ConfigModeRecoveryFailed,
+                "TwinCAT did not reach Config Mode after recovery.",
+                cancellationToken).ConfigureAwait(false);
+            PublishConnected(snapshot, runtime);
+            RecordActivationEvent(
+                operationId,
+                GatewayEventTypes.ActivationRecoverySucceeded,
+                "activation.recoverToConfig",
+                "TwinCAT reached Config Mode.",
+                expectedAmsNetId);
+        }
+
+        RecordActivationEvent(
+            operationId,
+            GatewayEventTypes.ActivationConfigurationStarted,
+            "activation.activateConfiguration",
+            "TwinCAT configuration activation started.",
+            expectedAmsNetId);
+        await _session.ActivateConfigurationAsync(
+            _profile.Solution,
+            expectedAmsNetId,
+            GetRemaining(
+                deadlineUtc,
+                "activation.activateConfiguration"),
+            cancellationToken).ConfigureAwait(false);
+        RecordActivationEvent(
+            operationId,
+            GatewayEventTypes.ActivationConfigurationActivated,
+            "activation.activateConfiguration",
+            "TwinCAT configuration was activated.",
+            expectedAmsNetId);
+
+        RecordActivationEvent(
+            operationId,
+            GatewayEventTypes.ActivationRestartStarted,
+            "activation.restart",
+            "TwinCAT restart started.",
+            expectedAmsNetId);
+        await _session.StartRestartTwinCatAsync(
+            _profile.Solution,
+            expectedAmsNetId,
+            GetRemaining(
+                deadlineUtc,
+                "activation.restart"),
+            cancellationToken).ConfigureAwait(false);
+        RecordActivationEvent(
+            operationId,
+            GatewayEventTypes.ActivationRestartRequested,
+            "activation.restart",
+            "TwinCAT restart was requested.",
+            expectedAmsNetId);
+
+        runtime = await WaitForRuntimeModeAsync(
+            expectedAmsNetId,
+            RuntimeMode.Run,
+            deadlineUtc,
+            ErrorCodes.TwinCatRestartFailed,
+            "TwinCAT did not reach Run after restart.",
+            cancellationToken).ConfigureAwait(false);
+        snapshot = await _session.VerifyAttachedAsync(
+            _profile.Solution,
+            GetRemaining(
+                deadlineUtc,
+                "activation.verify"),
+            cancellationToken).ConfigureAwait(false);
+        VerifyTarget(
+            snapshot,
+            expectedAmsNetId,
+            "activation.verify");
+        PublishConnected(snapshot, runtime);
+        RecordActivationEvent(
+            operationId,
+            GatewayEventTypes.ActivationRuntimeReady,
+            "activation.verify",
+            "TwinCAT runtime reached Run.",
+            expectedAmsNetId);
+
+        long durationMs = Math.Max(
+            0,
+            (long)(DateTimeOffset.UtcNow - startedAtUtc)
+                .TotalMilliseconds);
+        ResourceReference log = _logs.WriteText(
+            operationId,
+            ResourceKind.ActivationLog,
+            FormatActivationLog(
+                operationId,
+                expectedAmsNetId,
+                recoveryAttempted,
+                runtime,
+                durationMs));
+        ActivationResult result = new()
+        {
+            Ok = true,
+            OperationId = operationId,
+            DurationMs = durationMs,
+            Profile = _profile.Name,
+            Solution = _profile.Solution,
+            Target = new TargetIdentity
+            {
+                Name = _profile.ExpectedTarget?.Name,
+                AmsNetId = expectedAmsNetId,
+            },
+            RecoveryAttempted = recoveryAttempted,
+            Resources =
+            {
+                log,
+            },
+        };
+        _logger.Write(
+            StructuredLogLevel.Information,
+            "activation.completed",
+            "TwinCAT activation completed successfully.",
+            operationId,
+            properties: new Dictionary<string, string>
+            {
+                ["profile"] = _profile.Name,
+                ["solution"] = _profile.Solution,
+                ["amsNetId"] = expectedAmsNetId,
+                ["recoveryAttempted"] =
+                    recoveryAttempted.ToString(),
+                ["durationMs"] = durationMs.ToString(
+                    CultureInfo.InvariantCulture),
+            });
+        return result;
+    }
+
     private static string FormatBuildOutput(
         IReadOnlyList<XaeOutputDelta> output)
     {
@@ -824,6 +1036,163 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ErrorCode = source.ErrorCode,
             ReadAtUtc = source.ReadAtUtc,
         };
+    }
+
+    private void RecordActivationEvent(
+        string operationId,
+        string type,
+        string stage,
+        string message,
+        string amsNetId)
+    {
+        Dictionary<string, string> properties = new()
+        {
+            ["profile"] = _profile.Name,
+            ["solution"] = _profile.Solution,
+            ["amsNetId"] = amsNetId,
+        };
+        string? targetName = _profile.ExpectedTarget?.Name;
+        if (!string.IsNullOrWhiteSpace(targetName))
+        {
+            properties["targetName"] = targetName!;
+        }
+        _logger.Write(
+            StructuredLogLevel.Information,
+            type,
+            message,
+            operationId,
+            properties);
+        _events.Record(
+            new GatewayEvent
+            {
+                Type = type,
+                Severity = DiagnosticSeverity.Info,
+                OperationId = operationId,
+                OperationKind = OperationKind.Activate,
+                Stage = stage,
+                Message = message,
+                Properties = properties,
+            },
+            DateTimeOffset.UtcNow);
+    }
+
+    private static async Task<AdsRuntimeStatusReadResult>
+        WaitForRuntimeModeAsync(
+            string amsNetId,
+            RuntimeMode expectedMode,
+            DateTimeOffset deadlineUtc,
+            string errorCode,
+            string errorMessage,
+            CancellationToken cancellationToken)
+    {
+        while (DateTimeOffset.UtcNow < deadlineUtc)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TimeSpan remaining =
+                deadlineUtc - DateTimeOffset.UtcNow;
+            TimeSpan readTimeout = remaining
+                < TimeSpan.FromSeconds(3)
+                ? remaining
+                : TimeSpan.FromSeconds(3);
+            if (readTimeout > TimeSpan.Zero)
+            {
+                AdsRuntimeStatusReadResult runtime =
+                    AdsRuntimeStatusReader.Read(
+                        amsNetId,
+                        readTimeout);
+                if (runtime.Diagnostics.ErrorCode is null
+                    && runtime.Status.Mode == expectedMode)
+                {
+                    return runtime;
+                }
+            }
+
+            remaining = deadlineUtc - DateTimeOffset.UtcNow;
+            if (remaining <= TimeSpan.Zero)
+            {
+                break;
+            }
+
+            TimeSpan delay = remaining
+                < TimeSpan.FromMilliseconds(250)
+                ? remaining
+                : TimeSpan.FromMilliseconds(250);
+            await Task.Delay(
+                delay,
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new GatewayOperationException(
+            errorCode,
+            errorMessage,
+            retryable: true,
+            stage: expectedMode == RuntimeMode.Config
+                ? "activation.recoverToConfig"
+                : "activation.verify");
+    }
+
+    private static void VerifyTarget(
+        XaeSessionSnapshot snapshot,
+        string expectedAmsNetId,
+        string stage)
+    {
+        if (!string.Equals(
+            snapshot.TargetAmsNetId,
+            expectedAmsNetId,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ActivationTargetMismatch,
+                "The selected XAE target AMS NetId does not match "
+                    + "the activation profile.",
+                stage: stage);
+        }
+    }
+
+    private static TimeSpan GetRemaining(
+        DateTimeOffset deadlineUtc,
+        string stage)
+    {
+        TimeSpan remaining =
+            deadlineUtc - DateTimeOffset.UtcNow;
+        if (remaining <= TimeSpan.Zero)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.OperationTimeout,
+                "The activation operation exceeded its deadline.",
+                retryable: true,
+                stage: stage);
+        }
+
+        return remaining;
+    }
+
+    private string FormatActivationLog(
+        string operationId,
+        string amsNetId,
+        bool recoveryAttempted,
+        AdsRuntimeStatusReadResult runtime,
+        long durationMs)
+    {
+        StringBuilder builder = new();
+        builder.AppendLine($"OperationId: {operationId}");
+        builder.AppendLine($"Profile: {_profile.Name}");
+        builder.AppendLine($"Solution: {_profile.Solution}");
+        builder.AppendLine($"TargetAmsNetId: {amsNetId}");
+        string? targetName = _profile.ExpectedTarget?.Name;
+        if (!string.IsNullOrWhiteSpace(targetName))
+        {
+            builder.AppendLine($"TargetName: {targetName}");
+        }
+        builder.AppendLine(
+            $"RecoveryAttempted: {recoveryAttempted}");
+        builder.AppendLine(
+            $"FinalRuntimeMode: {runtime.Status.Mode}");
+        builder.AppendLine(
+            $"FinalAdsState: "
+                + $"{runtime.Diagnostics.AdsState ?? "unknown"}");
+        builder.AppendLine($"DurationMs: {durationMs}");
+        return builder.ToString();
     }
 
     private static AdsRuntimeStatusReadResult ReadRuntimeStatus(

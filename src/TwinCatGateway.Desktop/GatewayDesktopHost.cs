@@ -67,6 +67,10 @@ public sealed class GatewayDesktopHost : IDisposable
             _xaeCoordinator is null
                 ? null
                 : _xaeCoordinator.ExecuteBuildAsync;
+        ActivationOperationExecutor? activationExecutor =
+            _xaeCoordinator is null
+                ? null
+                : _xaeCoordinator.ExecuteActivationAsync;
         ApplicationService = new GatewayApplicationService(
             version,
             _status,
@@ -75,7 +79,9 @@ public sealed class GatewayDesktopHost : IDisposable
             logs,
             _events,
             diagnosticsProvider,
-            buildExecutor);
+            buildExecutor,
+            activationExecutor,
+            ActiveProfile);
         GatewayRequestDispatcher dispatcher = new(ApplicationService);
         GatewayProtocolHandler protocol = new(
             dispatcher.DispatchAsync,
