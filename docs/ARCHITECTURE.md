@@ -555,6 +555,31 @@ EXTERNAL_EDIT_CONFLICT
 
 с перечнем файлов. Автоматический выбор версии запрещён.
 
+Проверка на TwinCAT 3.1.4024.17 уточнила границу:
+
+- после обычного внешнего edit открытого сохранённого `.TcPOU`
+  `EnvDTE.Document.Saved` остаётся `true`; при следующем build XAE может
+  показать project-level и editor-level reload dialogs;
+- внешний edit открытого несохранённого document создаёт file-modification
+  conflict dialog ещё до build; Silent Mode его не подавляет, а последующий
+  COM-вызов может блокироваться до deadline;
+- типизированный VSSDK workflow
+  `IVsDocDataFileChangeControl.IgnoreFileChanges(1)` перед записью,
+  `IVsPersistDocData.ReloadDocData(...)` после записи и затем
+  `IgnoreFileChanges(0)` устраняет modal dialog; последующий build подтверждённо
+  использует внешне изменённый ST source;
+- `IVsPersistDocData.IsDocDataDirty(...)` надёжно обнаруживает dirty document
+  до внешней записи.
+
+Следовательно, post-edit проверка непосредственно перед build необходима, но
+сама по себе опаздывает. Для безопасной реализации нужен явный
+`prepare_external_edit(exactPaths)` / `complete_external_edit(editId)`
+handshake. На prepare gateway применяет profile policy `SaveAll|Reject`,
+проверяет dirty state и подавляет file-change notifications только для exact
+open documents. На complete он типизированно reload-ит эти documents и
+восстанавливает notifications в `finally`. COM interfaces и edit lease
+остаются внутри STA.
+
 ## 14. `.tsproj` reorder-only noise
 
 ### 14.1 Требования
@@ -754,7 +779,7 @@ Metrics не обязательны для MVP, но structured events долж�
 
 1. Стабильный вызов `Restart TwinCAT (Config Mode)` в XAE 4024.17 без ADS runtime control.
 2. Надёжный источник exact runtime mode без расширения completion-only ADS adapter; допустимый результат spike — подтверждение, что MVP показывает только `started/unknown`.
-3. Поведение внешнего редактирования `.TcPOU/.TcGVL/.TcDUT` при открытых editors и варианты минимального refresh.
+3. Public lifecycle, deadline и crash recovery для `prepare_external_edit` / `complete_external_edit` lease.
 4. Полнота Error List по сравнению с Build Output на реальных PLC compile errors.
 5. Точный lifecycle `BuildEvents` в нескольких открытых XAE instances.
 6. Silent Mode и поведение confirmation dialogs при activation на тестовом стенде.
@@ -769,6 +794,8 @@ Metrics не обязательны для MVP, но structured events долж�
 - Beckhoff: ActivateConfiguration — https://infosys.beckhoff.com/content/1031/tcautomationinterface/12425796491.html
 - Beckhoff: StartRestartTwinCAT — https://infosys.beckhoff.com/content/1033/tc3_automationinterface/242762891.html
 - Beckhoff: Silent Mode — https://infosys.beckhoff.com/content/1033/tc3_automationinterface/2489025803.html
+- Microsoft: IVsDocDataFileChangeControl — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivsdocdatafilechangecontrol
+- Microsoft: IVsPersistDocData.ReloadDocData — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivspersistdocdata.reloaddocdata
 - Existing minimal build skill — https://github.com/IwanowS/codex-skill-twincat-build
 - Reference all-in-one project — https://github.com/Lance0901/AI-TwinCAT-Skill
 - TcUnit documentation — https://tcunit.org/
