@@ -302,8 +302,9 @@ docs/
   `vsBuildActionRebuildAll`;
 - configuration/platform resolution;
 - BuildEvents lifecycle;
-- Error List delta collector;
+- Error List snapshot collector;
 - Output pane delta collector;
+- `.tsproj` same-content rewrite guard через `IVsFileChangeEx`;
 - `LastBuildInfo` validation;
 - diagnostic normalization;
 - compact response limits;
@@ -323,6 +324,9 @@ docs/
   сборку без modal dialog;
 - несохранённая XAE версия PLC source отбрасывается и не перезаписывает
   agent edit;
+- same-content `.tsproj` rewrite самой XAE не вызывает modal dialog;
+- содержательное `.tsproj` изменение не скрывается watcher guard и
+  возвращается как `unknown`;
 - добавленный/удалённый source file завершается явной unsupported error;
 - full output не попадает в compact response;
 - CLI exit code соответствует результату;

@@ -167,7 +167,7 @@ Status endpoint читает immutable snapshot и не блокирует UI н
 - Build/Rebuild/Clean;
 - работа с configuration/platform;
 - `BuildEvents`;
-- Error List delta;
+- Error List snapshot;
 - Output pane delta;
 - `LastBuildInfo`;
 - нормализация diagnostics;
@@ -349,17 +349,20 @@ fingerprint baseline, а список от caller используется то�
    Table и `IVsPersistDocData.ReloadDocData(...)`.
 7. Повторный fingerprint scan; concurrent external change завершает операцию
    ошибкой.
-8. Snapshot текущих Error List/Output позиций.
-9. Подписка/проверка `BuildEvents`.
-10. Запуск Build/Clean через `SolutionBuild`; Rebuild через
+8. SHA-256 snapshot всех `.tsproj` и временное подавление их file-change
+   notifications через `SVsFileChangeEx` / `IVsFileChangeEx.IgnoreFile(...)`.
+9. Snapshot текущих Output позиций.
+10. Подписка/проверка `BuildEvents`.
+11. Запуск Build/Clean через `SolutionBuild`; Rebuild через
     `DTE.ExecuteCommand("Build.RebuildSolution")`.
-11. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
-12. Чтение `LastBuildInfo`.
-13. Сбор новых Error List entries и Output delta.
-14. Нормализация diagnostics.
-15. Классификация `.tsproj` changes.
-16. Сохранение raw artifacts.
-17. Возврат compact result.
+12. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
+13. Проверка `.tsproj` hashes, синхронизация file watcher и обязательное
+    восстановление notifications.
+14. Чтение `LastBuildInfo`, Error List snapshot и Output delta.
+15. Нормализация diagnostics.
+16. Классификация содержательных `.tsproj` changes.
+17. Сохранение полного Output delta как отдельного build-log resource.
+18. Возврат compact result.
 
 `DTE.ExecuteCommand(...)` допустим для стабильной встроенной команды XAE/VS,
 если нет надёжного отдельного typed automation method. Он всегда вызывается
@@ -593,6 +596,31 @@ sources не синхронизируется автоматически и за
 
 ## 14. `.tsproj` reorder-only noise
 
+### 14.0 XAE file watcher guard
+
+TwinCAT 3.1.4024.17 может во время обычной Build/Clean/Rebuild перезаписать
+`.tsproj` теми же байтами, изменив только filesystem timestamp. XAE file
+watcher способен увидеть эту собственную запись и показать modal
+`File Modification Detected`; Silent Mode этого не предотвращает.
+
+Поэтому gateway перед запуском операции вычисляет SHA-256 всех `.tsproj` под
+solution root и временно вызывает
+`IVsFileChangeEx.IgnoreFile(0, path, 1)`. После `OnBuildDone`:
+
+- если файл существует и hash совпадает, gateway вызывает `SyncFile(path)`
+  при ещё подавленных notifications, затем возвращает
+  `IgnoreFile(0, path, 0)`;
+- если содержимое или наличие файла изменилось, gateway сначала возвращает
+  notifications и синхронизирует watcher, затем завершает операцию явной
+  `EXTERNAL_EDIT_UNSUPPORTED`: изменение остаётся `unknown` до classifier;
+- восстановление notifications выполняется также при исключении и Dispose.
+
+Это узкий exact-same-content guard, а не `.tsproj` classifier: gateway не
+перезаписывает файл и не скрывает содержательные изменения. Проверенный
+`IVsRunningDocumentTable5.HandsOffDocument/HandsOnDocument` для этой задачи
+не используется: XAE Shell на базе Visual Studio 2019 в тестовой конфигурации
+не зарегистрировал COM proxy этого интерфейса.
+
 ### 14.1 Требования
 
 - ничего не перезаписывать;
@@ -809,6 +837,7 @@ Metrics не обязательны для MVP, но structured events долж�
 - Beckhoff: Silent Mode — https://infosys.beckhoff.com/content/1033/tc3_automationinterface/2489025803.html
 - Microsoft: IVsDocDataFileChangeControl — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivsdocdatafilechangecontrol
 - Microsoft: IVsPersistDocData.ReloadDocData — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivspersistdocdata.reloaddocdata
+- Microsoft: IVsFileChangeEx — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivsfilechangeex
 - Existing minimal build skill — https://github.com/IwanowS/codex-skill-twincat-build
 - Reference all-in-one project — https://github.com/Lance0901/AI-TwinCAT-Skill
 - TcUnit documentation — https://tcunit.org/
