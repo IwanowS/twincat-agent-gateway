@@ -29,9 +29,8 @@ enabled_tools = [
 ]
 
 [mcp_servers.roslyn-codelens]
-command = "roslyn-codelens-mcp"
-args = ["TwinCatGateway.sln"]
-cwd = ".."
+command = "cmd.exe"
+args = ["/d", "/c", ".codex\\start-roslyn-codelens.cmd"]
 enabled = true
 required = true
 startup_timeout_sec = 180
