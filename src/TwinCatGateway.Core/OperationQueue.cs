@@ -56,6 +56,26 @@ public sealed class OperationQueue : IDisposable
             throw new ArgumentNullException(nameof(executeAsync));
         }
 
+        return Enqueue(
+            kind,
+            (_, cancellationToken) =>
+                executeAsync(cancellationToken),
+            timeout);
+    }
+
+    public OperationAccepted Enqueue(
+        OperationKind kind,
+        Func<
+            string,
+            CancellationToken,
+            Task<OperationExecutionResult>> executeAsync,
+        TimeSpan? timeout = null)
+    {
+        if (executeAsync is null)
+        {
+            throw new ArgumentNullException(nameof(executeAsync));
+        }
+
         if (timeout.HasValue && timeout.Value <= TimeSpan.Zero)
         {
             throw new ArgumentOutOfRangeException(nameof(timeout));
@@ -180,7 +200,9 @@ public sealed class OperationQueue : IDisposable
         try
         {
             OperationExecutionResult result =
-                await item.ExecuteAsync(execution.Token).ConfigureAwait(false);
+                await item.ExecuteAsync(
+                    item.OperationId,
+                    execution.Token).ConfigureAwait(false);
             OperationState state = result.Succeeded
                 ? OperationState.Succeeded
                 : OperationState.Failed;
@@ -317,7 +339,10 @@ public sealed class OperationQueue : IDisposable
         public QueueItem(
             string operationId,
             OperationKind kind,
-            Func<CancellationToken, Task<OperationExecutionResult>> executeAsync,
+            Func<
+                string,
+                CancellationToken,
+                Task<OperationExecutionResult>> executeAsync,
             TimeSpan? timeout)
         {
             OperationId = operationId;
@@ -330,7 +355,10 @@ public sealed class OperationQueue : IDisposable
 
         public OperationKind Kind { get; }
 
-        public Func<CancellationToken, Task<OperationExecutionResult>> ExecuteAsync { get; }
+        public Func<
+            string,
+            CancellationToken,
+            Task<OperationExecutionResult>> ExecuteAsync { get; }
 
         public TimeSpan? Timeout { get; }
 

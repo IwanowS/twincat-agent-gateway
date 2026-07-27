@@ -135,6 +135,31 @@ public sealed class OperationQueueTests
         Assert.True(operation.Summary.Error?.Retryable);
     }
 
+    [Fact]
+    public async Task OperationReceivesItsStableId()
+    {
+        OperationStore store = new();
+        using OperationQueue queue = new(store);
+        string? executedId = null;
+
+        OperationAccepted accepted = queue.Enqueue(
+            OperationKind.Build,
+            (operationId, cancellationToken) =>
+            {
+                executedId = operationId;
+                return Task.FromResult(
+                    OperationExecutionResult.Success());
+            });
+
+        await WaitForStateAsync(
+            store,
+            accepted.OperationId,
+            OperationState.Succeeded);
+        await queue.StopAsync();
+
+        Assert.Equal(accepted.OperationId, executedId);
+    }
+
     private static TaskCompletionSource<bool> NewCompletionSource()
     {
         return new TaskCompletionSource<bool>(
