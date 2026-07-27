@@ -106,6 +106,7 @@ public sealed class MvpContractSerializationTests
             Name = "bench-remote",
             Solution = @"C:\Projects\Machine\Machine.sln",
             XaeProgId = "VisualStudio.DTE.16.0",
+            UnsavedDocuments = UnsavedDocumentPolicy.Reject,
             AllowActivation = true,
             ExpectedTarget = new TargetIdentity
             {
@@ -125,6 +126,10 @@ public sealed class MvpContractSerializationTests
 
         Assert.NotNull(result);
         Assert.Equal("VisualStudio.DTE.16.0", result.XaeProgId);
+        Assert.Equal(
+            UnsavedDocumentPolicy.Reject,
+            result.UnsavedDocuments);
+        Assert.Contains("\"unsavedDocuments\":\"reject\"", json);
         Assert.True(result.AllowActivation);
         Assert.Equal("WIN-T077ADA", result.ExpectedTarget?.Name);
         Assert.Equal("192.168.3.31.1.1", result.ExpectedTarget?.AmsNetId);

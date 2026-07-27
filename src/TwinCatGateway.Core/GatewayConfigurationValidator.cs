@@ -169,6 +169,16 @@ public static class GatewayConfigurationValidator
             $"{path}.xaeProgId",
             issues);
 
+        if (!Enum.IsDefined(
+            typeof(UnsavedDocumentPolicy),
+            profile.UnsavedDocuments))
+        {
+            Add(
+                issues,
+                $"{path}.unsavedDocuments",
+                "Unsaved document policy is not supported.");
+        }
+
         if (profile.RequireRecentSuccessfulBuild
             && profile.RecentBuildMaxAgeSeconds <= 0)
         {

@@ -28,6 +28,7 @@ public sealed class GatewayConfigurationTests
                       "solution": "C:\\Projects\\Machine\\Machine.sln",
                       "allowXaeLaunch": true,
                       "xaeProgId": "VisualStudio.DTE.16.0",
+                      "unsavedDocuments": "reject",
                       "allowActivation": true,
                       "expectedTarget": {
                         "name": "WIN-T077ADA",
@@ -49,6 +50,9 @@ public sealed class GatewayConfigurationTests
             ProjectProfile profile = Assert.Single(configuration.Profiles);
             Assert.True(profile.AllowXaeLaunch);
             Assert.Equal("VisualStudio.DTE.16.0", profile.XaeProgId);
+            Assert.Equal(
+                UnsavedDocumentPolicy.Reject,
+                profile.UnsavedDocuments);
             Assert.True(profile.AllowActivation);
             Assert.Equal("192.168.3.31.1.1", profile.ExpectedTarget?.AmsNetId);
             Assert.Equal(ZeroTestsPolicy.Warn, profile.TcUnit?.ZeroTests);
@@ -150,14 +154,45 @@ public sealed class GatewayConfigurationTests
     }
 
     [Fact]
+    public void UnsavedDocumentsDefaultToSaveAll()
+    {
+        ProjectProfile profile = new();
+
+        Assert.Equal(
+            UnsavedDocumentPolicy.SaveAll,
+            profile.UnsavedDocuments);
+    }
+
+    [Fact]
+    public void UnsupportedUnsavedDocumentPolicyIsRejected()
+    {
+        GatewayConfiguration configuration = CreateValidConfiguration();
+        configuration.Profiles[0].UnsavedDocuments =
+            (UnsavedDocumentPolicy)99;
+
+        ConfigurationValidationResult validation =
+            GatewayConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(
+            validation.Issues,
+            issue => issue.Path.EndsWith(
+                ".unsavedDocuments",
+                StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void CatalogReturnsDefensiveProfileCopies()
     {
         ProjectProfileCatalog catalog = new(CreateValidConfiguration());
 
         ProjectProfile first = catalog.GetRequired(null);
+        first.UnsavedDocuments = UnsavedDocumentPolicy.Reject;
         first.ExpectedTarget!.Name = "mutated";
         ProjectProfile second = catalog.GetRequired("BENCH");
 
+        Assert.Equal(
+            UnsavedDocumentPolicy.SaveAll,
+            second.UnsavedDocuments);
         Assert.Equal("WIN-T077ADA", second.ExpectedTarget?.Name);
     }
 

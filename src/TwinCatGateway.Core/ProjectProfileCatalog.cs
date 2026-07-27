@@ -72,6 +72,7 @@ public sealed class ProjectProfileCatalog
                 },
             Configuration = source.Configuration,
             Platform = source.Platform,
+            UnsavedDocuments = source.UnsavedDocuments,
             RequireRecentSuccessfulBuild = source.RequireRecentSuccessfulBuild,
             RecentBuildMaxAgeSeconds = source.RecentBuildMaxAgeSeconds,
             AutoWaitForTcUnit = source.AutoWaitForTcUnit,
