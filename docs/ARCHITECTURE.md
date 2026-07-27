@@ -476,7 +476,11 @@ tcUnitSuiteCountSymbol: GVL_TcUnit.NumberOfInitializedTestSuites
 tcUnitReportPath: C:\TwinCAT\3.1\Boot\tcunit_xunit_testresults.xml
 ```
 
-Target identity следует показывать и сохранять в audit log. ADS completion adapter получает NetId только из target, выбранного и проверенного XAE/profile; отдельный произвольный NetId от MCP/CLI запрещён.
+AMS NetId является авторитетной identity target и перед activation должен точно
+совпасть между выбранным XAE target и profile. Target name необязателен,
+не участвует в safety decision и используется только как display/audit
+metadata. ADS completion adapter получает NetId только из target, выбранного и
+проверенного XAE/profile; отдельный произвольный NetId от MCP/CLI запрещён.
 
 ## 12. Status и detailed diagnostics
 

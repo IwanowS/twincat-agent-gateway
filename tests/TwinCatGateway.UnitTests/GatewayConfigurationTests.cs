@@ -134,7 +134,7 @@ public sealed class GatewayConfigurationTests
     }
 
     [Fact]
-    public void ActivationProfileRequiresExactTargetIdentity()
+    public void ActivationProfileRequiresExactAmsNetId()
     {
         GatewayConfiguration configuration = CreateValidConfiguration();
         configuration.Profiles[0].ExpectedTarget = new TargetIdentity
@@ -152,6 +152,23 @@ public sealed class GatewayConfigurationTests
                 ".expectedTarget.amsNetId",
                 StringComparison.Ordinal));
         Assert.Contains("six-part AMS NetId", issue.Message);
+    }
+
+    [Fact]
+    public void ActivationProfileAllowsMissingDisplayName()
+    {
+        GatewayConfiguration configuration = CreateValidConfiguration();
+        configuration.Profiles[0].ExpectedTarget!.Name = null;
+
+        ConfigurationValidationResult validation =
+            GatewayConfigurationValidator.Validate(configuration);
+
+        Assert.DoesNotContain(
+            validation.Issues,
+            issue => issue.Path.EndsWith(
+                ".expectedTarget.name",
+                StringComparison.Ordinal));
+        Assert.True(validation.IsValid);
     }
 
     [Theory]

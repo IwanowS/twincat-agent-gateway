@@ -153,6 +153,8 @@ Acceptance:
 Acceptance:
 
 - target NetId берётся только из выбранного XAE/profile target;
+- точное совпадение AMS NetId является safety identity; необязательное имя
+  target используется только как display/audit metadata;
 - test program назначена PLC task, инстанцирует suites и циклически вызывает `TcUnit.RUN()` или `TcUnit.RUN_IN_SEQUENCE()`;
 - `xUnitEnablePublish=TRUE`, а `xUnitFilePath` доступен gateway;
 - завершение определяется без фиксированного общего sleep;

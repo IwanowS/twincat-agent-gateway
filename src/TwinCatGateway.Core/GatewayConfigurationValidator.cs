@@ -211,14 +211,6 @@ public static class GatewayConfigurationValidator
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(target.Name))
-        {
-            Add(
-                issues,
-                $"{profilePath}.expectedTarget.name",
-                "Activation requires an expected target name.");
-        }
-
         if (!IsValidAmsNetId(target.AmsNetId))
         {
             Add(
