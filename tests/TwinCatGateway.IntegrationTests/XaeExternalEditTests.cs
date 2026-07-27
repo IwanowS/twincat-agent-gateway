@@ -1,18 +1,22 @@
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using EnvDTE;
 using EnvDTE80;
+using Microsoft.VisualStudio.Shell.Interop;
 using TwinCatGateway.Xae;
 using Xunit;
+using OleServiceProvider =
+    Microsoft.VisualStudio.OLE.Interop.IServiceProvider;
 
 namespace TwinCatGateway.IntegrationTests;
 
 public sealed class XaeExternalEditTests
 {
     [XaeLaunchFact]
-    public async Task OpenSavedDocumentExternalEditDoesNotPresentModal()
+    public async Task OpenSavedDocumentCanBeReloadedWithoutModal()
     {
         string sourceSolution = Path.GetFullPath(
             Environment.GetEnvironmentVariable(
@@ -43,9 +47,24 @@ public sealed class XaeExternalEditTests
                 processId,
                 documentPath,
                 openIfMissing: true);
-            File.AppendAllText(
+            await IgnoreDocumentFileChangesAsync(
+                dispatcher,
+                processId,
                 documentPath,
-                Environment.NewLine + "<!-- external edit probe -->");
+                ignore: true);
+            string source = File.ReadAllText(documentPath);
+            Assert.Contains(
+                "bToggle := NOT bToggle;",
+                source);
+            File.WriteAllText(
+                documentPath,
+                source.Replace(
+                    "bToggle := NOT bToggle;",
+                    "bToggle := ;"));
+            await ReloadDocumentAsync(
+                dispatcher,
+                processId,
+                documentPath);
             DateTimeOffset observationDeadline =
                 DateTimeOffset.UtcNow.AddSeconds(2);
             while (DateTimeOffset.UtcNow < observationDeadline)
@@ -55,17 +74,16 @@ public sealed class XaeExternalEditTests
                 await Task.Delay(100);
             }
 
-            bool savedAfterEdit = await ReadDocumentSavedAsync(
-                dispatcher,
-                processId,
-                documentPath,
-                openIfMissing: false);
             string[] dialogs =
                 XaeWindowProbe.FindModalDialogs(processId);
+            int externalEditBuildErrors =
+                await BuildSolutionAsync(
+                    dispatcher,
+                    processId);
 
             Assert.True(initiallySaved);
-            Assert.True(savedAfterEdit);
             Assert.Empty(dialogs);
+            Assert.True(externalEditBuildErrors > 0);
         }
         finally
         {
@@ -74,6 +92,361 @@ public sealed class XaeExternalEditTests
                 CancellationToken.None);
             session.Dispose();
         }
+    }
+
+    [XaeLaunchFact]
+    public async Task DirtyDocumentIsDetectedBeforeExternalWrite()
+    {
+        string sourceSolution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        using TemporarySolution copy =
+            TemporarySolution.Create(sourceSolution);
+        string documentPath = Path.Combine(
+            Path.GetDirectoryName(copy.SolutionPath)!,
+            "TC3_SimpleProject",
+            "PlcProject1",
+            "POUs",
+            "MAIN.TcPOU");
+        using ComStaDispatcher dispatcher = new();
+        XaeSession session = new(dispatcher);
+        try
+        {
+            XaeSessionSnapshot snapshot = await session.LaunchAsync(
+                copy.SolutionPath,
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_XAE_PROGID"),
+                TimeSpan.FromSeconds(60),
+                CancellationToken.None);
+            int processId = Assert.IsType<int>(
+                snapshot.SelectedInstance?.ProcessId);
+            await ReadDocumentSavedAsync(
+                dispatcher,
+                processId,
+                documentPath,
+                openIfMissing: true);
+            await SetDocumentSavedAsync(
+                dispatcher,
+                processId,
+                documentPath,
+                saved: false);
+
+            bool dirty = await ReadDocumentDirtyAsync(
+                dispatcher,
+                processId,
+                documentPath);
+
+            Assert.True(dirty);
+            Assert.Empty(
+                XaeWindowProbe.FindModalDialogs(processId));
+            await SaveAllAsync(dispatcher, processId);
+        }
+        finally
+        {
+            await session.CloseGatewayLaunchedAsync(
+                TimeSpan.FromSeconds(15),
+                CancellationToken.None);
+            session.Dispose();
+        }
+    }
+
+    private static Task<bool> ReadDocumentDirtyAsync(
+        ComStaDispatcher dispatcher,
+        int processId,
+        string documentPath)
+    {
+        return WithDocumentDataAsync(
+            dispatcher,
+            processId,
+            documentPath,
+            (persist, _) =>
+            {
+                Marshal.ThrowExceptionForHR(
+                    persist.IsDocDataDirty(out int dirty));
+                return dirty != 0;
+            });
+    }
+
+    private static Task<bool> SetDocumentSavedAsync(
+        ComStaDispatcher dispatcher,
+        int processId,
+        string documentPath,
+        bool saved)
+    {
+        return WithDocumentAsync(
+            dispatcher,
+            processId,
+            documentPath,
+            document =>
+            {
+                document.Saved = saved;
+                return true;
+            });
+    }
+
+    private static Task<bool> SaveAllAsync(
+        ComStaDispatcher dispatcher,
+        int processId)
+    {
+        return dispatcher.InvokeAsync(
+            () =>
+            {
+                using RotScanResult scan =
+                    RunningObjectTableScanner.Scan(
+                        requiredProcessId: processId);
+                RunningXaeCandidate candidate =
+                    Assert.Single(
+                        scan.Candidates,
+                        item => item.Info.ProcessId == processId);
+                DTE2 dte = candidate.TakeDte();
+                Documents? documents = null;
+                try
+                {
+                    documents = dte.Documents;
+                    documents.SaveAll();
+                    return true;
+                }
+                finally
+                {
+                    ComObject.Release(documents);
+                    ComObject.Release(dte);
+                }
+            },
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+    }
+
+    private static Task<bool> IgnoreDocumentFileChangesAsync(
+        ComStaDispatcher dispatcher,
+        int processId,
+        string documentPath,
+        bool ignore)
+    {
+        return WithDocumentDataAsync(
+            dispatcher,
+            processId,
+            documentPath,
+            (persist, control) =>
+            {
+                Marshal.ThrowExceptionForHR(
+                    persist.IsDocDataDirty(out int dirty));
+                Assert.Equal(0, dirty);
+                Marshal.ThrowExceptionForHR(
+                    control.IgnoreFileChanges(
+                        ignore ? 1 : 0));
+                return true;
+            });
+    }
+
+    private static Task<bool> ReloadDocumentAsync(
+        ComStaDispatcher dispatcher,
+        int processId,
+        string documentPath)
+    {
+        return WithDocumentDataAsync(
+            dispatcher,
+            processId,
+            documentPath,
+            (persist, control) =>
+            {
+                try
+                {
+                    uint reloadFlags = (uint)(
+                        _VSRELOADDOCDATA.RDD_IgnoreNextFileChange
+                        | _VSRELOADDOCDATA.RDD_RemoveUndoStack);
+                    Marshal.ThrowExceptionForHR(
+                        persist.ReloadDocData(reloadFlags));
+                    return true;
+                }
+                finally
+                {
+                    Marshal.ThrowExceptionForHR(
+                        control.IgnoreFileChanges(0));
+                }
+            });
+    }
+
+    private static Task<TResult> WithDocumentDataAsync<TResult>(
+        ComStaDispatcher dispatcher,
+        int processId,
+        string documentPath,
+        Func<
+            IVsPersistDocData,
+            IVsDocDataFileChangeControl,
+            TResult> action)
+    {
+        return dispatcher.InvokeAsync(
+            () =>
+            {
+                using RotScanResult scan =
+                    RunningObjectTableScanner.Scan(
+                        requiredProcessId: processId);
+                RunningXaeCandidate candidate =
+                    Assert.Single(
+                        scan.Candidates,
+                        item => item.Info.ProcessId == processId);
+                DTE2 dte = candidate.TakeDte();
+                IVsRunningDocumentTable? table = null;
+                IVsHierarchy? hierarchy = null;
+                IntPtr documentDataPointer = IntPtr.Zero;
+                IntPtr persistPointer = IntPtr.Zero;
+                IntPtr controlPointer = IntPtr.Zero;
+                IVsPersistDocData? persist = null;
+                IVsDocDataFileChangeControl? control = null;
+                try
+                {
+                    table = QueryRunningDocumentTable(dte);
+                    Marshal.ThrowExceptionForHR(
+                        table.FindAndLockDocument(
+                            (uint)_VSRDTFLAGS.RDT_NoLock,
+                            documentPath,
+                            out hierarchy,
+                            out _,
+                            out documentDataPointer,
+                            out _));
+                    Assert.NotEqual(
+                        IntPtr.Zero,
+                        documentDataPointer);
+                    Guid persistIid =
+                        typeof(IVsPersistDocData).GUID;
+                    Marshal.ThrowExceptionForHR(
+                        Marshal.QueryInterface(
+                            documentDataPointer,
+                            ref persistIid,
+                            out persistPointer));
+                    persist = (IVsPersistDocData)
+                        Marshal.GetTypedObjectForIUnknown(
+                            persistPointer,
+                            typeof(IVsPersistDocData));
+                    Guid controlIid =
+                        typeof(IVsDocDataFileChangeControl).GUID;
+                    Marshal.ThrowExceptionForHR(
+                        Marshal.QueryInterface(
+                            documentDataPointer,
+                            ref controlIid,
+                            out controlPointer));
+                    control = (IVsDocDataFileChangeControl)
+                        Marshal.GetTypedObjectForIUnknown(
+                            controlPointer,
+                            typeof(IVsDocDataFileChangeControl));
+                    return action(persist, control);
+                }
+                finally
+                {
+                    ComObject.Release(control);
+                    ComObject.Release(persist);
+                    if (controlPointer != IntPtr.Zero)
+                    {
+                        Marshal.Release(controlPointer);
+                    }
+
+                    if (persistPointer != IntPtr.Zero)
+                    {
+                        Marshal.Release(persistPointer);
+                    }
+
+                    if (documentDataPointer != IntPtr.Zero)
+                    {
+                        Marshal.Release(documentDataPointer);
+                    }
+
+                    ComObject.Release(hierarchy);
+                    ComObject.Release(table);
+                    ComObject.Release(dte);
+                }
+            },
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+    }
+
+    private static IVsRunningDocumentTable QueryRunningDocumentTable(
+        DTE2 dte)
+    {
+        IntPtr unknownPointer = IntPtr.Zero;
+        IntPtr providerPointer = IntPtr.Zero;
+        OleServiceProvider? serviceProvider = null;
+        Guid service = typeof(SVsRunningDocumentTable).GUID;
+        Guid iid = typeof(IVsRunningDocumentTable).GUID;
+        IntPtr servicePointer = IntPtr.Zero;
+        try
+        {
+            unknownPointer = Marshal.GetIUnknownForObject(dte);
+            Guid providerIid =
+                typeof(OleServiceProvider).GUID;
+            Marshal.ThrowExceptionForHR(
+                Marshal.QueryInterface(
+                    unknownPointer,
+                    ref providerIid,
+                    out providerPointer));
+            serviceProvider = (OleServiceProvider)
+                Marshal.GetTypedObjectForIUnknown(
+                    providerPointer,
+                    typeof(OleServiceProvider));
+            Marshal.ThrowExceptionForHR(
+                serviceProvider.QueryService(
+                    ref service,
+                    ref iid,
+                    out servicePointer));
+            Assert.NotEqual(IntPtr.Zero, servicePointer);
+            return (IVsRunningDocumentTable)
+                Marshal.GetTypedObjectForIUnknown(
+                    servicePointer,
+                    typeof(IVsRunningDocumentTable));
+        }
+        finally
+        {
+            ComObject.Release(serviceProvider);
+            if (servicePointer != IntPtr.Zero)
+            {
+                Marshal.Release(servicePointer);
+            }
+
+            if (providerPointer != IntPtr.Zero)
+            {
+                Marshal.Release(providerPointer);
+            }
+
+            if (unknownPointer != IntPtr.Zero)
+            {
+                Marshal.Release(unknownPointer);
+            }
+        }
+    }
+
+    private static Task<int> BuildSolutionAsync(
+        ComStaDispatcher dispatcher,
+        int processId)
+    {
+        return dispatcher.InvokeAsync(
+            () =>
+            {
+                using RotScanResult scan =
+                    RunningObjectTableScanner.Scan(
+                        requiredProcessId: processId);
+                RunningXaeCandidate candidate =
+                    Assert.Single(
+                        scan.Candidates,
+                        item => item.Info.ProcessId == processId);
+                DTE2 dte = candidate.TakeDte();
+                Solution? solution = null;
+                SolutionBuild? solutionBuild = null;
+                try
+                {
+                    solution = dte.Solution;
+                    solutionBuild = solution.SolutionBuild;
+                    solutionBuild.Build(
+                        WaitForBuildToFinish: true);
+                    return solutionBuild.LastBuildInfo;
+                }
+                finally
+                {
+                    ComObject.Release(solutionBuild);
+                    ComObject.Release(solution);
+                    ComObject.Release(dte);
+                }
+            },
+            TimeSpan.FromSeconds(60),
+            CancellationToken.None);
     }
 
     private static Task<bool> ReadDocumentSavedAsync(

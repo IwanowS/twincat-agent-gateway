@@ -19,6 +19,7 @@
   <ItemGroup>
     <PackageReference Include="EnvDTE" Version="17.14.40260" />
     <PackageReference Include="EnvDTE80" Version="17.14.40260" />
+    <PackageReference Include="Microsoft.VisualStudio.Interop" Version="17.14.40260" />
     <ProjectReference Include="..\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
     <ProjectReference Include="..\TwinCatGateway.Core\TwinCatGateway.Core.csproj" />
   </ItemGroup>
