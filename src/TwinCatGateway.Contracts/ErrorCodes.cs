@@ -27,6 +27,10 @@ public static class ErrorCodes
     public const string BuildFailed = "BUILD_FAILED";
     public const string BuildResultInconsistent = "BUILD_RESULT_INCONSISTENT";
     public const string ExternalEditConflict = "EXTERNAL_EDIT_CONFLICT";
+    public const string ExternalEditUnsupported =
+        "EXTERNAL_EDIT_UNSUPPORTED";
+    public const string ExternalEditSyncFailed =
+        "EXTERNAL_EDIT_SYNC_FAILED";
     public const string ActivationNotAllowed = "ACTIVATION_NOT_ALLOWED";
     public const string ConfigModeRequired = "CONFIG_MODE_REQUIRED";
     public const string ActivateConfigurationFailed = "ACTIVATE_CONFIGURATION_FAILED";

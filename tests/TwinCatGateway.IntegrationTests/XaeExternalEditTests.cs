@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using EnvDTE;
 using EnvDTE80;
 using Microsoft.VisualStudio.Shell.Interop;
+using TwinCatGateway.Core;
 using TwinCatGateway.Xae;
 using Xunit;
 using OleServiceProvider =
@@ -16,7 +17,7 @@ namespace TwinCatGateway.IntegrationTests;
 public sealed class XaeExternalEditTests
 {
     [XaeLaunchFact]
-    public async Task ClosedDocumentCanBeRefreshedWithoutLeavingEditorOpen()
+    public async Task FingerprintChangesAreSynchronizedBeforeBuild()
     {
         string sourceSolution = Path.GetFullPath(
             Environment.GetEnvironmentVariable(
@@ -50,20 +51,26 @@ public sealed class XaeExternalEditTests
                 source.Replace(
                     "bToggle := NOT bToggle;",
                     "bToggle := ;"));
-            await ReadDocumentSavedAsync(
-                dispatcher,
-                processId,
-                documentPath,
-                openIfMissing: true);
-            await ReloadDocumentAsync(
-                dispatcher,
-                processId,
-                documentPath);
+            ExternalChangeSynchronizationResult synchronization =
+                await session.SynchronizeExternalChangesAsync(
+                    changedPaths: null,
+                    TimeSpan.FromSeconds(15),
+                    CancellationToken.None);
             Assert.False(
                 await IsDocumentOpenAsync(
                     dispatcher,
                     processId,
                     documentPath));
+            ProjectFileChange change = Assert.Single(
+                synchronization.DetectedChanges);
+            Assert.Equal(
+                ProjectFileChangeKind.Modified,
+                change.Kind);
+            Assert.Equal(documentPath, change.Path);
+            Assert.Contains(
+                documentPath,
+                synchronization.SynchronizedDocuments,
+                StringComparer.OrdinalIgnoreCase);
 
             int buildErrors = await BuildSolutionAsync(
                 dispatcher,

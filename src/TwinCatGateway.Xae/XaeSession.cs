@@ -21,8 +21,11 @@ public sealed class XaeSession : IDisposable
     private static readonly TimeSpan PollCallLimit =
         TimeSpan.FromSeconds(3);
     private readonly ComStaDispatcher _dispatcher;
+    private readonly object _fingerprintSync = new();
     private readonly bool _ownsDispatcher;
     private DTE2? _dte;
+    private ProjectFileFingerprintSnapshot? _fingerprintBaseline;
+    private string? _fingerprintSolution;
     private ITcSysManager? _sysManager;
     private TwinCatSilentModeLease? _silentModeLease;
     private XaeSessionSnapshot _snapshot = new();
@@ -45,17 +48,28 @@ public sealed class XaeSession : IDisposable
             cancellationToken);
     }
 
-    public Task<XaeSessionSnapshot> AttachAsync(
+    public async Task<XaeSessionSnapshot> AttachAsync(
         string solutionPath,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         string normalizedSolution = NormalizeSolutionPath(solutionPath);
-        return _dispatcher.InvokeAsync(
-            () => AttachOnSta(normalizedSolution),
-            timeout,
+        DateTimeOffset deadlineUtc = CreateDeadline(timeout);
+        XaeSessionSnapshot snapshot =
+            await _dispatcher.InvokeAsync(
+                () => AttachOnSta(normalizedSolution),
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.attach"),
+                cancellationToken).ConfigureAwait(false);
+        InitializeFingerprintBaseline(
+            normalizedSolution,
             cancellationToken);
+        GetRemaining(
+            deadlineUtc,
+            "xae.workspace.fingerprint");
+        return snapshot;
     }
 
     public async Task<XaeSessionSnapshot> EnsureAttachedAsync(
@@ -121,11 +135,19 @@ public sealed class XaeSession : IDisposable
             },
             GetRemaining(deadlineUtc, "xae.openSolution"),
             cancellationToken).ConfigureAwait(false);
-        return await WaitForLaunchedSolutionAsync(
+        XaeSessionSnapshot snapshot =
+            await WaitForLaunchedSolutionAsync(
             normalizedSolution,
             started.ProcessId,
             deadlineUtc,
             cancellationToken).ConfigureAwait(false);
+        InitializeFingerprintBaseline(
+            normalizedSolution,
+            cancellationToken);
+        GetRemaining(
+            deadlineUtc,
+            "xae.workspace.fingerprint");
+        return snapshot;
     }
 
     public Task<XaeSessionSnapshot> GetSnapshotAsync(
@@ -163,19 +185,26 @@ public sealed class XaeSession : IDisposable
             cancellationToken);
     }
 
-    public Task DisconnectAsync(
+    public async Task DisconnectAsync(
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        return _dispatcher.InvokeAsync(
-            () =>
-            {
-                ReleaseSessionOnSta();
-                return true;
-            },
-            timeout,
-            cancellationToken);
+        try
+        {
+            await _dispatcher.InvokeAsync(
+                () =>
+                {
+                    ReleaseSessionOnSta();
+                    return true;
+                },
+                timeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            ClearFingerprintBaseline();
+        }
     }
 
     public Task<AgentWorkspaceOwnershipResult> AcquireAgentWorkspaceAsync(
@@ -187,6 +216,89 @@ public sealed class XaeSession : IDisposable
             AcquireAgentWorkspaceOnSta,
             timeout,
             cancellationToken);
+    }
+
+    public async Task<ExternalChangeSynchronizationResult>
+        SynchronizeExternalChangesAsync(
+            IEnumerable<string>? changedPaths,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        DateTimeOffset deadlineUtc = CreateDeadline(timeout);
+        FingerprintState state = GetFingerprintState();
+        ProjectFileFingerprintSnapshot current =
+            ProjectFileFingerprintScanner.Capture(
+                state.SolutionPath,
+                cancellationToken);
+        IReadOnlyList<ProjectFileChange> detected =
+            ProjectFileFingerprintScanner.Compare(
+                state.Baseline,
+                current);
+        ProjectFileChange? structuralChange =
+            detected.FirstOrDefault(change =>
+                change.Kind != ProjectFileChangeKind.Modified);
+        if (structuralChange is not null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ExternalEditUnsupported,
+                $"External source file {structuralChange.Kind.ToString().ToLowerInvariant()}: "
+                + $"'{structuralChange.Path}'. Adding and deleting project "
+                + "sources is not supported by the MVP synchronizer.",
+                stage: "xae.workspace.fingerprint");
+        }
+
+        HashSet<string> paths = new(
+            detected.Select(change => change.Path),
+            StringComparer.OrdinalIgnoreCase);
+        if (changedPaths is not null)
+        {
+            foreach (string path in changedPaths)
+            {
+                paths.Add(
+                    NormalizeChangedPath(
+                        state.SolutionPath,
+                        path));
+            }
+        }
+
+        XaeDocumentSynchronizationResult synchronized =
+            await _dispatcher.InvokeAsync(
+                () => SynchronizeExternalChangesOnSta(
+                    state.SolutionPath,
+                    paths),
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.workspace.synchronize"),
+                cancellationToken).ConfigureAwait(false);
+        ProjectFileFingerprintSnapshot verified =
+            ProjectFileFingerprintScanner.Capture(
+                state.SolutionPath,
+                cancellationToken);
+        IReadOnlyList<ProjectFileChange> concurrentChanges =
+            ProjectFileFingerprintScanner.Compare(
+                current,
+                verified);
+        if (concurrentChanges.Count != 0)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ExternalEditSyncFailed,
+                "Project source files changed while XAE synchronization "
+                + "was running. Retry the operation.",
+                retryable: true,
+                stage: "xae.workspace.verify");
+        }
+
+        GetRemaining(
+            deadlineUtc,
+            "xae.workspace.verify");
+        ReplaceFingerprintBaseline(
+            state.SolutionPath,
+            verified);
+        return new ExternalChangeSynchronizationResult(
+            detected,
+            synchronized.SynchronizedDocuments,
+            synchronized.DiscardedDocuments);
     }
 
     public ComDiagnostics GetComDiagnostics()
@@ -242,6 +354,7 @@ public sealed class XaeSession : IDisposable
         }
         finally
         {
+            ClearFingerprintBaseline();
             if (_ownsDispatcher)
             {
                 _dispatcher.Dispose();
@@ -810,6 +923,169 @@ public sealed class XaeSession : IDisposable
         }
     }
 
+    private XaeDocumentSynchronizationResult
+        SynchronizeExternalChangesOnSta(
+            string solutionPath,
+            IEnumerable<string> changedPaths)
+    {
+        DTE2 dte = _dte
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: "xae.workspace.synchronize");
+        string? attachedSolution =
+            _snapshot.SelectedInstance?.Solution;
+        if (!string.Equals(
+            attachedSolution,
+            solutionPath,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.SolutionMismatch,
+                "The attached XAE solution changed before "
+                + "external files were synchronized.",
+                retryable: true,
+                stage: "xae.workspace.synchronize");
+        }
+
+        using (CreateUserSilentModeLease())
+        {
+            XaeDocumentSynchronizationResult result =
+                ExternalChangeSynchronizer.Synchronize(
+                    dte,
+                    solutionPath,
+                    changedPaths);
+            _snapshot.AgentWorkspaceOwned = true;
+            _snapshot.ClosedDocumentCount = 0;
+            _snapshot.DiscardedDocumentCount =
+                result.DiscardedDocuments.Count;
+            return result;
+        }
+    }
+
+    private void InitializeFingerprintBaseline(
+        string solutionPath,
+        CancellationToken cancellationToken)
+    {
+        ProjectFileFingerprintSnapshot baseline =
+            ProjectFileFingerprintScanner.Capture(
+                solutionPath,
+                cancellationToken);
+        lock (_fingerprintSync)
+        {
+            _fingerprintSolution = solutionPath;
+            _fingerprintBaseline = baseline;
+        }
+    }
+
+    private FingerprintState GetFingerprintState()
+    {
+        lock (_fingerprintSync)
+        {
+            if (_fingerprintSolution is null
+                || _fingerprintBaseline is null)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.GatewayNotReady,
+                    "Agent workspace fingerprints are not initialized.",
+                    retryable: true,
+                    stage: "xae.workspace.fingerprint");
+            }
+
+            return new FingerprintState(
+                _fingerprintSolution,
+                _fingerprintBaseline);
+        }
+    }
+
+    private void ReplaceFingerprintBaseline(
+        string solutionPath,
+        ProjectFileFingerprintSnapshot baseline)
+    {
+        lock (_fingerprintSync)
+        {
+            if (!string.Equals(
+                _fingerprintSolution,
+                solutionPath,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.SolutionMismatch,
+                    "The tracked XAE solution changed while "
+                    + "external files were synchronized.",
+                    retryable: true,
+                    stage: "xae.workspace.verify");
+            }
+
+            _fingerprintBaseline = baseline;
+        }
+    }
+
+    private void ClearFingerprintBaseline()
+    {
+        lock (_fingerprintSync)
+        {
+            _fingerprintSolution = null;
+            _fingerprintBaseline = null;
+        }
+    }
+
+    private static string NormalizeChangedPath(
+        string solutionPath,
+        string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Changed project file path is required.",
+                stage: "xae.workspace.validate");
+        }
+
+        string root = Path.GetDirectoryName(solutionPath)
+            ?? throw new GatewayOperationException(
+                ErrorCodes.SolutionMismatch,
+                "The tracked solution path has no parent directory.",
+                stage: "xae.workspace.validate");
+        string fullPath = Path.GetFullPath(
+            Path.IsPathRooted(path)
+                ? path
+                : Path.Combine(root, path));
+        string rootPrefix = root.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        if (!fullPath.StartsWith(
+            rootPrefix,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Changed project file must be inside the selected "
+                + "solution directory.",
+                stage: "xae.workspace.validate");
+        }
+
+        if (!ProjectFileFingerprintScanner.IsSupportedPath(fullPath))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ExternalEditUnsupported,
+                $"External synchronization does not support '{fullPath}'.",
+                stage: "xae.workspace.validate");
+        }
+
+        if (!File.Exists(fullPath))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ExternalEditUnsupported,
+                $"Changed project file '{fullPath}' does not exist.",
+                stage: "xae.workspace.validate");
+        }
+
+        return fullPath;
+    }
+
     private void EnsurePendingLaunchedProcess(int processId)
     {
         if (_dte is null
@@ -1034,6 +1310,21 @@ public sealed class XaeSession : IDisposable
                 InspectionError = source.InspectionError,
                 InspectionHResult = source.InspectionHResult,
             };
+    }
+
+    private sealed class FingerprintState
+    {
+        public FingerprintState(
+            string solutionPath,
+            ProjectFileFingerprintSnapshot baseline)
+        {
+            SolutionPath = solutionPath;
+            Baseline = baseline;
+        }
+
+        public string SolutionPath { get; }
+
+        public ProjectFileFingerprintSnapshot Baseline { get; }
     }
 
     private sealed class StartedXaeProcess
