@@ -32,16 +32,9 @@ public sealed class DesktopGatewayHostTests
         using TemporaryDirectory temporary = new();
         string pipeName = "TwinCatGatewayTests-" + Guid.NewGuid().ToString("N");
         string configurationPath = Path.Combine(temporary.Path, "gateway.json");
-        string solutionPath = Path.GetFullPath(
-            Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory,
-                "..",
-                "..",
-                "..",
-                "..",
-                "fixtures",
-                "TC3_SimpleProject",
-                "TC3_SimpleProject.sln"));
+        string solutionPath = Path.Combine(
+            temporary.Path,
+            "missing.sln");
         File.WriteAllText(
             configurationPath,
             $$"""
@@ -54,6 +47,7 @@ public sealed class DesktopGatewayHostTests
                 {
                   "name": "fixture",
                   "solution": "{{EscapeJson(solutionPath)}}",
+                  "allowXaeLaunch": false,
                   "allowActivation": false
                 }
               ]
@@ -66,6 +60,10 @@ public sealed class DesktopGatewayHostTests
             });
         host.Start();
         NamedPipeGatewayClient client = new(pipeName);
+        await WaitForStateAsync(
+            host,
+            GatewayState.Disconnected,
+            TimeSpan.FromSeconds(10));
 
         GatewayResponse<GatewayStatusResult> response =
             await client.SendAsync<EmptyParameters, GatewayStatusResult>(
@@ -80,6 +78,90 @@ public sealed class DesktopGatewayHostTests
         Assert.Equal(GatewayState.Disconnected, response.Result?.Gateway.State);
         Assert.Equal("fixture", host.ActiveProfile?.Name);
         Assert.Null(host.StartupError);
+    }
+
+    [XaeFact]
+    public async Task DesktopHostPublishesConnectedXaeDiagnostics()
+    {
+        using TemporaryDirectory temporary = new();
+        string pipeName = "TwinCatGatewayTests-" + Guid.NewGuid().ToString("N");
+        string configurationPath = Path.Combine(
+            temporary.Path,
+            "gateway.json");
+        string solutionPath = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        File.WriteAllText(
+            configurationPath,
+            $$"""
+            {
+              "schemaVersion": 1,
+              "pipeName": "{{pipeName}}",
+              "defaultProfile": "fixture",
+              "logDirectory": "{{EscapeJson(temporary.Path)}}",
+              "profiles": [
+                {
+                  "name": "fixture",
+                  "solution": "{{EscapeJson(solutionPath)}}",
+                  "allowXaeLaunch": false,
+                  "allowActivation": false
+                }
+              ]
+            }
+            """);
+        using GatewayDesktopHost host = new(
+            new GatewayHostOptions
+            {
+                ConfigurationPath = configurationPath,
+            });
+        host.Start();
+        await WaitForStateAsync(
+            host,
+            GatewayState.Ready,
+            TimeSpan.FromSeconds(15));
+        NamedPipeGatewayClient client = new(pipeName);
+
+        GatewayResponse<GatewayDiagnosticsResult> response =
+            await client.SendAsync<EmptyParameters, GatewayDiagnosticsResult>(
+                GatewayMethods.GetDiagnostics,
+                new EmptyParameters(),
+                wait: true,
+                CancellationToken.None);
+
+        await host.StopAsync();
+
+        Assert.True(response.Ok);
+        Assert.True(response.Result?.Status.Xae.Connected);
+        Assert.True(response.Result?.Xae.SysManagerAvailable);
+        Assert.Contains(
+            response.Result!.DteInstances,
+            instance => instance.Selected
+                && string.Equals(
+                    instance.Solution,
+                    solutionPath,
+                    StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static async Task WaitForStateAsync(
+        GatewayDesktopHost host,
+        GatewayState expected,
+        TimeSpan timeout)
+    {
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.Add(timeout);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (host.ApplicationService.GetStatus().Gateway.State == expected)
+            {
+                return;
+            }
+
+            await Task.Delay(100);
+        }
+
+        GatewayStatusResult status =
+            host.ApplicationService.GetStatus();
+        throw new TimeoutException(
+            $"Gateway did not reach {expected}; current state is {status.Gateway.State}.");
     }
 
     private static string EscapeJson(string value)

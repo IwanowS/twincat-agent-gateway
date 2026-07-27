@@ -18,7 +18,9 @@ public sealed class GatewayDesktopHost : IDisposable
     private readonly OperationQueue _queue;
     private readonly NamedPipeGatewayServer _server;
     private readonly GatewayStatusSnapshotStore _status;
+    private readonly XaeSessionCoordinator? _xaeCoordinator;
     private Task? _serverTask;
+    private Task? _xaeTask;
     private int _started;
     private int _disposed;
 
@@ -46,12 +48,23 @@ public sealed class GatewayDesktopHost : IDisposable
         _queue = new OperationQueue(
             operations,
             exceptionSink: _logger);
+        _xaeCoordinator = ActiveProfile is null
+            ? null
+            : new XaeSessionCoordinator(
+                ActiveProfile,
+                _status,
+                _logger);
+        Func<GatewayDiagnosticsResult>? diagnosticsProvider =
+            _xaeCoordinator is null
+                ? null
+                : _xaeCoordinator.CreateDiagnostics;
         ApplicationService = new GatewayApplicationService(
             version,
             _status,
             operations,
             _queue,
-            logs);
+            logs,
+            diagnosticsProvider);
         GatewayRequestDispatcher dispatcher = new(ApplicationService);
         GatewayProtocolHandler protocol = new(
             dispatcher.DispatchAsync,
@@ -107,6 +120,10 @@ public sealed class GatewayDesktopHost : IDisposable
         }
 
         _serverTask = ObserveServerAsync(_server.RunAsync(_shutdown.Token));
+        if (_xaeCoordinator is not null)
+        {
+            _xaeTask = _xaeCoordinator.RunAsync(_shutdown.Token);
+        }
     }
 
     public async Task StopAsync()
@@ -116,6 +133,11 @@ public sealed class GatewayDesktopHost : IDisposable
             if (_serverTask is not null)
             {
                 await _serverTask.ConfigureAwait(false);
+            }
+
+            if (_xaeTask is not null)
+            {
+                await _xaeTask.ConfigureAwait(false);
             }
 
             return;
@@ -132,7 +154,13 @@ public sealed class GatewayDesktopHost : IDisposable
             await _serverTask.ConfigureAwait(false);
         }
 
+        if (_xaeTask is not null)
+        {
+            await _xaeTask.ConfigureAwait(false);
+        }
+
         await _queue.StopAsync().ConfigureAwait(false);
+        _xaeCoordinator?.Dispose();
         _server.Dispose();
         _shutdown.Dispose();
         _logger.Write(

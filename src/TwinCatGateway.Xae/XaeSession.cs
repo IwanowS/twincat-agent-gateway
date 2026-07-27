@@ -505,9 +505,23 @@ public sealed class XaeSession : IDisposable
         DteInstanceInfo[] instances = scan.Candidates
             .Select(candidate => CloneInfo(candidate.Info)!)
             .ToArray();
-        int selectedIndex = XaeInstanceSelector.Select(
-            instances,
-            normalizedSolution);
+        int selectedIndex;
+        try
+        {
+            selectedIndex = XaeInstanceSelector.Select(
+                instances,
+                normalizedSolution);
+        }
+        catch
+        {
+            ReleaseSessionOnSta();
+            _snapshot = new XaeSessionSnapshot
+            {
+                DiscoveredInstances = instances,
+            };
+            throw;
+        }
+
         RunningXaeCandidate selected = scan.Candidates[selectedIndex];
         object selectedDte = selected.TakeDte();
         object selectedSysManager;
