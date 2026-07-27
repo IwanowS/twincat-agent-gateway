@@ -647,28 +647,67 @@ Guard и classifier не перезаписывают файл и не скры�
 
 ### 14.2 Классификатор
 
-1. Найти изменённые `.tsproj` после XAE operation.
-2. Использовать точный pre-operation byte snapshot как baseline.
-3. Безопасно распарсить оба XML с запрещёнными DTD и external resolver.
-4. Построить semantic representation.
-5. Только для известных 4024.17-контейнеров `Plc`, `Tasks`, `Contexts` и
-   `TaskPouOids` сравнить дочерние блоки как multiset по стабильному identity:
-   - element type;
-   - object Id/GUID;
-   - name/path;
-   - canonicalized content.
-6. Проверить, что:
-   - набор блоков одинаков;
-   - содержимое каждого блока одинаково;
-   - изменён только порядок;
-   - вне разрешённых контейнеров нет изменений.
-7. Вернуть `reorder-only` и количество перемещённых блоков.
+MVP хранит проверенный schema bundle для TwinCAT XAE `3.1.4024.17` в
+versioned repository path. Root schema `TcSmProject.xsd` поставляется вместе
+со всем dependency closure:
 
-Attribute order и незначащий formatting дают `whitespace-only`. Если identity
-неоднозначен, XML некорректен или change находится вне разрешённого
-контейнера, результат — `unknown`, а не `reorder-only`. Compact response
-содержит только counts и рекомендацию, а локальный `ProjectNoise` resource —
-classification reason без полного XML diff.
+- `TcSmItem.xsd`;
+- `TcUserManagement.xsd`;
+- `TcModuleBase.xsd`.
+
+Manifest набора содержит XAE version, поддерживаемые `TcSmVersion` /
+`TcVersion`, исходный installation path и SHA-256 каждого XSD. Сама
+`TcSmProject.xsd` не задаёт patch XAE: `TcVersion` имеет тип `xs:string`, а
+`TcSmVersion` ограничен только форматом. Поэтому выбор schema set является
+нашей versioned compatibility policy, а не выводится из XSD автоматически.
+Resolver разрешает только файлы внутри выбранного bundle; DTD, сеть и
+произвольные external paths запрещены. Если подходящего набора нет,
+classification — `unknown`.
+
+Алгоритм:
+
+1. Найти изменённые `.tsproj` после завершённого Build/Rebuild и использовать
+   точный pre-operation byte snapshot как baseline.
+2. Выбрать один закреплённый schema set по версии attached XAE и root
+   `TcSmVersion` / `TcVersion`.
+3. Провалидировать baseline и current одной и той же официальной XSD.
+4. Построить canonical XML без незначащего formatting noise: attribute order
+   не учитывается, но имена, namespaces, attributes, значащий text/CDATA,
+   comments, processing instructions и состав элементов сохраняются.
+5. Рекурсивно доказать равенство полного XML tree с точностью только до
+   перестановок sibling-subtrees внутри того же родителя:
+   - hash вычисляется от полного canonical subtree;
+   - для каждого соответствующего parent совпадает multiset child hashes;
+   - перенос блока между разными parents запрещён;
+   - отличается только позиция неизменённых children.
+6. Поскольку оба полных документа XSD-valid в своих итоговых порядках, а
+   завершившаяся компиляция является источником истины для XAE project model,
+   вернуть `expected-reorder-only` и количество наблюдаемых перемещений.
+
+GUID/Id/Name/Path не участвуют в доказательстве равенства и могут
+использоваться только как human-readable labels и для подсчёта перемещений.
+Повторяющиеся одинаковые subtree hashes безопасно сравниваются как multiset.
+
+Если ordered canonical XML одинаков, результат — `whitespace-only`. Если оба
+документа XSD-valid, но изменились attribute, text, состав или parent блока,
+результат — `content-changed`. XSD-invalid XML, отсутствие совместимого
+schema set или невозможность доказать только sibling permutation дают
+`unknown`, а не `expected-reorder-only`.
+
+Для этой classification не требуется отдельный whitelist контейнеров,
+которым gateway приписывает order-insensitive semantics. Доказательство
+ограничено XSD-valid full-tree sibling permutation, а XAE/compiler после
+завершённой компиляции является авторитетом итогового порядка. PLC compile
+errors не отменяют это основание, если build lifecycle завершился штатно;
+infrastructure failure или незавершённая операция не дают classification.
+Classifier ничего не перезаписывает и не откатывает.
+
+Clean не выполняет компиляцию. Для него MVP автоматически принимает только
+exact-same-content `.tsproj` rewrite; content hash change после Clean
+возвращается как `unknown`.
+
+Compact response содержит только counts и рекомендацию, а локальный
+`ProjectNoise` resource — classification reason без полного XML diff.
 
 ### 14.3 Ответ агенту
 
@@ -683,6 +722,25 @@ classification reason без полного XML diff.
 ```
 
 Skill должен инструктировать агента не читать полный `.tsproj`, пока classifier не сообщил содержательное изменение.
+
+### 14.4 Валидация PLC object files
+
+Тот же versioned schema bundle содержит `TcPlcObject.xsd`. В MVP gateway
+валидирует изменённые `.TcPOU`, `.TcGVL` и `.TcDUT` до typed reload/build.
+Схема также описывает Interface, Task, Visualization и другие PLC objects,
+но их поддержка добавляется только вместе с соответствующим file-edit
+contract.
+
+PLC XSD используется как fail-fast structural validation, а не как
+noise-classifier. Любое изменение declaration, implementation, attributes
+или другого XML content остаётся содержательным. Gateway не форматирует и не
+переписывает PLC object.
+
+Другие XSD из `C:\TwinCAT\3.1\Config\Modules` не копируются автоматически.
+Новый root schema и его полный dependency closure добавляются в bundle,
+только когда соответствующий формат входит в поддерживаемый gateway
+contract. Например, `TcModuleClass.xsd` не нужен MVP, пока generated TMC не
+становится входом операции.
 
 ## 15. TcUnit с read-only ADS completion
 

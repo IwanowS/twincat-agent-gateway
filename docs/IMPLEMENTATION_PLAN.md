@@ -296,6 +296,9 @@ docs/
 - operation contract `build`;
 - необязательный `changedPaths` hint плюс авторитетный fingerprint diff;
 - agent workspace ownership с закрытием editors без сохранения;
+- versioned XSD bundle для XAE 3.1.4024.17;
+- preflight изменённых `.TcPOU`, `.TcGVL`, `.TcDUT` по
+  `TcPlcObject.xsd`;
 - typed reload изменённых PLC sources перед операцией;
 - Build/Rebuild/Clean implementation;
 - `Build.RebuildSolution` через `DTE.ExecuteCommand` с ожиданием
@@ -324,6 +327,7 @@ docs/
   сборку без modal dialog;
 - несохранённая XAE версия PLC source отбрасывается и не перезаписывает
   agent edit;
+- XSD-invalid PLC object отклоняется до typed reload/build;
 - same-content `.tsproj` rewrite самой XAE не вызывает modal dialog;
 - содержательное `.tsproj` изменение не скрывается watcher guard и
   возвращается как `unknown`;
@@ -341,9 +345,14 @@ docs/
 ### Задачи
 
 - pre/post operation changed-file detection;
-- безопасный XML parser;
+- XSD reorder classification после завершённых Build/Rebuild, но не Clean;
+- versioned schema manifest и закрытый XSD resolver;
+- `TcSmProject.xsd` вместе с полным dependency closure;
+- валидация baseline/current одной и той же схемой;
 - canonical node representation;
-- identity rules для известных `.tsproj` blocks;
+- hash полного canonical subtree;
+- recursive same-parent sibling multiset comparison;
+- identity fields только для отчёта;
 - reorder-only classifier;
 - mixed-change detection;
 - compact summary;
@@ -357,15 +366,22 @@ docs/
 - whitespace-only;
 - содержательное изменение внутри перемещённого блока;
 - добавленный/удалённый блок;
-- duplicate identity;
-- invalid XML;
-- изменение вне разрешённого контейнера.
+- повторяющиеся одинаковые subtree hashes;
+- перенос неизменённого блока между разными parents;
+- изменение attribute/text;
+- invalid XML и XSD-invalid XML;
+- отсутствующий или несовместимый schema set.
 
 ### Acceptance
 
 - ни один файл не изменяется classifier-ом;
+- baseline и current валидируются одним закреплённым schema set;
+- только same-parent permutation полных неизменённых subtrees даёт
+  `expected-reorder-only`;
+- завершённая компиляция считается источником истины итогового порядка;
+- после Clean content hash change остаётся `unknown`;
 - содержательное изменение не классифицируется как reorder-only;
-- ambiguous case возвращает `unknown`;
+- XSD-invalid и недоказуемый case возвращают `unknown`;
 - compact build result не содержит полный `.tsproj` diff;
 - агенту передаётся явная рекомендация не читать файл полностью.
 
