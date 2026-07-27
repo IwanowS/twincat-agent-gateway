@@ -110,6 +110,38 @@ public sealed class ComStaDispatcherTests
     }
 
     [Fact]
+    public async Task CancellationAfterStartReturnsAndDispatcherRecovers()
+    {
+        using ComStaDispatcher dispatcher = new();
+        ManualResetEventSlim started = new();
+        ManualResetEventSlim release = new();
+        using CancellationTokenSource cancellation = new();
+
+        Task<int> call = dispatcher.InvokeAsync(
+            () =>
+            {
+                started.Set();
+                release.Wait();
+                return 1;
+            },
+            TimeSpan.FromSeconds(5),
+            cancellation.Token);
+        Assert.True(started.Wait(TimeSpan.FromSeconds(2)));
+
+        cancellation.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await call);
+        release.Set();
+
+        int result = await dispatcher.InvokeAsync(
+            () => 42,
+            TimeSpan.FromSeconds(2),
+            CancellationToken.None);
+
+        Assert.Equal(42, result);
+    }
+
+    [Fact]
     public async Task FailedCallDoesNotTerminateDispatcherAndRecordsHResult()
     {
         using ComStaDispatcher dispatcher = new();

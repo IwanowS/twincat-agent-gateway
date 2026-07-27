@@ -199,7 +199,7 @@ public sealed class ComStaDispatcher : IDisposable
     {
         while (_workItems.TryDequeue(out IWorkItem? item))
         {
-            item.Execute(filter);
+            item.Execute(filter, _nativeThreadId);
         }
     }
 
@@ -237,9 +237,22 @@ public sealed class ComStaDispatcher : IDisposable
     [DllImport("user32.dll")]
     private static extern IntPtr DispatchMessage(ref NativeMessage message);
 
+    [DllImport("ole32.dll")]
+    private static extern int CoEnableCallCancellation(IntPtr reserved);
+
+    [DllImport("ole32.dll")]
+    private static extern int CoDisableCallCancellation(IntPtr reserved);
+
+    [DllImport("ole32.dll")]
+    private static extern int CoCancelCall(
+        uint threadId,
+        uint timeoutSeconds);
+
     private interface IWorkItem
     {
-        void Execute(OleMessageFilter filter);
+        void Execute(
+            OleMessageFilter filter,
+            uint nativeThreadId);
 
         void Reject(Exception exception);
     }
@@ -270,7 +283,9 @@ public sealed class ComStaDispatcher : IDisposable
 
         public bool HasStarted => Volatile.Read(ref _started) != 0;
 
-        public void Execute(OleMessageFilter filter)
+        public void Execute(
+            OleMessageFilter filter,
+            uint nativeThreadId)
         {
             if (_cancellationToken.IsCancellationRequested)
             {
@@ -294,6 +309,10 @@ public sealed class ComStaDispatcher : IDisposable
             Exception? failure = null;
             try
             {
+                using (ComCallCancellationScope.Enable(
+                    nativeThreadId,
+                    _deadlineUtc,
+                    _cancellationToken))
                 using (filter.BeginCall(_deadlineUtc))
                 {
                     T result = _action();
@@ -315,6 +334,95 @@ public sealed class ComStaDispatcher : IDisposable
         public void Reject(Exception exception)
         {
             _completion.TrySetException(exception);
+        }
+    }
+
+    private sealed class ComCallCancellationScope : IDisposable
+    {
+        private readonly object _gate = new();
+        private readonly uint _nativeThreadId;
+        private readonly Timer _deadlineTimer;
+        private readonly CancellationTokenRegistration _registration;
+        private bool _disposed;
+
+        private ComCallCancellationScope(
+            uint nativeThreadId,
+            DateTimeOffset deadlineUtc,
+            CancellationToken cancellationToken)
+        {
+            _nativeThreadId = nativeThreadId;
+            int hResult = CoEnableCallCancellation(IntPtr.Zero);
+            Marshal.ThrowExceptionForHR(hResult);
+
+            TimeSpan dueTime = deadlineUtc - DateTimeOffset.UtcNow;
+            if (dueTime < TimeSpan.Zero)
+            {
+                dueTime = TimeSpan.Zero;
+            }
+
+            _deadlineTimer = new Timer(
+                _ => RequestCancellation(),
+                state: null,
+                dueTime,
+                Timeout.InfiniteTimeSpan);
+            _registration = cancellationToken.Register(
+                RequestCancellation,
+                useSynchronizationContext: false);
+        }
+
+        public static ComCallCancellationScope Enable(
+            uint nativeThreadId,
+            DateTimeOffset deadlineUtc,
+            CancellationToken cancellationToken)
+        {
+            return new ComCallCancellationScope(
+                nativeThreadId,
+                deadlineUtc,
+                cancellationToken);
+        }
+
+        public void Dispose()
+        {
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+            }
+
+            _registration.Dispose();
+            _deadlineTimer.Dispose();
+            int hResult = CoDisableCallCancellation(IntPtr.Zero);
+            if (hResult < 0)
+            {
+                Trace.TraceError(
+                    "Could not disable COM call cancellation. HRESULT: 0x{0:X8}.",
+                    hResult);
+            }
+        }
+
+        private void RequestCancellation()
+        {
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                int hResult = CoCancelCall(
+                    _nativeThreadId,
+                    timeoutSeconds: 0);
+                if (hResult < 0)
+                {
+                    Trace.TraceWarning(
+                        "Could not cancel the pending XAE COM call. HRESULT: 0x{0:X8}.",
+                        hResult);
+                }
+            }
         }
     }
 
