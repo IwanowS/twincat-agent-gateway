@@ -4,14 +4,29 @@
     <PlatformTarget>x86</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
     <Description>TwinCAT XAE COM boundary, hosted only by the desktop gateway.</Description>
+    <TwinCatXaeBaseVersion Condition="'$(TwinCatXaeBaseVersion)' == ''">3.1</TwinCatXaeBaseVersion>
+    <TwinCatXaeBaseInteropPath>$(MSBuildThisFileDirectory)..\..\lib\interop\twincat-xae-base\$(TwinCatXaeBaseVersion)\Interop.TCatSysManagerLib.dll</TwinCatXaeBaseInteropPath>
   </PropertyGroup>
 
   <ItemGroup>
+    <Reference Include="Interop.TCatSysManagerLib">
+      <HintPath>$(TwinCatXaeBaseInteropPath)</HintPath>
+      <Private>true</Private>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
     <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="EnvDTE" Version="17.14.40260" />
+    <PackageReference Include="EnvDTE80" Version="17.14.40260" />
     <ProjectReference Include="..\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
     <ProjectReference Include="..\TwinCatGateway.Core\TwinCatGateway.Core.csproj" />
   </ItemGroup>
+
+  <Target Name="ValidateTwinCatXaeBaseInterop" BeforeTargets="ResolveReferences">
+    <Error
+      Condition="!Exists('$(TwinCatXaeBaseInteropPath)')"
+      Text="TwinCAT XAE Base interop version '$(TwinCatXaeBaseVersion)' is unavailable. Expected '$(TwinCatXaeBaseInteropPath)'." />
+  </Target>
 </Project>
