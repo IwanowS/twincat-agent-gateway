@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using EnvDTE;
@@ -23,6 +24,7 @@ public sealed class XaeSession : IDisposable
     private readonly bool _ownsDispatcher;
     private DTE2? _dte;
     private ITcSysManager? _sysManager;
+    private TwinCatSilentModeLease? _silentModeLease;
     private XaeSessionSnapshot _snapshot = new();
     private int _disposed;
 
@@ -146,6 +148,17 @@ public sealed class XaeSession : IDisposable
         string normalizedSolution = NormalizeSolutionPath(solutionPath);
         return _dispatcher.InvokeAsync(
             () => VerifyAttachedOnSta(normalizedSolution),
+            timeout,
+            cancellationToken);
+    }
+
+    internal Task<bool> ReadSilentModeAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _dispatcher.InvokeAsync(
+            ReadSilentModeOnSta,
             timeout,
             cancellationToken);
     }
@@ -387,8 +400,31 @@ public sealed class XaeSession : IDisposable
         }
 
         DTE2 dte = candidate.TakeDte();
-        ReleaseSessionOnSta();
-        _dte = dte;
+        TwinCatSilentModeLease? silentModeLease = null;
+        try
+        {
+            ReleaseSessionOnSta();
+            silentModeLease = TwinCatSilentModeLease.Enable(
+                dte,
+                restoreOnDispose: true);
+            _dte = dte;
+            _silentModeLease = silentModeLease;
+            silentModeLease = null;
+        }
+        catch
+        {
+            try
+            {
+                silentModeLease?.Dispose();
+            }
+            finally
+            {
+                ComObject.Release(dte);
+            }
+
+            throw;
+        }
+
         DteInstanceInfo info = CloneInfo(candidate.Info)!;
         info.Selected = true;
         info.SelectionReason =
@@ -525,20 +561,36 @@ public sealed class XaeSession : IDisposable
 
         RunningXaeCandidate selected = scan.Candidates[selectedIndex];
         DTE2 selectedDte = selected.TakeDte();
-        ITcSysManager selectedSysManager;
+        ITcSysManager? selectedSysManager = null;
         try
         {
-            selectedSysManager = AcquireSysManager(
+            using (TwinCatSilentModeLease.Enable(
                 selectedDte,
-                normalizedSolution);
+                restoreOnDispose: true))
+            {
+                selectedSysManager = AcquireSysManager(
+                    selectedDte,
+                    normalizedSolution);
+            }
         }
         catch
         {
+            ComObject.Release(selectedSysManager);
             ComObject.Release(selectedDte);
             throw;
         }
 
-        ReleaseSessionOnSta();
+        try
+        {
+            ReleaseSessionOnSta();
+        }
+        catch
+        {
+            ComObject.Release(selectedSysManager);
+            ComObject.Release(selectedDte);
+            throw;
+        }
+
         _dte = selectedDte;
         _sysManager = selectedSysManager;
         instances[selectedIndex].Selected = true;
@@ -567,9 +619,13 @@ public sealed class XaeSession : IDisposable
                 stage: "xae.health");
         }
 
-        DteInstanceInfo info = RunningObjectTableScanner.InspectDte(
-            _snapshot.SelectedInstance?.Moniker ?? string.Empty,
-            _dte);
+        DteInstanceInfo info;
+        using (CreateUserSilentModeLease())
+        {
+            info = RunningObjectTableScanner.InspectDte(
+                _snapshot.SelectedInstance?.Moniker ?? string.Empty,
+                _dte);
+        }
         if (!string.Equals(
             info.Solution,
             normalizedSolution,
@@ -718,7 +774,23 @@ public sealed class XaeSession : IDisposable
                 solution.Close(false);
             }
 
+            Exception? silentModeException = null;
+            try
+            {
+                ReleaseSilentModeLeaseOnSta();
+            }
+            catch (Exception exception)
+            {
+                silentModeException = exception;
+            }
+
             automation.Quit();
+            if (silentModeException is not null)
+            {
+                ExceptionDispatchInfo.Capture(
+                    silentModeException).Throw();
+            }
+
             return true;
         }
         finally
@@ -730,11 +802,60 @@ public sealed class XaeSession : IDisposable
 
     private void ReleaseSessionOnSta()
     {
-        ComObject.Release(_sysManager);
-        ComObject.Release(_dte);
-        _sysManager = null;
-        _dte = null;
-        _snapshot = new XaeSessionSnapshot();
+        Exception? silentModeException = null;
+        try
+        {
+            ReleaseSilentModeLeaseOnSta();
+        }
+        catch (Exception exception)
+        {
+            silentModeException = exception;
+        }
+        finally
+        {
+            ComObject.Release(_sysManager);
+            ComObject.Release(_dte);
+            _sysManager = null;
+            _dte = null;
+            _snapshot = new XaeSessionSnapshot();
+        }
+
+        if (silentModeException is not null)
+        {
+            ExceptionDispatchInfo.Capture(silentModeException).Throw();
+        }
+    }
+
+    private TwinCatSilentModeLease? CreateUserSilentModeLease()
+    {
+        return _snapshot.LaunchedByGateway
+            ? null
+            : TwinCatSilentModeLease.Enable(
+                _dte
+                    ?? throw new GatewayOperationException(
+                        ErrorCodes.XaeNotFound,
+                        "No XAE session is currently attached.",
+                        retryable: true,
+                        stage: "xae.silentMode"),
+                restoreOnDispose: true);
+    }
+
+    private bool ReadSilentModeOnSta()
+    {
+        return TwinCatSilentModeLease.Read(
+            _dte
+                ?? throw new GatewayOperationException(
+                    ErrorCodes.XaeNotFound,
+                    "No XAE session is currently attached.",
+                    retryable: true,
+                    stage: "xae.silentMode"));
+    }
+
+    private void ReleaseSilentModeLeaseOnSta()
+    {
+        TwinCatSilentModeLease? lease = _silentModeLease;
+        _silentModeLease = null;
+        lease?.Dispose();
     }
 
     private void ThrowIfDisposed()

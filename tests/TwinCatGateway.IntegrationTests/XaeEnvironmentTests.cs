@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Xae;
@@ -122,6 +123,32 @@ public sealed class XaeEnvironmentTests
             ignoreCase: true);
     }
 
+    [XaeFact]
+    public async Task AttachedSessionRestoresUserSilentMode()
+    {
+        string solution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        using XaeSession session = new();
+        await session.AttachAsync(
+            solution,
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+        bool before = await session.ReadSilentModeAsync(
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+
+        await session.VerifyAttachedAsync(
+            solution,
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+
+        bool after = await session.ReadSilentModeAsync(
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+        Assert.Equal(before, after);
+    }
+
     [XaeLaunchFact]
     public async Task GatewayCanLaunchAndOwnNewXae()
     {
@@ -140,6 +167,12 @@ public sealed class XaeEnvironmentTests
 
             Assert.True(snapshot.Connected);
             Assert.True(snapshot.LaunchedByGateway);
+            Assert.True(await session.ReadSilentModeAsync(
+                TimeSpan.FromSeconds(10),
+                CancellationToken.None));
+            Assert.Empty(XaeWindowProbe.FindModalDialogs(
+                Assert.IsType<int>(
+                    snapshot.SelectedInstance?.ProcessId)));
             Assert.Equal(
                 solution,
                 snapshot.SelectedInstance?.Solution,
@@ -153,4 +186,67 @@ public sealed class XaeEnvironmentTests
             session.Dispose();
         }
     }
+}
+
+internal static class XaeWindowProbe
+{
+    private const uint GetWindowOwner = 4;
+
+    public static string[] FindModalDialogs(int processId)
+    {
+        System.Collections.Generic.List<string> dialogs = new();
+        EnumWindows(
+            (window, parameter) =>
+            {
+                uint windowThreadId = GetWindowThreadProcessId(
+                    window,
+                    out uint windowProcessId);
+                if (windowThreadId == 0
+                    || windowProcessId != processId
+                    || !IsWindowVisible(window))
+                {
+                    return true;
+                }
+
+                bool disabledTopLevelWindow =
+                    GetWindow(window, GetWindowOwner) == IntPtr.Zero
+                    && !IsWindowEnabled(window);
+                if (disabledTopLevelWindow)
+                {
+                    dialogs.Add(
+                        $"0x{window.ToInt64():X}");
+                }
+
+                return true;
+            },
+            IntPtr.Zero);
+        return dialogs.ToArray();
+    }
+
+    private delegate bool EnumWindowsCallback(
+        IntPtr window,
+        IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern bool EnumWindows(
+        EnumWindowsCallback callback,
+        IntPtr parameter);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindow(
+        IntPtr window,
+        uint command);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(
+        IntPtr window,
+        out uint processId);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowEnabled(IntPtr window);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr window);
 }
