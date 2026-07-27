@@ -54,6 +54,7 @@ Desktop.ini
 *.compileinfo
 *.asm
 *.core
+!src/TwinCatGateway.Core/
 LineIDs.dbg
 LineIDs.dbg.bak
 
