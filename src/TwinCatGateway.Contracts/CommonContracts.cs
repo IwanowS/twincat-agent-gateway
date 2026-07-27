@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 
 namespace TwinCatGateway.Contracts;
@@ -30,17 +29,6 @@ public sealed class TargetIdentity
     public string? Name { get; set; }
 
     public string? AmsNetId { get; set; }
-}
-
-public sealed class OperationTimelineEntry
-{
-    public DateTimeOffset TimestampUtc { get; set; }
-
-    public string Stage { get; set; } = string.Empty;
-
-    public DiagnosticSeverity Severity { get; set; }
-
-    public string Message { get; set; } = string.Empty;
 }
 
 public sealed class ComponentHealth

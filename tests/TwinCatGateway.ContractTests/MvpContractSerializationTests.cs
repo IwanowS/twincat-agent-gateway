@@ -145,6 +145,51 @@ public sealed class MvpContractSerializationTests
     }
 
     [Fact]
+    public void ActivationResultUsesEventsAndLogInsteadOfEmbeddedTimeline()
+    {
+        ActivationResult activation = new()
+        {
+            Ok = true,
+            OperationId = "operation-activate",
+            DurationMs = 4321,
+            Profile = "bench-remote",
+            Solution = @"C:\Projects\Machine\Machine.sln",
+            Target = new TargetIdentity
+            {
+                Name = "WIN-T077ADA",
+                AmsNetId = "192.168.3.31.1.1",
+            },
+            RecoveryAttempted = true,
+            Resources =
+            {
+                new ResourceReference
+                {
+                    Uri =
+                        "twincat-log://operation-activate/activation",
+                    OperationId = "operation-activate",
+                    Kind = ResourceKind.ActivationLog,
+                },
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            activation,
+            ContractJson.SerializerOptions);
+        ActivationResult? result =
+            JsonSerializer.Deserialize<ActivationResult>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.True(result.Ok);
+        Assert.True(result.RecoveryAttempted);
+        Assert.Equal(
+            ResourceKind.ActivationLog,
+            Assert.Single(result.Resources).Kind);
+        Assert.DoesNotContain("\"timeline\"", json);
+    }
+
+    [Fact]
     public void DteInspectionFailureRoundTripsWithoutAStackTrace()
     {
         DteInstanceInfo instance = new()

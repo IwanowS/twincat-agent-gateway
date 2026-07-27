@@ -29,8 +29,6 @@ public sealed class ActivationResult
 
     public string? TestOperationId { get; set; }
 
-    public List<OperationTimelineEntry> Timeline { get; set; } = new();
-
     public List<ResourceReference> Resources { get; set; } = new();
 }
 

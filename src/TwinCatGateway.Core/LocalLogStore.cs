@@ -21,7 +21,7 @@ public sealed class LocalLogStore
                     new("twincat-log", "xae", "xae.log", "text/plain"),
                 [ResourceKind.ErrorList] =
                     new("twincat-log", "error-list", "error-list.json", "application/json"),
-                [ResourceKind.ActivationTimeline] =
+                [ResourceKind.ActivationLog] =
                     new("twincat-log", "activation", "activation.json", "application/json"),
                 [ResourceKind.TestReport] =
                     new("twincat-test", "xunit", "xunit.xml", "application/xml"),

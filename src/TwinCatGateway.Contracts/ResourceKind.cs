@@ -5,7 +5,7 @@ public enum ResourceKind
     BuildLog,
     XaeLog,
     ErrorList,
-    ActivationTimeline,
+    ActivationLog,
     TestReport,
     ProjectNoise,
 }
