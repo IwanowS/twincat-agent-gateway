@@ -38,6 +38,42 @@ dotnet test tests/TwinCatGateway.ContractTests/TwinCatGateway.ContractTests.cspr
 
 Local integration tests may inspect files and compile test assemblies, but must not activate a TwinCAT configuration, restart TwinCAT, change runtime mode, log in to a PLC, write ADS values, or select a substitute target.
 
+### User-session ROT boundary
+
+Real-XAE COM checks must run under the same interactive Windows account,
+session, and integrity level as the XAE process. The DTE registration lives in
+that user's Running Object Table (ROT). A sandboxed agent account can still see
+the XAE PID in the process list while receiving no DTE monikers; it can also
+observe `MainWindowHandle = 0` even though the XAE window is visible to the
+user.
+
+Treat these combined symptoms as an execution-context mismatch first, not as
+evidence that XAE or the solution is closed:
+
+- the expected `TcXaeShell` or `devenv` PID is running;
+- ROT discovery returns no XAE candidates;
+- a gateway-launched process exits or times out waiting for ROT registration.
+
+For Codex-hosted checks, run the real-XAE test command outside the agent
+sandbox so it inherits the interactive user's COM context. Do not ask the user
+to close, reopen, or terminate XAE until a same-user ROT discovery has also
+failed.
+
+Build with the pinned SDK as usual, then run the already-built .NET Framework
+integration assembly through VSTest's x86 platform:
+
+```powershell
+$env:TWINCAT_GATEWAY_XAE_SOLUTION = 'C:\absolute\path\to\project.sln'
+dotnet vstest `
+  'tests\TwinCatGateway.IntegrationTests\bin\Debug\net48\TwinCatGateway.IntegrationTests.dll' `
+  '/Platform:x86' `
+  '/TestCaseFilter:FullyQualifiedName~XaeEnvironmentTests'
+```
+
+Set `TWINCAT_GATEWAY_ALLOW_XAE_LAUNCH=1` only for the separately authorized
+test that launches and closes its own XAE instance. It must never close a
+user-owned instance.
+
 State-changing scenarios run only on a dedicated remote test bench with:
 
 - an explicitly allow-listed solution and target;
