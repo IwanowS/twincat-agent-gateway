@@ -34,34 +34,34 @@ When a component develops substantially different commands or conventions, add a
 
 ## Setup and commands
 
-Development requires a Windows machine with Visual Studio 2019 build tools, TwinCAT XAE 3.1.4024.17, .NET Framework 4.8 targeting pack, and .NET 8 SDK.
+Fast Contracts/Core development requires the .NET 8 SDK. Building the full desktop solution requires Windows and .NET Framework 4.8 reference assemblies. Visual Studio 2019/XAE Shell and TwinCAT 3.1.4024.17 are required only for real-XAE development and integration checks.
 
-After the solution skeleton is created, keep these commands working and update this section if paths change:
+Keep these commands working and update this section if paths change:
 
 ```powershell
-# Restore and build from a Visual Studio Developer PowerShell
-msbuild TwinCatGateway.sln /restore /m /p:Configuration=Debug
+# Repository-wide restore and build
+dotnet restore TwinCatGateway.sln
+dotnet build TwinCatGateway.sln --no-restore --configuration Debug
 
 # Fast tests
-dotnet test tests/TwinCatGateway.UnitTests/TwinCatGateway.UnitTests.csproj
-dotnet test tests/TwinCatGateway.ContractTests/TwinCatGateway.ContractTests.csproj
-
-# Requires a configured TwinCAT 3.1.4024.17 machine
-dotnet test tests/TwinCatGateway.IntegrationTests/TwinCatGateway.IntegrationTests.csproj
+dotnet test tests/TwinCatGateway.UnitTests/TwinCatGateway.UnitTests.csproj --no-build --configuration Debug
+dotnet test tests/TwinCatGateway.ContractTests/TwinCatGateway.ContractTests.csproj --no-build --configuration Debug
 ```
 
-Do not report TwinCAT integration tests as passed when the required XAE environment was unavailable. Report them as not run and state why.
+The solution mixes .NET Framework 4.8 and .NET 8 projects, so Visual Studio 2019 `msbuild` is not a supported repository build driver. Use the pinned .NET SDK even for focused desktop/XAE project builds. Visual Studio 2019/XAE Shell is the automation target, not the build orchestrator for this repository.
+
+Real-XAE integration tests require the explicitly configured remote TwinCAT 3.1.4024.17 test bench described in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md). Do not report them as passed when that environment was unavailable. Report them as not run and state why.
 
 ## Architecture constraints
 
-- Only the desktop gateway may own or call DTE, `ITcSysManager`, or other TwinCAT COM objects.
+- Only the desktop gateway process may own or call DTE, `ITcSysManager`, or other TwinCAT COM objects. A focused XAE library may contain the wrappers, but it must execute only inside that process.
 - Run all XAE COM calls sequentially on one STA thread with a message pump and OLE `IMessageFilter`.
 - Do not pass COM objects across threads or processes.
 - CLI and MCP are thin IPC clients; domain logic belongs in the gateway/core.
 - Activation is always an explicit operation and must never follow a build implicitly.
 - Do not close an XAE instance opened by the user unless explicitly requested.
 - Do not add an ADS client, online-variable access, PLC debugging, or Automation Interface code editing to the MVP.
-- Do not add PowerShell scripts or modules as an implementation layer.
+- Do not add PowerShell scripts or modules as a product implementation layer. Development/bootstrap scripts are allowed only when they do not duplicate gateway domain behavior.
 - Do not rewrite or revert reorder-only `.tsproj` changes. Detect and mark them as expected generated noise.
 
 ## XAE operation rules
@@ -81,6 +81,7 @@ Do not report TwinCAT integration tests as passed when the required XAE environm
 - Never let an old unsaved XAE document overwrite an external file change.
 - Surface unsaved-document or reload conflicts explicitly instead of silently retrying.
 - Do not read or include an entire `.tsproj` in agent context merely to inspect reorder noise; use the classifier result and focused diffs.
+- Until the classifier exists, report `.tsproj` changes as `unknown`, inspect only focused metadata/diffs, and never rewrite or revert the file merely to remove suspected reorder noise.
 
 ## Code style
 
@@ -105,11 +106,12 @@ For every behavioral change:
 - run real TwinCAT integration tests after changing DTE/COM/XAE behavior;
 - do not replace required real-XAE integration coverage with mocks.
 
-Before finishing, build the affected projects and state exactly which checks were run and which were not.
+State-changing TwinCAT tests must be clearly marked and must fail closed unless an allow-listed remote test profile is supplied. Before finishing, build the affected projects and state exactly which checks were run and which were not.
 
 ## Safety and logging
 
 - Activate only a configured and explicitly allowed target profile.
+- Local TwinCAT activation, restart, runtime-mode changes, PLC login, and ADS writes are prohibited for this repository. State-changing tests may target only the explicitly allow-listed remote test bench.
 - Never substitute another target, solution, or AMS identity automatically.
 - Do not put secrets, credentials, or unnecessary PLC source content in logs.
 - Do not return stack traces, full Build Output, full Error List, large XML, or large diffs by default.

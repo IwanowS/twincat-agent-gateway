@@ -2,12 +2,20 @@
 
 ## Prerequisites
 
-- Windows 10 or 11;
+For Contracts/Core development:
+
 - Git;
-- .NET 8 SDK;
-- .NET Framework 4.8 targeting pack;
+- .NET 8 SDK.
+
+For a full desktop build:
+
+- Windows 10 or 11;
+- .NET Framework 4.8 reference assemblies.
+
+Only real-XAE integration work additionally requires:
+
 - Visual Studio 2019 or compatible TwinCAT XAE Shell;
-- TwinCAT 3.1.4024.17 for real-XAE integration work.
+- TwinCAT 3.1.4024.17.
 
 The repository pins the .NET 8 SDK family in `global.json`. A newer installed SDK must not silently change the build.
 
@@ -24,7 +32,7 @@ dotnet test tests/TwinCatGateway.UnitTests/TwinCatGateway.UnitTests.csproj --no-
 dotnet test tests/TwinCatGateway.ContractTests/TwinCatGateway.ContractTests.csproj --no-build --configuration Debug
 ```
 
-`dotnet build` is the repository-wide build command because the solution contains both .NET Framework 4.8 and .NET 8 projects. Visual Studio 2019 MSBuild is reserved for focused XAE/.NET Framework compatibility checks when required.
+`dotnet build` is the supported build command because the solution contains both .NET Framework 4.8 and .NET 8 projects. Visual Studio 2019/XAE Shell is the automation target; its older MSBuild cannot orchestrate the pinned .NET 8 solution. Use `dotnet build` for focused desktop/XAE project checks as well.
 
 ## Integration-test policy
 

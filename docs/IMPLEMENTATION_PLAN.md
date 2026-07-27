@@ -375,7 +375,7 @@ docs/
 - operation timeline;
 - UI confirmation policy;
 - CLI command;
-- integration tests на отдельном стенде.
+- integration tests на отдельном удалённом стенде; локальная activation/restart запрещена.
 
 ### Scenarios
 

@@ -417,10 +417,10 @@ Automation Interface предоставляет `StartRestartTwinCAT()` для R
 
 ### 11.4 Safety profile
 
-Пример:
+Пример удалённого тестового стенда:
 
 ```yaml
-name: bench-local
+name: bench-remote
 solution: C:\Projects\Machine\Machine.sln
 allowActivation: true
 requireRecentSuccessfulBuild: true
@@ -681,6 +681,7 @@ IPC_VERSION_MISMATCH
 
 - Named Pipe ACL ограничена текущим пользователем.
 - Activation запрещена по умолчанию.
+- Для этого репозитория локальная activation/restart и другие изменения состояния TwinCAT runtime запрещены; такие сценарии выполняются только на явно разрешённом удалённом тестовом стенде.
 - Profile задаётся локальной конфигурацией, а не произвольными аргументами агента.
 - Solution/target выводятся перед activation в UI и operation log.
 - MCP не получает произвольный COM invoke tool.
