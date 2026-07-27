@@ -1,11 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using EnvDTE;
+using EnvDTE80;
+using TCatSysManagerLib;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 
@@ -19,8 +21,8 @@ public sealed class XaeSession : IDisposable
         TimeSpan.FromSeconds(3);
     private readonly ComStaDispatcher _dispatcher;
     private readonly bool _ownsDispatcher;
-    private object? _dte;
-    private object? _sysManager;
+    private DTE2? _dte;
+    private ITcSysManager? _sysManager;
     private XaeSessionSnapshot _snapshot = new();
     private int _disposed;
 
@@ -239,7 +241,8 @@ public sealed class XaeSession : IDisposable
                         Path.GetDirectoryName(candidate.ExecutablePath)
                         ?? Environment.CurrentDirectory,
                 };
-                using Process process = Process.Start(startInfo)
+                using System.Diagnostics.Process process =
+                    System.Diagnostics.Process.Start(startInfo)
                     ?? throw new InvalidOperationException(
                         "The XAE process did not return a process handle.");
                 return new StartedXaeProcess(
@@ -383,7 +386,7 @@ public sealed class XaeSession : IDisposable
             return false;
         }
 
-        object dte = candidate.TakeDte();
+        DTE2 dte = candidate.TakeDte();
         ReleaseSessionOnSta();
         _dte = dte;
         DteInstanceInfo info = CloneInfo(candidate.Info)!;
@@ -406,20 +409,18 @@ public sealed class XaeSession : IDisposable
         int processId)
     {
         EnsurePendingLaunchedProcess(processId);
-        object? solution = null;
+        Solution? solution = null;
         try
         {
-            dynamic automation = _dte!;
+            DTE2 automation = _dte!;
             automation.UserControl = true;
             automation.SuppressUI = true;
             solution = automation.Solution;
-            string? currentSolution = NormalizeOptionalPath(
-                Convert.ToString(
-                    ((dynamic)solution).FullName,
-                    CultureInfo.InvariantCulture));
+            string? currentSolution =
+                NormalizeOptionalPath(solution.FullName);
             if (currentSolution is null)
             {
-                ((dynamic)solution).Open(normalizedSolution);
+                solution.Open(normalizedSolution);
                 return;
             }
 
@@ -470,7 +471,7 @@ public sealed class XaeSession : IDisposable
                 stage: "xae.openSolution");
         }
 
-        object sysManager;
+        ITcSysManager sysManager;
         try
         {
             sysManager = AcquireSysManager(
@@ -523,8 +524,8 @@ public sealed class XaeSession : IDisposable
         }
 
         RunningXaeCandidate selected = scan.Candidates[selectedIndex];
-        object selectedDte = selected.TakeDte();
-        object selectedSysManager;
+        DTE2 selectedDte = selected.TakeDte();
+        ITcSysManager selectedSysManager;
         try
         {
             selectedSysManager = AcquireSysManager(
@@ -600,20 +601,18 @@ public sealed class XaeSession : IDisposable
         return CloneSnapshot(_snapshot);
     }
 
-    private static object AcquireSysManager(
-        object dte,
+    private static ITcSysManager AcquireSysManager(
+        DTE dte,
         string normalizedSolution)
     {
-        object? solution = null;
-        object? projects = null;
-        List<object> sysManagers = new();
+        Solution? solution = null;
+        Projects? projects = null;
+        List<ITcSysManager> sysManagers = new();
         bool ownershipTransferred = false;
         try
         {
-            solution = ((dynamic)dte).Solution;
-            string? actualSolution = Convert.ToString(
-                ((dynamic)solution).FullName,
-                CultureInfo.InvariantCulture);
+            solution = dte.Solution;
+            string? actualSolution = solution.FullName;
             if (!string.Equals(
                 NormalizeOptionalPath(actualSolution),
                 normalizedSolution,
@@ -626,19 +625,15 @@ public sealed class XaeSession : IDisposable
                     stage: "xae.attach");
             }
 
-            projects = ((dynamic)solution).Projects;
-            int count = Convert.ToInt32(
-                ((dynamic)projects).Count,
-                CultureInfo.InvariantCulture);
+            projects = solution.Projects;
+            int count = projects.Count;
             for (int index = 1; index <= count; index++)
             {
-                object? project = null;
+                Project? project = null;
                 try
                 {
-                    project = ((dynamic)projects).Item(index);
-                    string? projectPath = Convert.ToString(
-                        ((dynamic)project).FullName,
-                        CultureInfo.InvariantCulture);
+                    project = projects.Item(index);
+                    string? projectPath = project.FullName;
                     if (!string.Equals(
                         Path.GetExtension(projectPath),
                         ".tsproj",
@@ -647,10 +642,14 @@ public sealed class XaeSession : IDisposable
                         continue;
                     }
 
-                    object? sysManager = ((dynamic)project).Object;
-                    if (sysManager is not null)
+                    object? projectObject = project.Object;
+                    if (projectObject is ITcSysManager sysManager)
                     {
                         sysManagers.Add(sysManager);
+                    }
+                    else
+                    {
+                        ComObject.Release(projectObject);
                     }
                 }
                 finally
@@ -676,7 +675,7 @@ public sealed class XaeSession : IDisposable
         {
             if (!ownershipTransferred)
             {
-                foreach (object sysManager in sysManagers)
+                foreach (ITcSysManager sysManager in sysManagers)
                 {
                     ComObject.Release(sysManager);
                 }
@@ -708,17 +707,15 @@ public sealed class XaeSession : IDisposable
             return false;
         }
 
-        object? solution = null;
+        Solution? solution = null;
         try
         {
-            dynamic automation = _dte;
+            DTE2 automation = _dte;
             solution = automation.Solution;
-            string? solutionPath = Convert.ToString(
-                ((dynamic)solution).FullName,
-                CultureInfo.InvariantCulture);
+            string? solutionPath = solution.FullName;
             if (!string.IsNullOrWhiteSpace(solutionPath))
             {
-                ((dynamic)solution).Close(false);
+                solution.Close(false);
             }
 
             automation.Quit();

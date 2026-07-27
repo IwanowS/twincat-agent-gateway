@@ -14,7 +14,6 @@
       <Private>true</Private>
       <EmbedInteropTypes>false</EmbedInteropTypes>
     </Reference>
-    <Reference Include="Microsoft.CSharp" />
   </ItemGroup>
 
   <ItemGroup>

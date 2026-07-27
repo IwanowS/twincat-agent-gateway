@@ -6,6 +6,8 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
+using EnvDTE;
+using EnvDTE80;
 using TwinCatGateway.Contracts;
 
 namespace TwinCatGateway.Xae;
@@ -56,7 +58,18 @@ internal static class RunningObjectTableScanner
 
                     try
                     {
-                        table.GetObject(moniker, out object dte);
+                        table.GetObject(moniker, out object automationObject);
+                        DTE2 dte;
+                        try
+                        {
+                            dte = (DTE2)automationObject;
+                        }
+                        catch
+                        {
+                            ComObject.Release(automationObject);
+                            throw;
+                        }
+
                         candidates.Add(InspectCandidate(displayName, dte));
                     }
                     catch (Exception exception)
@@ -84,7 +97,7 @@ internal static class RunningObjectTableScanner
 
     private static RunningXaeCandidate InspectCandidate(
         string moniker,
-        object dte)
+        DTE2 dte)
     {
         try
         {
@@ -121,7 +134,7 @@ internal static class RunningObjectTableScanner
 
     internal static DteInstanceInfo InspectDte(
         string moniker,
-        object dte)
+        DTE dte)
     {
         DteInstanceInfo info = new()
         {
@@ -129,28 +142,19 @@ internal static class RunningObjectTableScanner
             ProgId = GetProgId(moniker),
             ProcessId = GetProcessId(moniker),
         };
-        dynamic automation = dte;
-        info.Version = Convert.ToString(
-            automation.Version,
-            CultureInfo.InvariantCulture);
-        object? solution = null;
-        object? mainWindow = null;
+        info.Version = dte.Version;
+        Solution? solution = null;
+        Window? mainWindow = null;
         try
         {
-            solution = automation.Solution;
-            string? solutionPath = Convert.ToString(
-                ((dynamic)solution).FullName,
-                CultureInfo.InvariantCulture);
-            info.Solution = NormalizeOptionalPath(solutionPath);
+            solution = dte.Solution;
+            info.Solution = NormalizeOptionalPath(solution.FullName);
             info.SolutionLoaded = !string.IsNullOrWhiteSpace(info.Solution);
 
             if (info.ProcessId is null)
             {
-                mainWindow = automation.MainWindow;
-                IntPtr windowHandle = new(
-                    Convert.ToInt32(
-                        ((dynamic)mainWindow).HWnd,
-                        CultureInfo.InvariantCulture));
+                mainWindow = dte.MainWindow;
+                IntPtr windowHandle = mainWindow.HWnd;
                 uint windowThreadId = GetWindowThreadProcessId(
                     windowHandle,
                     out uint processId);
@@ -296,7 +300,7 @@ internal sealed class RotScanResult : IDisposable
 
 internal sealed class RunningXaeCandidate : IDisposable
 {
-    public RunningXaeCandidate(DteInstanceInfo info, object? dte)
+    public RunningXaeCandidate(DteInstanceInfo info, DTE2? dte)
     {
         Info = info;
         Dte = dte;
@@ -304,11 +308,11 @@ internal sealed class RunningXaeCandidate : IDisposable
 
     public DteInstanceInfo Info { get; }
 
-    public object? Dte { get; private set; }
+    public DTE2? Dte { get; private set; }
 
-    public object TakeDte()
+    public DTE2 TakeDte()
     {
-        object result = Dte
+        DTE2 result = Dte
             ?? throw new InvalidOperationException(
                 "The ROT candidate has no usable DTE object.");
         Dte = null;
