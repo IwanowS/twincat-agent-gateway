@@ -74,6 +74,24 @@ Set `TWINCAT_GATEWAY_ALLOW_XAE_LAUNCH=1` only for the separately authorized
 test that launches and closes its own XAE instance. It must never close a
 user-owned instance.
 
+The state-changing activation acceptance test is separately opt-in and requires
+the exact allow-listed remote AMS NetId:
+
+```powershell
+$env:TWINCAT_GATEWAY_XAE_SOLUTION = 'C:\absolute\path\to\project.sln'
+$env:TWINCAT_GATEWAY_ALLOW_REMOTE_ACTIVATION = '1'
+$env:TWINCAT_GATEWAY_REMOTE_AMS_NET_ID = '192.168.3.31.1.1'
+dotnet vstest `
+  'tests\TwinCatGateway.IntegrationTests\bin\Debug\net48\TwinCatGateway.IntegrationTests.dll' `
+  '/Platform:x86' `
+  '/TestCaseFilter:FullyQualifiedName~DesktopGatewayActivationTests.ActivationBuildsAndRestartsRemoteTargetThroughIpc'
+```
+
+This test builds the selected solution, activates its configuration, restarts
+TwinCAT on the remote target, waits for read-only ADS state `Run`, and checks
+that XAE has no modal dialogs. Never set the opt-in variable for a local target
+or an unapproved bench.
+
 State-changing scenarios run only on a dedicated remote test bench with:
 
 - an explicitly allow-listed solution and target;

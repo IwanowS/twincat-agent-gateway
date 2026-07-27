@@ -93,20 +93,20 @@ Acceptance:
 
 #### 0.5 Config Mode без ADS runtime control
 
-Исследовать стабильный способ вызвать `Restart TwinCAT (Config Mode)`:
-
-- DTE command identity/GUID/ID;
-- официальный XAE command service;
-- возможность проверить command availability/completion;
-- поведение в Silent Mode;
-- сценарий после PLC exception.
+Для TwinCAT 3.1.4024.17 подтверждена зарегистрированная DTE command identity
+`TwinCAT.RestartTwinCATConfigMode`. Gateway вызывает её через типизированный
+`DTE2.ExecuteCommand` на единственном STA и проверяет завершение по read-only
+ADS System Service state `Config`.
 
 Acceptance:
 
-- либо найден и подтверждён автоматический способ;
-- либо зафиксировано ограничение MVP: `CONFIG_MODE_REQUIRED` и ручное действие.
-
-Не использовать UI coordinates, SendKeys и локализованный caption как постоянное решение.
+- command не зависит от UI coordinates, SendKeys или локализованного caption;
+- перед вызовом повторно проверяются solution и AMS NetId;
+- recovery выполняется в Silent Mode;
+- успех требует ADS postcondition `Config`;
+- timeout/failure возвращает `CONFIG_MODE_RECOVERY_FAILED`;
+- end-to-end сценарий из реального PLC exception остаётся обязательной
+  стендовой проверкой Milestone 7.
 
 #### 0.6 Read-only runtime status
 
@@ -430,7 +430,7 @@ docs/
 ### Задачи
 
 - `allowActivation` profile;
-- audit fields target/solution/profile;
+- audit fields AMS NetId/optional target name/solution/profile;
 - preconditions;
 - optional recent-build policy;
 - recovery-to-Config adapter;
@@ -460,9 +460,12 @@ docs/
 
 - activation никогда не выполняется для запрещённого profile;
 - target и solution записаны в audit log;
+- AMS NetId является единственной обязательной target identity; имя target
+  необязательно и не участвует в safety decision;
 - ошибка конкретного stage видна агенту;
 - `ActivateConfiguration()` не считается полным успехом без последующего restart/postcondition;
-- exception recovery либо автоматизирован и протестирован, либо возвращает `CONFIG_MODE_REQUIRED` без ложного success.
+- exception recovery требует подтверждённого ADS-состояния `Config`, иначе
+  возвращает `CONFIG_MODE_RECOVERY_FAILED` без ложного success.
 
 ## 11. Milestone 8 — TcUnit ADS completion и report flow
 

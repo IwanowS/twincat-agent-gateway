@@ -196,10 +196,14 @@ Status endpoint читает immutable snapshot и не блокирует UI н
 1. при необходимости recovery to Config;
 2. `ITcSysManager.ActivateConfiguration()`;
 3. `ITcSysManager.StartRestartTwinCAT()`;
-4. ожидание postconditions;
-5. чтение новых ошибок.
+4. ожидание подтверждённого ADS-состояния `Run`;
+5. повторная проверка solution и AMS NetId.
 
 `ActivateConfiguration()` сам по себе соответствует сохранению текущей конфигурации как активной. Отдельный start/restart необходим для физического применения. При включённом `Autostart boot project` boot project запускается после рестарта.
+
+Перед каждой изменяющей COM/DTE-командой XAE boundary повторно проверяет точный
+`Solution.FullName` и AMS NetId. Необязательное имя target в этих проверках не
+участвует, но при наличии записывается в operation log и structured events.
 
 ### 7.6 StatusService
 
@@ -434,31 +438,42 @@ fingerprint baseline, а список от caller используется то�
 ### 11.2 Последовательность
 
 1. Проверить `allowActivation` profile.
-2. Проверить выбранный target и solution.
+2. Проверить выбранные solution и AMS NetId.
 3. Проверить, что gateway не выполняет build.
 4. Проверить policy актуальности последней успешной сборки.
-5. Сохранить solution.
-6. Если предыдущая ошибка или состояние требует Config Mode, выполнить `RecoverToConfig`.
-7. Вызвать `ActivateConfiguration()`.
-8. Вызвать `StartRestartTwinCAT()`.
-9. Дождаться окончания команды по доступным XAE/Automation Interface признакам.
-10. Проверить runtime state через read-only ADS `TryReadState` на System Service port 10000.
-11. Прочитать `GetLastErrorMessages()` и XAE diagnostics.
+5. Прочитать runtime state через read-only ADS `TryReadState` на System Service port 10000; `unknown` завершает операцию до изменения состояния.
+6. Если runtime находится в `Exception`, выполнить `RecoverToConfig` и дождаться подтверждённого ADS-состояния `Config`.
+7. Повторно проверить solution и AMS NetId, затем вызвать `ActivateConfiguration()`.
+8. Повторно проверить solution и AMS NetId, затем вызвать `StartRestartTwinCAT()`.
+9. Дождаться подтверждённого ADS-состояния `Run`.
+10. Повторно проверить solution и AMS NetId и обновить XAE/runtime diagnostics.
+11. Записать activation resource и stage events в общую event stream.
 12. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
+
+Gateway не вызывает `SaveAll` перед activation: при agent-owned workspace
+источником истины являются внешние файлы, синхронизированные и собранные
+предшествующей build operation. Build и activation остаются разными
+последовательными операциями; activation никогда не запускается из build
+неявно.
+
+До завершения TcUnit stage запрос с эффективным `waitForTcUnit=true`
+отклоняется до первой изменяющей команды. Gateway не выполняет частичную
+activation, если обещанная связанная test operation ещё недоступна.
 
 ### 11.3 Recovery to Config
 
-Automation Interface предоставляет `StartRestartTwinCAT()` для Run, но не даёт столь же очевидного отдельного метода `StartRestartTwinCATInConfigMode` в базовом `ITcSysManager`.
+Automation Interface предоставляет `StartRestartTwinCAT()` для Run, но не
+предоставляет отдельного метода `StartRestartTwinCATInConfigMode` в базовом
+`ITcSysManager`. На TwinCAT 3.1.4024.17 gateway использует зарегистрированную
+не локализованную DTE command identity
+`TwinCAT.RestartTwinCATConfigMode`.
 
-Для TwinCAT 4024 требуется технический spike:
-
-- определить стабильную XAE command identity для `Restart TwinCAT (Config Mode)`;
-- вызывать её через DTE command service или другой официальный XAE extension API;
-- не зависеть от локализованного menu caption;
-- проверить доступность и завершение команды;
-- проверить сценарий PLC exception на тестовом стенде.
-
-Если надёжная автоматизация Config Mode не подтверждена, MVP не должен скрывать проблему. Операция возвращает `CONFIG_MODE_REQUIRED` и инструкцию для ручного перехода, пока adapter не реализован.
+Recovery выполняется на том же STA через типизированный `DTE2.ExecuteCommand`,
+в Silent Mode и только после повторной проверки solution/AMS NetId.
+Возврат команды сам по себе не считается успехом: gateway опрашивает
+read-only ADS System Service port 10000 до состояния `Config`, cancellation
+или общего activation deadline. Невыполнение postcondition возвращает
+`CONFIG_MODE_RECOVERY_FAILED`, а не ложный success.
 
 ### 11.4 Safety profile
 
@@ -936,11 +951,11 @@ Metrics не обязательны для MVP, но structured events долж�
 
 До фиксации реализации провести spikes:
 
-1. Стабильный вызов `Restart TwinCAT (Config Mode)` в XAE 4024.17 без ADS runtime control.
+1. End-to-end recovery из реального PLC `Exception` через подтверждённую команду `TwinCAT.RestartTwinCATConfigMode`.
 2. Поддержка structural sync для добавленных и удалённых PLC source files.
 3. Полнота Error List по сравнению с Build Output на реальных PLC compile errors.
 4. Точный lifecycle `BuildEvents` в нескольких открытых XAE instances.
-5. Silent Mode и поведение confirmation dialogs при activation на тестовом стенде.
+5. Silent Mode и поведение confirmation dialogs при ошибочных activation paths на тестовом стенде.
 6. Reconnect ADS client после restart и доступность TcUnit completion symbols на реальном стенде.
 7. Закреплённая версия TcUnit, стабильность внутренних completion symbol paths и поведение `xUnitEnablePublish/xUnitFilePath` на 4024.17.
 
