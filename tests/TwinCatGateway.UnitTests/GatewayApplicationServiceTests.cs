@@ -478,6 +478,192 @@ public sealed class GatewayApplicationServiceTests
                     gatewayEvent.Type));
     }
 
+    [Fact]
+    public async Task ActivationLinksASeparateTcUnitOperation()
+    {
+        DateTimeOffset now = new(
+            2026,
+            7,
+            28,
+            3,
+            0,
+            0,
+            TimeSpan.Zero);
+        ProjectProfile profile = CreateActivationProfile();
+        profile.AutoWaitForTcUnit = true;
+        profile.TcUnit = new TcUnitProfile
+        {
+            ReportPath = @"C:\Reports\tcunit.xml",
+            CompletionTimeoutSeconds = 30,
+        };
+        string? preparedFor = null;
+        string? executedFor = null;
+        using ServiceFixture fixture = new(
+            activationExecutor: SuccessfulActivation,
+            activeProfile: profile,
+            clock: new TestClock(now),
+            tcUnitPreparationExecutor:
+                activationOperationId =>
+                {
+                    preparedFor = activationOperationId;
+                    return new TcUnitRunPreparation
+                    {
+                        ActivationOperationId =
+                            activationOperationId,
+                        ExpectedAmsNetId =
+                            "192.168.3.31.1.1",
+                        PreparedAtUtc = now,
+                        ReportBaseline =
+                            new TcUnitReportBaseline
+                            {
+                                Path =
+                                    @"C:\Reports\tcunit.xml",
+                            },
+                    };
+                },
+            tcUnitExecutor:
+                (
+                    testOperationId,
+                    activationOperationId,
+                    preparation,
+                    cancellationToken) =>
+                {
+                    executedFor = activationOperationId;
+                    return Task.FromResult(
+                        new TestResult
+                        {
+                            Ok = true,
+                            Counts = new TestCounts
+                            {
+                                Suites = 1,
+                                Tests = 2,
+                                Passed = 2,
+                            },
+                            InitializedSuites = 1,
+                        });
+                });
+        SeedBuild(
+            fixture.Operations,
+            "build-success",
+            BuildAction.Build,
+            now.AddMinutes(-1));
+        fixture.Status.Update(status =>
+        {
+            status.Xae.Connected = true;
+            status.Gateway.State = GatewayState.Ready;
+            return status;
+        });
+
+        OperationAccepted accepted =
+            fixture.Service.StartActivation(
+                new ActivateParameters
+                {
+                    Profile = profile.Name,
+                });
+        StoredOperation activation =
+            await WaitForStateAsync(
+                fixture.Operations,
+                accepted.OperationId,
+                OperationState.Succeeded);
+        ActivationResult activationResult =
+            Assert.IsType<ActivationResult>(
+                activation.Result);
+        Assert.False(
+            string.IsNullOrWhiteSpace(
+                activationResult.TestOperationId));
+        StoredOperation test =
+            await WaitForStateAsync(
+                fixture.Operations,
+                activationResult.TestOperationId!,
+                OperationState.Succeeded);
+
+        TestResult result =
+            Assert.IsType<TestResult>(test.Result);
+        Assert.Equal(
+            accepted.OperationId,
+            preparedFor);
+        Assert.Equal(
+            accepted.OperationId,
+            executedFor);
+        Assert.Equal(
+            accepted.OperationId,
+            result.ActivationOperationId);
+        Assert.Equal(
+            activationResult.TestOperationId,
+            result.OperationId);
+        Assert.Equal(
+            activationResult.TestOperationId,
+            fixture.Service.GetStatus()
+                .LastTest?.OperationId);
+        Assert.Equal(
+            new[]
+            {
+                GatewayEventTypes.TcUnitQueued,
+                GatewayEventTypes.TcUnitStarted,
+                GatewayEventTypes.TcUnitSucceeded,
+            },
+            fixture.Events.ReadAfter(null, 0, 100)
+                .Events
+                .Where(gatewayEvent =>
+                    gatewayEvent.OperationId
+                        == activationResult
+                            .TestOperationId)
+                .Select(gatewayEvent =>
+                    gatewayEvent.Type));
+        OperationDetails<TestResult> queried =
+            fixture.Service.GetTestResults(
+                activationResult.TestOperationId!);
+        Assert.True(queried.Result?.Ok);
+    }
+
+    [Fact]
+    public void LinkedTcUnitFailsClosedWhenExecutorUnavailable()
+    {
+        DateTimeOffset now = new(
+            2026,
+            7,
+            28,
+            3,
+            0,
+            0,
+            TimeSpan.Zero);
+        ProjectProfile profile = CreateActivationProfile();
+        profile.AutoWaitForTcUnit = true;
+        profile.TcUnit = new TcUnitProfile
+        {
+            ReportPath = @"C:\Reports\tcunit.xml",
+        };
+        using ServiceFixture fixture = new(
+            activationExecutor: SuccessfulActivation,
+            activeProfile: profile,
+            clock: new TestClock(now));
+        SeedBuild(
+            fixture.Operations,
+            "build-success",
+            BuildAction.Build,
+            now.AddMinutes(-1));
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.StartActivation(
+                    new ActivateParameters
+                    {
+                        Profile = profile.Name,
+                    }));
+
+        Assert.Equal(
+            ErrorCodes.GatewayNotReady,
+            exception.Code);
+        Assert.Equal(
+            "activation.tcunit",
+            exception.Stage);
+        Assert.DoesNotContain(
+            fixture.Operations.GetRecent(10),
+            operation =>
+                operation.Summary.Kind
+                    == OperationKind.Activate);
+    }
+
     private static Task<ActivationResult> SuccessfulActivation(
         string operationId,
         ActivateParameters parameters,
@@ -567,7 +753,10 @@ public sealed class GatewayApplicationServiceTests
             BuildOperationExecutor? buildExecutor = null,
             ActivationOperationExecutor? activationExecutor = null,
             ProjectProfile? activeProfile = null,
-            IClock? clock = null)
+            IClock? clock = null,
+            TcUnitPreparationExecutor?
+                tcUnitPreparationExecutor = null,
+            TcUnitOperationExecutor? tcUnitExecutor = null)
         {
             _temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -594,7 +783,9 @@ public sealed class GatewayApplicationServiceTests
                 buildExecutor,
                 activationExecutor,
                 activeProfile,
-                clock);
+                clock,
+                tcUnitPreparationExecutor,
+                tcUnitExecutor);
         }
 
         public GatewayStatusSnapshotStore Status { get; }

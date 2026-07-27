@@ -10,6 +10,7 @@ public enum GatewayState
     Building,
     Activating,
     RecoveringToConfig,
+    Testing,
     Faulted,
     Stopping,
 }

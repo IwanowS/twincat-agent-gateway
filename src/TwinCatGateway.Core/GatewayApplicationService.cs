@@ -28,6 +28,10 @@ public sealed class GatewayApplicationService
     private readonly Func<GatewayDiagnosticsResult>? _diagnosticsProvider;
     private readonly BuildOperationExecutor? _buildExecutor;
     private readonly ActivationOperationExecutor? _activationExecutor;
+    private readonly TcUnitPreparationExecutor?
+        _tcUnitPreparationExecutor;
+    private readonly TcUnitOperationExecutor?
+        _tcUnitExecutor;
     private readonly ProjectProfile? _activeProfile;
     private readonly IClock _clock;
     private readonly GatewayEventJournal _eventJournal;
@@ -43,7 +47,10 @@ public sealed class GatewayApplicationService
         BuildOperationExecutor? buildExecutor = null,
         ActivationOperationExecutor? activationExecutor = null,
         ProjectProfile? activeProfile = null,
-        IClock? clock = null)
+        IClock? clock = null,
+        TcUnitPreparationExecutor?
+            tcUnitPreparationExecutor = null,
+        TcUnitOperationExecutor? tcUnitExecutor = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -58,6 +65,9 @@ public sealed class GatewayApplicationService
         _diagnosticsProvider = diagnosticsProvider;
         _buildExecutor = buildExecutor;
         _activationExecutor = activationExecutor;
+        _tcUnitPreparationExecutor =
+            tcUnitPreparationExecutor;
+        _tcUnitExecutor = tcUnitExecutor;
         _activeProfile = activeProfile;
         _clock = clock ?? SystemClock.Instance;
         _eventJournal = eventJournal
@@ -287,6 +297,17 @@ public sealed class GatewayApplicationService
                 stage: "activation.validate");
         }
 
+        if (waitForTcUnit
+            && (_tcUnitPreparationExecutor is null
+                || _tcUnitExecutor is null))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "The linked TcUnit executor is unavailable.",
+                retryable: true,
+                stage: "activation.tcunit");
+        }
+
         ValidateRecentBuild(_activeProfile);
         ActivateParameters captured =
             CloneActivateParameters(parameters);
@@ -323,6 +344,39 @@ public sealed class GatewayApplicationService
         {
             Operation = operation.Summary,
             Result = operation.Result,
+        };
+    }
+
+    public OperationDetails<TestResult> GetTestResults(
+        string operationId)
+    {
+        if (string.IsNullOrWhiteSpace(operationId))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Test operation ID is required.");
+        }
+
+        StoredOperation? operation =
+            _operations.Get(operationId);
+        if (operation is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.OperationNotFound,
+                $"Operation '{operationId}' was not found.");
+        }
+
+        if (operation.Summary.Kind != OperationKind.Test)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                $"Operation '{operationId}' is not a test operation.");
+        }
+
+        return new OperationDetails<TestResult>
+        {
+            Operation = operation.Summary,
+            Result = operation.Result as TestResult,
         };
     }
 
@@ -496,12 +550,41 @@ public sealed class GatewayApplicationService
         });
         try
         {
+            bool waitForTcUnit =
+                parameters.WaitForTcUnit
+                ?? _activeProfile!.AutoWaitForTcUnit;
+            TcUnitRunPreparation? preparation =
+                waitForTcUnit
+                    ? _tcUnitPreparationExecutor!(
+                        operationId)
+                    : null;
             ActivationResult result =
                 await _activationExecutor!(
                     operationId,
                     parameters,
                     cancellationToken).ConfigureAwait(false);
             result.OperationId = operationId;
+            if (result.Ok
+                && preparation is not null)
+            {
+                int timeoutSeconds =
+                    _activeProfile!.TcUnit!
+                        .CompletionTimeoutSeconds;
+                OperationAccepted test =
+                    _queue.Enqueue(
+                        OperationKind.Test,
+                        (testOperationId, testCancellation) =>
+                            ExecuteTcUnitAsync(
+                                testOperationId,
+                                operationId,
+                                preparation,
+                                testCancellation),
+                        TimeSpan.FromSeconds(
+                            timeoutSeconds));
+                result.TestOperationId =
+                    test.OperationId;
+            }
+
             _status.Update(status =>
             {
                 status.LastActivation = new ActivationSummary
@@ -531,6 +614,88 @@ public sealed class GatewayApplicationService
                 },
                 result,
                 result.Resources);
+        }
+        finally
+        {
+            _status.Update(status =>
+            {
+                status.CurrentOperation = null;
+                status.Gateway.State = status.Xae.Connected
+                    ? GatewayState.Ready
+                    : GatewayState.Disconnected;
+                return status;
+            });
+        }
+    }
+
+    private async Task<OperationExecutionResult>
+        ExecuteTcUnitAsync(
+            string operationId,
+            string activationOperationId,
+            TcUnitRunPreparation preparation,
+            CancellationToken cancellationToken)
+    {
+        DateTimeOffset startedAtUtc = _clock.UtcNow;
+        _status.Update(status =>
+        {
+            status.Gateway.State = GatewayState.Testing;
+            status.CurrentOperation = new OperationSummary
+            {
+                OperationId = operationId,
+                Kind = OperationKind.Test,
+                State = OperationState.Running,
+                QueuedAtUtc = startedAtUtc,
+                StartedAtUtc = startedAtUtc,
+            };
+            return status;
+        });
+        try
+        {
+            TestResult result = await _tcUnitExecutor!(
+                operationId,
+                activationOperationId,
+                preparation,
+                cancellationToken).ConfigureAwait(false);
+            result.OperationId = operationId;
+            result.ActivationOperationId =
+                activationOperationId;
+            _status.Update(status =>
+            {
+                status.LastTest = new TestSummary
+                {
+                    Ok = result.Ok,
+                    OperationId = operationId,
+                    Tests = result.Counts.Tests,
+                    Failed = result.Counts.Failed,
+                };
+                return status;
+            });
+
+            ResourceReference[] resources =
+                result.Report is null
+                    ? Array.Empty<ResourceReference>()
+                    : new[]
+                    {
+                        result.Report,
+                    };
+            if (result.Ok)
+            {
+                return OperationExecutionResult.Success(
+                    result,
+                    resources);
+            }
+
+            return OperationExecutionResult.Failure(
+                new GatewayError
+                {
+                    Code = ErrorCodes.TestFailed,
+                    Message =
+                        "TcUnit completed with failed tests.",
+                    Stage = "tcunit.verify",
+                    RawLogRef = result.Report?.Uri,
+                },
+                result,
+                resources);
         }
         finally
         {

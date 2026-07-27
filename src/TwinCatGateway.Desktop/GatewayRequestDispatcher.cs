@@ -92,6 +92,16 @@ public sealed class GatewayRequestDispatcher
                     return _service.GetOperation(parameters.OperationId);
                 }
 
+            case GatewayMethods.GetTestResults:
+                {
+                    GetTestResultsParameters parameters =
+                        request.DeserializeParameters<
+                            GetTestResultsParameters>(
+                            _serializerOptions);
+                    return _service.GetTestResults(
+                        parameters.OperationId);
+                }
+
             case GatewayMethods.CancelOperation:
                 {
                     CancelOperationParameters parameters =

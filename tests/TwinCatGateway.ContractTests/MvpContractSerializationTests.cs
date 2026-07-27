@@ -190,6 +190,51 @@ public sealed class MvpContractSerializationTests
     }
 
     [Fact]
+    public void TestResultLinksBackToActivation()
+    {
+        TestResult test = new()
+        {
+            Ok = false,
+            OperationId = "operation-test",
+            ActivationOperationId =
+                "operation-activate",
+            DurationMs = 1200,
+            Counts = new TestCounts
+            {
+                Suites = 2,
+                Tests = 5,
+                Passed = 4,
+                Failed = 1,
+            },
+            InitializedSuites = 2,
+            Failures =
+            {
+                new TestFailure
+                {
+                    Suite = "MotionTests",
+                    Name = "Stops",
+                    Message = "Expected stop.",
+                },
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            test,
+            ContractJson.SerializerOptions);
+        TestResult? result =
+            JsonSerializer.Deserialize<TestResult>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(
+            "operation-activate",
+            result.ActivationOperationId);
+        Assert.Equal(1, result.Counts.Failed);
+        Assert.Single(result.Failures);
+    }
+
+    [Fact]
     public void DteInspectionFailureRoundTripsWithoutAStackTrace()
     {
         DteInstanceInfo instance = new()

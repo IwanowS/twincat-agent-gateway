@@ -50,5 +50,6 @@ public static class ErrorCodes
     public const string TestCompletionTimeout = "TEST_COMPLETION_TIMEOUT";
     public const string TestReportNotProduced = "TEST_REPORT_NOT_PRODUCED";
     public const string TestReportInvalid = "TEST_REPORT_INVALID";
+    public const string TestFailed = "TEST_FAILED";
     public const string IpcVersionMismatch = "IPC_VERSION_MISMATCH";
 }
