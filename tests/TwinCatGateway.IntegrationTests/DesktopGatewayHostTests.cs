@@ -81,58 +81,6 @@ public sealed class DesktopGatewayHostTests
         Assert.Null(host.StartupError);
     }
 
-    [Fact]
-    public void DesktopHostPersistsUnsavedDocumentPolicy()
-    {
-        using TemporaryDirectory temporary = new();
-        string configurationPath = Path.Combine(
-            temporary.Path,
-            "gateway.json");
-        string solutionPath = Path.Combine(
-            temporary.Path,
-            "missing.sln");
-        File.WriteAllText(
-            configurationPath,
-            $$"""
-            {
-              "schemaVersion": 1,
-              "pipeName": "TwinCatGatewayTests-{{Guid.NewGuid():N}}",
-              "defaultProfile": "fixture",
-              "logDirectory": "{{EscapeJson(temporary.Path)}}",
-              "profiles": [
-                {
-                  "name": "fixture",
-                  "solution": "{{EscapeJson(solutionPath)}}",
-                  "allowXaeLaunch": false,
-                  "allowActivation": false
-                }
-              ]
-            }
-            """);
-        using GatewayDesktopHost host = new(
-            new GatewayHostOptions
-            {
-                ConfigurationPath = configurationPath,
-            });
-
-        Assert.Equal(
-            UnsavedDocumentPolicy.SaveAll,
-            host.ActiveProfile?.UnsavedDocuments);
-
-        host.UpdateUnsavedDocumentPolicy(
-            UnsavedDocumentPolicy.Reject);
-
-        GatewayConfiguration saved =
-            new GatewayConfigurationLoader().Load(
-                configurationPath);
-        Assert.Equal(
-            UnsavedDocumentPolicy.Reject,
-            host.ActiveProfile?.UnsavedDocuments);
-        Assert.Equal(
-            UnsavedDocumentPolicy.Reject,
-            Assert.Single(saved.Profiles).UnsavedDocuments);
-    }
-
     [XaeFact]
     public async Task DesktopHostPublishesConnectedXaeDiagnostics()
     {

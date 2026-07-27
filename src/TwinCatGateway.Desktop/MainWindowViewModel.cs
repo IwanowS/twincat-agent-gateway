@@ -20,8 +20,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _target = string.Empty;
     private string _activationPolicy = string.Empty;
     private string _currentOperation = string.Empty;
-    private UnsavedDocumentPolicy _unsavedDocuments;
-    private string _unsavedDocumentsStatus = string.Empty;
 
     public MainWindowViewModel(GatewayDesktopHost host)
     {
@@ -33,13 +31,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<OperationRow> RecentOperations { get; } = new();
-
-    public IReadOnlyList<UnsavedDocumentPolicy> UnsavedDocumentPolicies { get; } =
-        new[]
-        {
-            UnsavedDocumentPolicy.SaveAll,
-            UnsavedDocumentPolicy.Reject,
-        };
 
     public string GatewayState
     {
@@ -83,48 +74,15 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetField(ref _currentOperation, value);
     }
 
-    public UnsavedDocumentPolicy UnsavedDocuments
-    {
-        get => _unsavedDocuments;
-        set
-        {
-            if (_unsavedDocuments == value)
-            {
-                return;
-            }
-
-            try
-            {
-                _host.UpdateUnsavedDocumentPolicy(value);
-                SetField(ref _unsavedDocuments, value);
-                UnsavedDocumentsStatus =
-                    "Saved to the active profile.";
-            }
-            catch (Exception exception)
-            {
-                UnsavedDocumentsStatus =
-                    "Could not save the policy: "
-                    + exception.Message;
-                OnPropertyChanged();
-            }
-        }
-    }
-
-    public string UnsavedDocumentsStatus
-    {
-        get => _unsavedDocumentsStatus;
-        private set => SetField(
-            ref _unsavedDocumentsStatus,
-            value);
-    }
-
-    public bool CanEditUnsavedDocuments =>
-        _host.ActiveProfile is not null
-        && !string.IsNullOrWhiteSpace(_host.ConfigurationPath);
-
     public string? StartupError { get; }
 
     public string LogDirectory => _host.LogDirectory;
+
+    public string WorkspaceOwnership =>
+        _host.ActiveProfile is null
+            ? "Unavailable until a valid project profile is loaded."
+            : "Agent owns project files while connected. "
+                + "Unsaved XAE editor changes are discarded.";
 
     public void Refresh()
     {
@@ -140,11 +98,6 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ActivationPolicy = profile?.AllowActivation == true
             ? "Activation allowed for the exact configured target"
             : "Activation disabled";
-        SetField(
-            ref _unsavedDocuments,
-            profile?.UnsavedDocuments
-                ?? UnsavedDocumentPolicy.SaveAll,
-            nameof(UnsavedDocuments));
         CurrentOperation = status.CurrentOperation is null
             ? "Idle"
             : $"{status.CurrentOperation.Kind} · {status.CurrentOperation.State}";

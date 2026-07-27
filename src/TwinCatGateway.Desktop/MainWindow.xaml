@@ -112,17 +112,12 @@
                 </StackPanel>
                 <StackPanel Grid.Column="2">
                     <TextBlock Foreground="#6A7681"
-                               Text="Unsaved XAE documents before build" />
-                    <ComboBox Margin="0,5,0,0"
-                              MinWidth="180"
-                              HorizontalAlignment="Left"
-                              IsEnabled="{Binding CanEditUnsavedDocuments}"
-                              ItemsSource="{Binding UnsavedDocumentPolicies}"
-                              SelectedItem="{Binding UnsavedDocuments, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                               Text="Workspace ownership" />
                     <TextBlock Margin="0,5,0,0"
+                               FontWeight="SemiBold"
                                Foreground="#5C6975"
                                TextWrapping="Wrap"
-                               Text="{Binding UnsavedDocumentsStatus}" />
+                               Text="{Binding WorkspaceOwnership}" />
                 </StackPanel>
             </Grid>
         </Border>

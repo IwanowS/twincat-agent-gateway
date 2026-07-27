@@ -9,12 +9,6 @@ public enum ZeroTestsPolicy
     Allow,
 }
 
-public enum UnsavedDocumentPolicy
-{
-    SaveAll,
-    Reject,
-}
-
 public sealed class GatewayConfiguration
 {
     public int SchemaVersion { get; set; } = 1;
@@ -47,9 +41,6 @@ public sealed class ProjectProfile
     public string? Configuration { get; set; }
 
     public string? Platform { get; set; }
-
-    public UnsavedDocumentPolicy UnsavedDocuments { get; set; } =
-        UnsavedDocumentPolicy.SaveAll;
 
     public bool RequireRecentSuccessfulBuild { get; set; } = true;
 
