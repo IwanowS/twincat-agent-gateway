@@ -36,4 +36,64 @@ public sealed class TwinCatGatewayClient
             wait: true,
             cancellationToken);
     }
+
+    public Task<GatewayResponse<GatewayDiagnosticsResult>> GetDiagnosticsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return _client.SendAsync<EmptyParameters, GatewayDiagnosticsResult>(
+            GatewayMethods.GetDiagnostics,
+            new EmptyParameters(),
+            wait: true,
+            cancellationToken);
+    }
+
+    public Task<GatewayResponse<OperationDetails<TResult>>> GetOperationAsync<TResult>(
+        string operationId,
+        CancellationToken cancellationToken = default)
+    {
+        return _client.SendAsync<
+            GetOperationParameters,
+            OperationDetails<TResult>>(
+            GatewayMethods.GetOperation,
+            new GetOperationParameters
+            {
+                OperationId = operationId,
+            },
+            wait: true,
+            cancellationToken);
+    }
+
+    public Task<GatewayResponse<CancelOperationResult>> CancelOperationAsync(
+        string operationId,
+        CancellationToken cancellationToken = default)
+    {
+        return _client.SendAsync<
+            CancelOperationParameters,
+            CancelOperationResult>(
+            GatewayMethods.CancelOperation,
+            new CancelOperationParameters
+            {
+                OperationId = operationId,
+            },
+            wait: true,
+            cancellationToken);
+    }
+
+    public Task<GatewayResponse<ResourceContent>> GetResourceAsync(
+        string uri,
+        int maximumCharacters = 64 * 1024,
+        long offset = 0,
+        CancellationToken cancellationToken = default)
+    {
+        return _client.SendAsync<GetResourceParameters, ResourceContent>(
+            GatewayMethods.GetResource,
+            new GetResourceParameters
+            {
+                Uri = uri,
+                MaximumCharacters = maximumCharacters,
+                Offset = offset,
+            },
+            wait: true,
+            cancellationToken);
+    }
 }
