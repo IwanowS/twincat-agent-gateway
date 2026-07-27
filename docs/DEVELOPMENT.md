@@ -87,6 +87,40 @@ State-changing scenarios run only on a dedicated remote test bench with:
 
 If the bench is unavailable, report real-XAE tests as not run. Do not replace them with mocked acceptance.
 
+## Optional TwinCAT Project Compare component
+
+Some TwinCAT installations include Beckhoff's Project Compare component under
+`C:\TwinCAT\3.1\Components\TcProjectCompare`. It is available for future
+experiments with semantic comparison of TwinCAT project files.
+
+The public COM interface `ITcHeadlessCompare` is declared by
+`TcPrjCmpPkgInterface.dll` and its accompanying type library. It provides:
+
+- headless comparison of two files or an argument array;
+- overall difference detection;
+- separate counts for formal and logical changes;
+- addition and deletion counts;
+- indexed error, warning, and informational messages.
+
+The bundled supported-file catalogue includes `.tsproj`, `.xti`, `.tmc`,
+`.TcPOU`, `.TcGVL`, `.TcDUT`, and other TwinCAT formats. This makes the
+component potentially useful as an independent semantic signal when
+investigating generated `.tsproj` noise or PLC source changes. Its formal and
+logical counters do not identify the exact changed XML blocks, so they are not
+by themselves proof that a change is reorder-only.
+
+`TcProjectCompareCore.dll` exposes a richer `HeadlessDiff` API, including
+accept and save operations, but depends on internal TwinCAT PLC merge, WPF,
+TFS, type-system, and storage assemblies. Prefer the small public COM
+interface for any exploratory integration; do not invoke file-mutating
+operations during classification.
+
+Project Compare compares files on disk. It does not make an open XAE instance
+reload externally changed files and does not suppress XAE file-change dialogs.
+The inspected extension also referenced TwinCAT Storage `3.1.4025.1`, while
+the gateway MVP targets TwinCAT `3.1.4024.17`; compatibility must therefore be
+verified in a real target XAE before relying on it.
+
 ## Local configuration
 
 Machine-specific profiles belong in ignored files such as `profiles.local.yml` or `appsettings.Local.json`. Commit only safe examples without credentials, host-specific paths, or AMS identities.
