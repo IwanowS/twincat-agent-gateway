@@ -116,6 +116,18 @@ Gateway не обязан всегда отображать главное ок�
 - thin adapters;
 - только IPC client + contracts.
 
+MCP adapter реализуется отдельным проектом `TwinCatGateway.Mcp` на официальном
+[`modelcontextprotocol/csharp-sdk`](https://github.com/modelcontextprotocol/csharp-sdk).
+Для MVP закрепляется stable NuGet package `ModelContextProtocol` версии
+`1.4.1` и stdio transport (`WithStdioServerTransport()`). SDK отвечает только
+за MCP protocol, hosting, schemas, tools и resources; все операции выполняются
+через `TwinCatGateway.Client` и versioned local IPC.
+
+`ModelContextProtocol.AspNetCore`, HTTP transport, prerelease `2.x` и
+`ModelContextProtocol.Extensions.Tasks` в MVP не используются. Длительные
+операции сохраняют собственную gateway-семантику `operationId`/polling. Ни
+Desktop/XAE host, ни Contracts/Core/Ipc не должны зависеть от MCP SDK.
+
 После подтверждения реальной совместимости можно пересмотреть target framework desktop host, не меняя внешний protocol.
 
 ## 7. Внутренние компоненты

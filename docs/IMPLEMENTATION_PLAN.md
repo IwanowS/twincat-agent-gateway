@@ -491,6 +491,17 @@ docs/
 
 Интегрировать gateway с Codex и другими агентами без дублирования логики.
 
+### Реализация adapter
+
+- отдельный .NET 8 project `TwinCatGateway.Mcp`;
+- официальный NuGet package `ModelContextProtocol` `1.4.1` (stable);
+- stdio server transport через `WithStdioServerTransport()`;
+- tool/resource handlers являются тонким отображением
+  `TwinCatGateway.Client` и versioned gateway contracts;
+- MCP SDK не подключается к Desktop, XAE, Core, Contracts или Ipc;
+- HTTP/AspNetCore transport, prerelease `2.x` и MCP Tasks extension не входят
+  в MVP; длительные операции используют существующий `operationId`.
+
 ### MCP tools
 
 ```text
@@ -547,6 +558,8 @@ twincat-diff://<operation-id>/project-noise
 - обычная compile-fix итерация не требует чтения raw Build Output;
 - MCP process можно перезапустить без потери XAE session;
 - CLI и MCP возвращают одинаковую domain semantics;
+- repository build остаётся warning-free с закреплённым stable MCP SDK;
+- ни один MCP handler не вызывает COM/XAE напрямую;
 - skills не содержат абсолютные пользовательские пути.
 
 ## 13. Milestone 10 — hardening и release
