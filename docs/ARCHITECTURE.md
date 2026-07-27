@@ -347,6 +347,15 @@ Configuration/platform берутся из profile или активного sol
 13. Сохранение raw artifacts.
 14. Возврат compact result.
 
+Profile задаёт `unsavedDocuments: saveAll|reject`. Значение по умолчанию —
+`saveAll`; оно одинаково применяется к XAE, запущенному gateway, и к
+подключённому пользовательскому XAE. Оператор может изменить его в WPF UI,
+после чего gateway атомарно сохраняет настройку в локальный configuration
+file. Политика не отменяет защиту external edits: если несохранённый XAE
+document конфликтует с внешним изменением того же файла,
+`EXTERNAL_EDIT_CONFLICT` возвращается до `SaveAll`, и gateway не выбирает
+версию автоматически.
+
 ### 10.3 Diagnostic DTO
 
 ```json
@@ -431,6 +440,7 @@ Automation Interface предоставляет `StartRestartTwinCAT()` для R
 ```yaml
 name: bench-remote
 solution: C:\Projects\Machine\Machine.sln
+unsavedDocuments: saveAll
 allowActivation: true
 requireRecentSuccessfulBuild: true
 autoWaitForTcUnit: true
@@ -665,6 +675,7 @@ Tool result должен быть достаточен для обычного �
 - просмотр structured и raw logs;
 - кнопки reconnect, build, activate и open log folder;
 - явный индикатор, когда activation запрещён profile;
+- настройка `SaveAll`/`Reject` для несохранённых XAE documents перед build;
 - отображение unresolved external edit conflicts.
 
 UI не должен содержать отдельную реализацию операций; он вызывает тот же application service, что IPC.
