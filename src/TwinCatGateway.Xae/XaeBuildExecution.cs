@@ -151,7 +151,8 @@ internal sealed class XaeBuildEventLease : IDisposable
         }
 
         IReadOnlyList<XaeProjectFileChangeResult> projectChanges =
-            _projectFileLease.ClassifyChangesAndRelease();
+            _projectFileLease.ClassifyChangesAndRelease(
+                _requestedAction);
         int failedProjects = _requestedAction == BuildAction.Clean
             ? 0
             : _solutionBuild.LastBuildInfo;

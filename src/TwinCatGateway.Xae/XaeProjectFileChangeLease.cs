@@ -111,7 +111,7 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
     }
 
     public IReadOnlyList<XaeProjectFileChangeResult>
-        ClassifyChangesAndRelease()
+        ClassifyChangesAndRelease(BuildAction action)
     {
         try
         {
@@ -144,8 +144,10 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                     continue;
                 }
 
-                TsProjectClassificationResult classification =
-                    TsProjectNoiseClassifier.Classify(
+                XaeProjectFileChangeResult classification =
+                    ClassifyChangedProject(
+                        action,
+                        file.Path,
                         file.BaselineContent,
                         current);
                 file.AcknowledgeWhileIgnored =
@@ -155,13 +157,7 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                     || classification.Classification
                         == ProjectChangeClassification
                             .WhitespaceOnly;
-                changes.Add(
-                    new XaeProjectFileChangeResult(
-                        file.Path,
-                        classification.Classification,
-                        classification.MovedBlocks,
-                        classification.ContentChanges,
-                        classification.Reason));
+                changes.Add(classification);
             }
 
             foreach (string addedPath in EnumerateProjectFiles(_root)
@@ -183,6 +179,37 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
         {
             Dispose();
         }
+    }
+
+    internal static XaeProjectFileChangeResult
+        ClassifyChangedProject(
+            BuildAction action,
+            string path,
+            byte[] baseline,
+            byte[] current)
+    {
+        if (action == BuildAction.Clean)
+        {
+            return new XaeProjectFileChangeResult(
+                path,
+                ProjectChangeClassification.Unknown,
+                movedBlocks: 0,
+                contentChanges: 0,
+                "Clean changed the TwinCAT project file. Clean has no "
+                + "compiler-authoritative output order, so the change "
+                + "cannot be classified as expected generated noise.");
+        }
+
+        TsProjectClassificationResult classification =
+            TsProjectNoiseClassifier.Classify(
+                baseline,
+                current);
+        return new XaeProjectFileChangeResult(
+            path,
+            classification.Classification,
+            classification.MovedBlocks,
+            classification.ContentChanges,
+            classification.Reason);
     }
 
     public void Dispose()
