@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
@@ -107,6 +108,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                         "G",
                         CultureInfo.CurrentCulture)));
         }
+    }
+
+    public ResourceContent? GetPrimaryResource(string operationId)
+    {
+        OperationDetails<object> operation =
+            _host.ApplicationService.GetOperation(operationId);
+        ResourceReference? resource =
+            operation.Operation.Resources.FirstOrDefault();
+        return resource is null
+            ? null
+            : _host.ApplicationService.GetResource(
+                resource.Uri,
+                maximumCharacters: 1024 * 1024,
+                offset: 0);
     }
 
     private static string FormatTarget(TargetIdentity? target)
