@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <Description>TwinCAT XAE COM boundary, hosted only by the desktop gateway.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
+    <ProjectReference Include="..\TwinCatGateway.Core\TwinCatGateway.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,19 @@
+* text=auto eol=lf
+
+# Visual Studio and TwinCAT rewrite these files with Windows line endings.
+*.sln text eol=crlf
+*.tsproj text eol=crlf
+*.plcproj text eol=crlf
+*.TcPOU text eol=crlf
+*.TcGVL text eol=crlf
+*.TcDUT text eol=crlf
+*.TcTTO text eol=crlf
+
+# Binary artifacts
+*.dll binary
+*.exe binary
+*.pdb binary
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary

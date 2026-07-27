@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <Description>Versioned transport-independent contracts for TwinCAT Agent Gateway.</Description>
+  </PropertyGroup>
+</Project>
