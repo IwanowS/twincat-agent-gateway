@@ -96,18 +96,6 @@ public sealed class GatewayDesktopHost : IDisposable
             ? GatewayState.Disconnected
             : GatewayState.Faulted;
         _status.Replace(initial);
-        if (StartupError is not null)
-        {
-            GatewayError error = new()
-            {
-                Code = ErrorCodes.ProfileInvalid,
-                Message = StartupError,
-                Stage = "configuration.load",
-            };
-            _events.Record(
-                CreateErrorEvent(error),
-                DateTimeOffset.UtcNow);
-        }
     }
 
     public GatewayApplicationService ApplicationService { get; }
@@ -134,12 +122,30 @@ public sealed class GatewayDesktopHost : IDisposable
             StartupError is null
                 ? "Gateway host started."
                 : "Gateway host started in faulted configuration state.");
+        _events.Record(
+            CreateEvent(
+                GatewayEventTypes.GatewayStarted,
+                "Gateway host started."),
+            DateTimeOffset.UtcNow);
         if (StartupError is not null)
         {
             _logger.Write(
                 StructuredLogLevel.Error,
                 "configuration.invalid",
                 StartupError);
+            GatewayError error = new()
+            {
+                Code = ErrorCodes.ProfileInvalid,
+                Message = StartupError,
+                Stage = "configuration.load",
+            };
+            _events.Record(
+                CreateEvent(
+                    GatewayEventTypes.GatewayFaulted,
+                    error.Message,
+                    DiagnosticSeverity.Error,
+                    error),
+                DateTimeOffset.UtcNow);
         }
 
         _serverTask = ObserveServerAsync(_server.RunAsync(_shutdown.Token));
@@ -171,6 +177,11 @@ public sealed class GatewayDesktopHost : IDisposable
             status.Gateway.State = GatewayState.Stopping;
             return status;
         });
+        _events.Record(
+            CreateEvent(
+                GatewayEventTypes.GatewayStopping,
+                "Gateway host is stopping."),
+            DateTimeOffset.UtcNow);
         _shutdown.Cancel();
         if (_serverTask is not null)
         {
@@ -190,6 +201,11 @@ public sealed class GatewayDesktopHost : IDisposable
             StructuredLogLevel.Information,
             "gateway.stop",
             "Gateway host stopped.");
+        _events.Record(
+            CreateEvent(
+                GatewayEventTypes.GatewayStopped,
+                "Gateway host stopped."),
+            DateTimeOffset.UtcNow);
     }
 
     public void Dispose()
@@ -218,20 +234,28 @@ public sealed class GatewayDesktopHost : IDisposable
                 Stage = "ipc.server",
             };
             _events.Record(
-                CreateErrorEvent(error),
+                CreateEvent(
+                    GatewayEventTypes.GatewayFaulted,
+                    error.Message,
+                    DiagnosticSeverity.Error,
+                    error),
                 DateTimeOffset.UtcNow);
         }
     }
 
-    private static GatewayEvent CreateErrorEvent(
-        GatewayError error)
+    private static GatewayEvent CreateEvent(
+        string type,
+        string message,
+        DiagnosticSeverity severity =
+            DiagnosticSeverity.Info,
+        GatewayError? error = null)
     {
         return new GatewayEvent
         {
-            Type = GatewayEventTypes.ErrorOccurred,
-            Severity = DiagnosticSeverity.Error,
-            Stage = error.Stage,
-            Message = error.Message,
+            Type = type,
+            Severity = severity,
+            Stage = error?.Stage,
+            Message = message,
             Error = error,
         };
     }

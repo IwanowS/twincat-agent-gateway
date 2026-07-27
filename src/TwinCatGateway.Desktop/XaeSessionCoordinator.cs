@@ -37,6 +37,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private int? _lastHResult;
     private string? _lastFailureSignature;
     private string? _lastRuntimeFailureSignature;
+    private string? _lastRuntimeStateSignature;
     private bool _wasConnected;
     private int _disposed;
 
@@ -385,6 +386,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
         ComDiagnostics diagnostics = _session.GetComDiagnostics();
         bool logConnection;
         bool logRuntimeFailure;
+        bool publishRuntimeState;
+        string runtimeStateSignature = CreateRuntimeStateSignature(
+            runtime);
         lock (_sync)
         {
             _lastSnapshot = CloneSnapshot(snapshot);
@@ -399,6 +403,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     StringComparison.Ordinal);
             _lastRuntimeFailureSignature =
                 runtime.Diagnostics.ErrorCode;
+            publishRuntimeState = !string.Equals(
+                _lastRuntimeStateSignature,
+                runtimeStateSignature,
+                StringComparison.Ordinal);
+            _lastRuntimeStateSignature =
+                runtimeStateSignature;
             _lastFailureSignature = null;
             logConnection = !_wasConnected;
             _wasConnected = true;
@@ -428,47 +438,57 @@ internal sealed class XaeSessionCoordinator : IDisposable
         });
         if (logConnection)
         {
+            Dictionary<string, string> properties = new()
+            {
+                ["processId"] =
+                    selected.ProcessId?.ToString(
+                        CultureInfo.InvariantCulture)
+                    ?? "unknown",
+                ["progId"] = selected.ProgId ?? "unknown",
+                ["solution"] = selected.Solution ?? "unknown",
+                ["agentWorkspaceOwned"] =
+                    snapshot.AgentWorkspaceOwned.ToString(),
+                ["closedDocumentCount"] =
+                    snapshot.ClosedDocumentCount.ToString(
+                        CultureInfo.InvariantCulture),
+                ["discardedDocumentCount"] =
+                    snapshot.DiscardedDocumentCount.ToString(
+                        CultureInfo.InvariantCulture),
+            };
             _logger.Write(
                 StructuredLogLevel.Information,
                 "xae.connected",
                 "Connected to the configured XAE solution.",
-                properties: new Dictionary<string, string>
+                properties: properties);
+            _events.Record(
+                new GatewayEvent
                 {
-                    ["processId"] =
-                        selected.ProcessId?.ToString(
-                            CultureInfo.InvariantCulture)
-                        ?? "unknown",
-                    ["progId"] = selected.ProgId ?? "unknown",
-                    ["solution"] = selected.Solution ?? "unknown",
-                    ["agentWorkspaceOwned"] =
-                        snapshot.AgentWorkspaceOwned.ToString(),
-                    ["closedDocumentCount"] =
-                        snapshot.ClosedDocumentCount.ToString(
-                            CultureInfo.InvariantCulture),
-                    ["discardedDocumentCount"] =
-                        snapshot.DiscardedDocumentCount.ToString(
-                            CultureInfo.InvariantCulture),
-                });
+                    Type = GatewayEventTypes.XaeConnected,
+                    Severity = DiagnosticSeverity.Info,
+                    Stage = "xae.attach",
+                    Message =
+                        "Connected to the configured XAE solution.",
+                    Properties = properties,
+                },
+                DateTimeOffset.UtcNow);
+        }
+
+        if (publishRuntimeState)
+        {
+            _events.Record(
+                CreateRuntimeStateEvent(runtime),
+                DateTimeOffset.UtcNow);
         }
 
         if (logRuntimeFailure)
         {
+            Dictionary<string, string> properties =
+                CreateRuntimeProperties(runtime);
             _logger.Write(
                 StructuredLogLevel.Warning,
                 "ads.runtime_status.failed",
                 "Could not read the selected target runtime state.",
-                properties: new Dictionary<string, string>
-                {
-                    ["amsNetId"] =
-                        runtime.Diagnostics.AmsNetId
-                        ?? "unknown",
-                    ["port"] =
-                        runtime.Diagnostics.Port.ToString(
-                            CultureInfo.InvariantCulture),
-                    ["errorCode"] =
-                        runtime.Diagnostics.ErrorCode
-                        ?? "UNKNOWN",
-                },
+                properties: properties,
                 exception: runtime.Failure);
             GatewayError error = new()
             {
@@ -479,7 +499,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 Stage = "ads.runtimeStatus",
             };
             _events.Record(
-                CreateErrorEvent(error),
+                CreateErrorEvent(
+                    GatewayEventTypes.RuntimeStatusReadFailed,
+                    error,
+                    properties),
                 DateTimeOffset.UtcNow);
         }
     }
@@ -493,6 +516,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         string signature =
             $"{code ?? exception.GetType().FullName}|{exception.Message}";
         bool newFailure;
+        bool wasConnected;
         int? hResult = GetMeaningfulHResult(exception);
         lock (_sync)
         {
@@ -506,7 +530,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 signature,
                 StringComparison.Ordinal);
             _lastFailureSignature = signature;
+            wasConnected = _wasConnected;
             _wasConnected = false;
+            _lastRuntimeStateSignature = null;
         }
 
         _status.Update(status =>
@@ -527,6 +553,20 @@ internal sealed class XaeSessionCoordinator : IDisposable
             status.TwinCat.Mode = RuntimeMode.Unknown;
             return status;
         });
+        if (wasConnected)
+        {
+            _events.Record(
+                new GatewayEvent
+                {
+                    Type = GatewayEventTypes.XaeDisconnected,
+                    Severity = DiagnosticSeverity.Warning,
+                    Stage = "xae.verify",
+                    Message =
+                        "The configured XAE session disconnected.",
+                },
+                DateTimeOffset.UtcNow);
+        }
+
         if (newFailure)
         {
             _logger.Write(
@@ -556,22 +596,95 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     ?? "xae.coordinator",
             };
             _events.Record(
-                CreateErrorEvent(error),
+                CreateErrorEvent(
+                    GatewayEventTypes.XaeConnectionFailed,
+                    error),
                 DateTimeOffset.UtcNow);
         }
     }
 
     private static GatewayEvent CreateErrorEvent(
-        GatewayError error)
+        string type,
+        GatewayError error,
+        Dictionary<string, string>? properties = null)
     {
         return new GatewayEvent
         {
-            Type = GatewayEventTypes.ErrorOccurred,
+            Type = type,
             Severity = DiagnosticSeverity.Error,
             Stage = error.Stage,
             Message = error.Message,
             Error = error,
+            Properties = properties
+                ?? new Dictionary<string, string>(),
         };
+    }
+
+    private static GatewayEvent CreateRuntimeStateEvent(
+        AdsRuntimeStatusReadResult runtime)
+    {
+        DiagnosticSeverity severity;
+        switch (runtime.Status.Mode)
+        {
+            case RuntimeMode.Exception:
+                severity = DiagnosticSeverity.Error;
+                break;
+            case RuntimeMode.Unknown:
+                severity = DiagnosticSeverity.Warning;
+                break;
+            default:
+                severity = DiagnosticSeverity.Info;
+                break;
+        }
+
+        return new GatewayEvent
+        {
+            Type = GatewayEventTypes.RuntimeStateChanged,
+            Severity = severity,
+            Stage = "ads.runtimeStatus",
+            Message =
+                $"TwinCAT runtime state changed to {runtime.Status.Mode}.",
+            Properties = CreateRuntimeProperties(runtime),
+        };
+    }
+
+    private static Dictionary<string, string>
+        CreateRuntimeProperties(
+            AdsRuntimeStatusReadResult runtime)
+    {
+        return new Dictionary<string, string>
+        {
+            ["amsNetId"] =
+                runtime.Diagnostics.AmsNetId ?? "unknown",
+            ["port"] = runtime.Diagnostics.Port.ToString(
+                CultureInfo.InvariantCulture),
+            ["started"] =
+                runtime.Status.Started?.ToString()
+                ?? "unknown",
+            ["mode"] = runtime.Status.Mode.ToString(),
+            ["adsState"] =
+                runtime.Diagnostics.AdsState ?? "unknown",
+            ["deviceState"] =
+                runtime.Diagnostics.DeviceState?.ToString(
+                    CultureInfo.InvariantCulture)
+                ?? "unknown",
+            ["errorCode"] =
+                runtime.Diagnostics.ErrorCode ?? "none",
+        };
+    }
+
+    private static string CreateRuntimeStateSignature(
+        AdsRuntimeStatusReadResult runtime)
+    {
+        return string.Join(
+            "|",
+            runtime.Status.Started?.ToString() ?? "unknown",
+            runtime.Status.Mode.ToString(),
+            runtime.Diagnostics.AdsState ?? "unknown",
+            runtime.Diagnostics.DeviceState?.ToString(
+                CultureInfo.InvariantCulture)
+                ?? "unknown",
+            runtime.Diagnostics.ErrorCode ?? "none");
     }
 
     private async Task<XaeSessionSnapshot> ReadSnapshotAfterFailureAsync()

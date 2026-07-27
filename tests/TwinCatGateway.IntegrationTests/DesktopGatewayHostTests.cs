@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Ads;
@@ -66,8 +67,9 @@ public sealed class DesktopGatewayHostTests
             host,
             GatewayState.Disconnected,
             TimeSpan.FromSeconds(10));
-        await WaitForEventCursorAsync(
+        await WaitForErrorCodeAsync(
             host,
+            ErrorCodes.XaeNotFound,
             TimeSpan.FromSeconds(10));
 
         GatewayResponse<GatewayStatusResult> response =
@@ -96,9 +98,15 @@ public sealed class DesktopGatewayHostTests
         Assert.Null(host.StartupError);
         Assert.True(response.Result?.LatestEventCursor > 0);
         Assert.True(diagnostics.Ok);
+        Assert.True(
+            diagnostics.Result?.LatestEventCursor
+                >= response.Result?.LatestEventCursor);
         Assert.Equal(
-            response.Result?.LatestEventCursor,
+            diagnostics.Result?.LatestEventCursor,
             diagnostics.Result?.NextScanCursor);
+        Assert.Equal(
+            GatewayEventTypes.GatewayStarted,
+            diagnostics.Result?.Events[0].Type);
         Assert.Contains(
             diagnostics.Result!.Events,
             gatewayEvent =>
@@ -183,6 +191,16 @@ public sealed class DesktopGatewayHostTests
         Assert.NotEqual(
             RuntimeMode.Unknown,
             response.Result.Status.TwinCat.Mode);
+        Assert.Contains(
+            response.Result.Events,
+            gatewayEvent =>
+                gatewayEvent.Type
+                    == GatewayEventTypes.XaeConnected);
+        Assert.Contains(
+            response.Result.Events,
+            gatewayEvent =>
+                gatewayEvent.Type
+                    == GatewayEventTypes.RuntimeStateChanged);
         Assert.Contains(
             response.Result!.DteInstances,
             instance => instance.Selected
@@ -293,6 +311,20 @@ public sealed class DesktopGatewayHostTests
                 log.Result?.Content));
         Assert.Empty(
             XaeWindowProbe.FindModalDialogs(processId));
+        Assert.Equal(
+            new[]
+            {
+                GatewayEventTypes.BuildQueued,
+                GatewayEventTypes.BuildStarted,
+                GatewayEventTypes.BuildSucceeded,
+            },
+            diagnostics.Events
+                .Where(gatewayEvent =>
+                    string.Equals(
+                        gatewayEvent.OperationId,
+                        accepted.Result.OperationId,
+                        StringComparison.Ordinal))
+                .Select(gatewayEvent => gatewayEvent.Type));
     }
 
     private static async Task<OperationDetails<BuildResult>>
@@ -333,17 +365,20 @@ public sealed class DesktopGatewayHostTests
             $"Operation '{operationId}' did not complete.");
     }
 
-    private static async Task WaitForEventCursorAsync(
+    private static async Task WaitForErrorCodeAsync(
         GatewayDesktopHost host,
+        string errorCode,
         TimeSpan timeout)
     {
         DateTimeOffset deadline =
             DateTimeOffset.UtcNow.Add(timeout);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            if (host.ApplicationService
-                    .GetStatus()
-                    .LatestEventCursor > 0)
+            GatewayDiagnosticsResult diagnostics =
+                host.ApplicationService.GetDiagnostics();
+            if (diagnostics.Events.Any(
+                gatewayEvent =>
+                    gatewayEvent.Error?.Code == errorCode))
             {
                 return;
             }
@@ -352,7 +387,7 @@ public sealed class DesktopGatewayHostTests
         }
 
         throw new TimeoutException(
-            "Gateway did not publish an error cursor.");
+            $"Gateway did not publish error '{errorCode}'.");
     }
 
     private static async Task WaitForStateAsync(

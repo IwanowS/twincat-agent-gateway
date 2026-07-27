@@ -101,7 +101,13 @@ public sealed class OperationQueue : IDisposable
                     $"Operation ID generator returned duplicate ID '{operationId}'.");
             }
 
-            _store.AddQueued(operationId, kind, _clock.UtcNow);
+            DateTimeOffset queuedAtUtc = _clock.UtcNow;
+            _store.AddQueued(operationId, kind, queuedAtUtc);
+            RecordOperationEvent(
+                operationId,
+                kind,
+                OperationState.Queued,
+                queuedAtUtc);
             _queue.Enqueue(item);
             _signal.Release();
 
@@ -127,10 +133,20 @@ public sealed class OperationQueue : IDisposable
             return OperationCancellationResult.AlreadyStarted;
         }
 
-        _store.TryComplete(
+        DateTimeOffset completedAtUtc = _clock.UtcNow;
+        bool completed = _store.TryComplete(
             operationId,
             OperationState.Cancelled,
-            _clock.UtcNow);
+            completedAtUtc);
+        if (completed)
+        {
+            RecordOperationEvent(
+                operationId,
+                item.Kind,
+                OperationState.Cancelled,
+                completedAtUtc);
+        }
+
         _items.TryRemove(operationId, out _);
         return OperationCancellationResult.Cancelled;
     }
@@ -191,7 +207,17 @@ public sealed class OperationQueue : IDisposable
 
     private async Task ExecuteItemAsync(QueueItem item)
     {
-        _store.TryMarkRunning(item.OperationId, _clock.UtcNow);
+        DateTimeOffset startedAtUtc = _clock.UtcNow;
+        if (_store.TryMarkRunning(
+            item.OperationId,
+            startedAtUtc))
+        {
+            RecordOperationEvent(
+                item.OperationId,
+                item.Kind,
+                OperationState.Running,
+                startedAtUtc);
+        }
 
         using CancellationTokenSource? timeout = item.Timeout.HasValue
             ? new CancellationTokenSource(item.Timeout.Value)
@@ -221,14 +247,15 @@ public sealed class OperationQueue : IDisposable
                 result.Result,
                 error,
                 result.Resources);
-            if (completed && error is not null)
+            if (completed)
             {
-                _gatewayEventSink?.Record(
-                    CreateErrorEvent(
-                        item.Kind,
-                        error,
-                        result.Resources),
-                    completedAtUtc);
+                RecordOperationEvent(
+                    item.OperationId,
+                    item.Kind,
+                    state,
+                    completedAtUtc,
+                    error,
+                    result.Resources);
             }
         }
         catch (OperationCanceledException) when (
@@ -249,19 +276,29 @@ public sealed class OperationQueue : IDisposable
                 error: error);
             if (completed)
             {
-                _gatewayEventSink?.Record(
-                    CreateErrorEvent(
-                        item.Kind,
-                        error),
-                    completedAtUtc);
+                RecordOperationEvent(
+                    item.OperationId,
+                    item.Kind,
+                    OperationState.TimedOut,
+                    completedAtUtc,
+                    error);
             }
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
         {
-            _store.TryComplete(
+            DateTimeOffset completedAtUtc = _clock.UtcNow;
+            bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.Cancelled,
-                _clock.UtcNow);
+                completedAtUtc);
+            if (completed)
+            {
+                RecordOperationEvent(
+                    item.OperationId,
+                    item.Kind,
+                    OperationState.Cancelled,
+                    completedAtUtc);
+            }
         }
         catch (GatewayOperationException exception)
         {
@@ -281,11 +318,12 @@ public sealed class OperationQueue : IDisposable
                 error: error);
             if (completed)
             {
-                _gatewayEventSink?.Record(
-                    CreateErrorEvent(
-                        item.Kind,
-                        error),
-                    completedAtUtc);
+                RecordOperationEvent(
+                    item.OperationId,
+                    item.Kind,
+                    OperationState.Failed,
+                    completedAtUtc,
+                    error);
             }
         }
         catch (Exception exception)
@@ -304,11 +342,12 @@ public sealed class OperationQueue : IDisposable
                 error: error);
             if (completed)
             {
-                _gatewayEventSink?.Record(
-                    CreateErrorEvent(
-                        item.Kind,
-                        error),
-                    completedAtUtc);
+                RecordOperationEvent(
+                    item.OperationId,
+                    item.Kind,
+                    OperationState.Failed,
+                    completedAtUtc,
+                    error);
             }
         }
         finally
@@ -327,10 +366,20 @@ public sealed class OperationQueue : IDisposable
                 continue;
             }
 
-            _store.TryComplete(
+            DateTimeOffset completedAtUtc = _clock.UtcNow;
+            bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.Cancelled,
-                _clock.UtcNow);
+                completedAtUtc);
+            if (completed)
+            {
+                RecordOperationEvent(
+                    item.OperationId,
+                    item.Kind,
+                    OperationState.Cancelled,
+                    completedAtUtc);
+            }
+
             _items.TryRemove(item.OperationId, out _);
         }
     }
@@ -354,23 +403,198 @@ public sealed class OperationQueue : IDisposable
         };
     }
 
-    private static GatewayEvent CreateErrorEvent(
+    private void RecordOperationEvent(
+        string operationId,
         OperationKind kind,
-        GatewayError error,
+        OperationState state,
+        DateTimeOffset occurredAtUtc,
+        GatewayError? error = null,
         IReadOnlyList<ResourceReference>? resources = null)
     {
-        return new GatewayEvent
+        _gatewayEventSink?.Record(
+            new GatewayEvent
+            {
+                Type = GetOperationEventType(kind, state),
+                Severity = GetOperationEventSeverity(state),
+                OperationId = operationId,
+                OperationKind = kind,
+                Stage = error?.Stage
+                    ?? GetOperationEventStage(state),
+                Message = GetOperationEventMessage(kind, state),
+                Error = error,
+                Resources = resources?.ToList()
+                    ?? new List<ResourceReference>(),
+            },
+            occurredAtUtc);
+    }
+
+    private static string GetOperationEventType(
+        OperationKind kind,
+        OperationState state)
+    {
+        switch (kind)
         {
-            Type = GatewayEventTypes.ErrorOccurred,
-            Severity = DiagnosticSeverity.Error,
-            OperationId = error.OperationId,
-            OperationKind = kind,
-            Stage = error.Stage,
-            Message = error.Message,
-            Error = error,
-            Resources = resources?.ToList()
-                ?? new List<ResourceReference>(),
-        };
+            case OperationKind.OpenSolution:
+                return GetSolutionOpenEventType(state);
+            case OperationKind.Build:
+                return GetBuildEventType(state);
+            case OperationKind.Activate:
+                return GetActivationEventType(state);
+            case OperationKind.RecoverToConfig:
+                return GetRecoveryEventType(state);
+            case OperationKind.Test:
+                return GetTcUnitEventType(state);
+            default:
+                return $"operation.{state.ToString().ToLowerInvariant()}";
+        }
+    }
+
+    private static string GetSolutionOpenEventType(
+        OperationState state)
+    {
+        switch (state)
+        {
+            case OperationState.Queued:
+                return GatewayEventTypes.SolutionOpenQueued;
+            case OperationState.Running:
+                return GatewayEventTypes.SolutionOpenStarted;
+            case OperationState.Succeeded:
+                return GatewayEventTypes.SolutionOpenSucceeded;
+            case OperationState.Failed:
+                return GatewayEventTypes.SolutionOpenFailed;
+            case OperationState.TimedOut:
+                return GatewayEventTypes.SolutionOpenTimedOut;
+            case OperationState.Cancelled:
+                return GatewayEventTypes.SolutionOpenCancelled;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(state));
+        }
+    }
+
+    private static string GetBuildEventType(OperationState state)
+    {
+        switch (state)
+        {
+            case OperationState.Queued:
+                return GatewayEventTypes.BuildQueued;
+            case OperationState.Running:
+                return GatewayEventTypes.BuildStarted;
+            case OperationState.Succeeded:
+                return GatewayEventTypes.BuildSucceeded;
+            case OperationState.Failed:
+                return GatewayEventTypes.BuildFailed;
+            case OperationState.TimedOut:
+                return GatewayEventTypes.BuildTimedOut;
+            case OperationState.Cancelled:
+                return GatewayEventTypes.BuildCancelled;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(state));
+        }
+    }
+
+    private static string GetActivationEventType(OperationState state)
+    {
+        switch (state)
+        {
+            case OperationState.Queued:
+                return GatewayEventTypes.ActivationQueued;
+            case OperationState.Running:
+                return GatewayEventTypes.ActivationStarted;
+            case OperationState.Succeeded:
+                return GatewayEventTypes.ActivationSucceeded;
+            case OperationState.Failed:
+                return GatewayEventTypes.ActivationFailed;
+            case OperationState.TimedOut:
+                return GatewayEventTypes.ActivationTimedOut;
+            case OperationState.Cancelled:
+                return GatewayEventTypes.ActivationCancelled;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(state));
+        }
+    }
+
+    private static string GetRecoveryEventType(OperationState state)
+    {
+        switch (state)
+        {
+            case OperationState.Queued:
+                return GatewayEventTypes.RecoveryQueued;
+            case OperationState.Running:
+                return GatewayEventTypes.RecoveryStarted;
+            case OperationState.Succeeded:
+                return GatewayEventTypes.RecoverySucceeded;
+            case OperationState.Failed:
+                return GatewayEventTypes.RecoveryFailed;
+            case OperationState.TimedOut:
+                return GatewayEventTypes.RecoveryTimedOut;
+            case OperationState.Cancelled:
+                return GatewayEventTypes.RecoveryCancelled;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(state));
+        }
+    }
+
+    private static string GetTcUnitEventType(OperationState state)
+    {
+        switch (state)
+        {
+            case OperationState.Queued:
+                return GatewayEventTypes.TcUnitQueued;
+            case OperationState.Running:
+                return GatewayEventTypes.TcUnitStarted;
+            case OperationState.Succeeded:
+                return GatewayEventTypes.TcUnitSucceeded;
+            case OperationState.Failed:
+                return GatewayEventTypes.TcUnitFailed;
+            case OperationState.TimedOut:
+                return GatewayEventTypes.TcUnitTimedOut;
+            case OperationState.Cancelled:
+                return GatewayEventTypes.TcUnitCancelled;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(state));
+        }
+    }
+
+    private static DiagnosticSeverity GetOperationEventSeverity(
+        OperationState state)
+    {
+        switch (state)
+        {
+            case OperationState.Failed:
+            case OperationState.TimedOut:
+                return DiagnosticSeverity.Error;
+            case OperationState.Cancelled:
+                return DiagnosticSeverity.Warning;
+            default:
+                return DiagnosticSeverity.Info;
+        }
+    }
+
+    private static string GetOperationEventStage(OperationState state)
+    {
+        switch (state)
+        {
+            case OperationState.Queued:
+                return "operation.queue";
+            case OperationState.Running:
+                return "operation.execute";
+            case OperationState.Succeeded:
+            case OperationState.Failed:
+                return "operation.complete";
+            case OperationState.TimedOut:
+                return "operation.timeout";
+            case OperationState.Cancelled:
+                return "operation.cancel";
+            default:
+                throw new ArgumentOutOfRangeException(nameof(state));
+        }
+    }
+
+    private static string GetOperationEventMessage(
+        OperationKind kind,
+        OperationState state)
+    {
+        return $"{kind} operation {state.ToString().ToLowerInvariant()}.";
     }
 
     private static GatewayError? WithOperationId(

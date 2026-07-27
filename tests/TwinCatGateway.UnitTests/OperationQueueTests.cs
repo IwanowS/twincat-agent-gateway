@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Contracts;
@@ -138,11 +139,23 @@ public sealed class OperationQueueTests
 
         Assert.Equal(ErrorCodes.OperationTimeout, operation.Summary.Error?.Code);
         Assert.True(operation.Summary.Error?.Retryable);
-        Assert.Equal(1, status.Read().LatestEventCursor);
+        Assert.Equal(3, status.Read().LatestEventCursor);
+        GatewayEvent[] lifecycle = events
+            .ReadAfter(null, 0, 100)
+            .Events
+            .ToArray();
+        Assert.Equal(
+            new[]
+            {
+                GatewayEventTypes.BuildQueued,
+                GatewayEventTypes.BuildStarted,
+                GatewayEventTypes.BuildTimedOut,
+            },
+            lifecycle.Select(gatewayEvent =>
+                gatewayEvent.Type));
         Assert.Equal(
             ErrorCodes.OperationTimeout,
-            Assert.Single(
-                events.ReadAfter(null, 0, 100).Events)
+            lifecycle[2]
                 .Error?.Code);
     }
 
@@ -169,6 +182,54 @@ public sealed class OperationQueueTests
         await queue.StopAsync();
 
         Assert.Equal(accepted.OperationId, executedId);
+    }
+
+    [Fact]
+    public async Task SuccessfulBuildPublishesOrderedLifecycleEvents()
+    {
+        OperationStore store = new();
+        GatewayStatusSnapshotStore status =
+            new(GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
+        GatewayEventJournal events = new(status);
+        using OperationQueue queue = new(
+            store,
+            gatewayEventSink: events);
+
+        OperationAccepted accepted = queue.Enqueue(
+            OperationKind.Build,
+            cancellationToken => Task.FromResult(
+                OperationExecutionResult.Success()));
+
+        await WaitForStateAsync(
+            store,
+            accepted.OperationId,
+            OperationState.Succeeded);
+        await queue.StopAsync();
+
+        GatewayEvent[] lifecycle = events
+            .ReadAfter(null, 0, 100)
+            .Events
+            .ToArray();
+        Assert.Equal(
+            new[]
+            {
+                GatewayEventTypes.BuildQueued,
+                GatewayEventTypes.BuildStarted,
+                GatewayEventTypes.BuildSucceeded,
+            },
+            lifecycle.Select(gatewayEvent =>
+                gatewayEvent.Type));
+        Assert.All(
+            lifecycle,
+            gatewayEvent =>
+            {
+                Assert.Equal(
+                    accepted.OperationId,
+                    gatewayEvent.OperationId);
+                Assert.Equal(
+                    OperationKind.Build,
+                    gatewayEvent.OperationKind);
+            });
     }
 
     private static TaskCompletionSource<bool> NewCompletionSource()

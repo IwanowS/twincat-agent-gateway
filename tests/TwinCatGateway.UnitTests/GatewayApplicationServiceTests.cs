@@ -320,14 +320,23 @@ public sealed class GatewayApplicationServiceTests
         Assert.False(fixture.Service.GetStatus().LastBuild?.Ok);
         Assert.Null(fixture.Service.GetStatus().CurrentOperation);
         Assert.Equal(
-            1,
+            3,
             fixture.Service.GetStatus().LatestEventCursor);
-        GatewayEvent gatewayEvent = Assert.Single(
-            fixture.Service.GetDiagnostics(
-                new GetDiagnosticsParameters
-                {
-                    AfterEventCursor = 0,
-                }).Events);
+        GatewayEvent[] lifecycle = fixture.Service.GetDiagnostics(
+            new GetDiagnosticsParameters
+            {
+                AfterEventCursor = 0,
+            }).Events.ToArray();
+        Assert.Equal(
+            new[]
+            {
+                GatewayEventTypes.BuildQueued,
+                GatewayEventTypes.BuildStarted,
+                GatewayEventTypes.BuildFailed,
+            },
+            lifecycle.Select(gatewayEvent =>
+                gatewayEvent.Type));
+        GatewayEvent gatewayEvent = lifecycle[2];
         Assert.Equal(
             ErrorCodes.BuildFailed,
             gatewayEvent.Error?.Code);
