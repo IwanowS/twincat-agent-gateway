@@ -54,6 +54,37 @@ Real-XAE integration tests require the explicitly configured remote TwinCAT 3.1.
 
 Real-XAE DTE/ROT checks must execute under the same interactive Windows account, session, and integrity level as XAE. A sandbox account may see the XAE PID while seeing an empty ROT and no main-window handle. Treat that combination as an execution-context mismatch; rerun the read-only discovery outside the agent sandbox before asking the user to reopen or terminate XAE. Use the x86 VSTest command documented in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
+### .NET Code and Assembly Analysis
+
+The project MCP configuration requires these global .NET tools at the validated versions. On a new machine, install them once:
+
+```powershell
+dotnet tool install --global Sherlock.MCP.Server --version 2.12.0
+dotnet tool install --global RoslynCodeLens.Mcp --version 2.14.0
+```
+
+Do not silently fall back to guessing when either required MCP server is unavailable. Report the missing prerequisite.
+
+Use Roslyn CodeLens MCP for questions about the loaded solution: symbols, definitions, references, implementations, callers, type hierarchies, source code, diagnostics, and change impact. Start with search_symbols, get_symbol_context, get_type_overview, or get_file_overview, then drill into focused queries. Use list_solutions when the active solution is uncertain.
+
+The project config starts Roslyn CodeLens from the current repository root with the explicit relative solution path. For a manual launch, run this from the root of the current checkout or worktree:
+
+```powershell
+roslyn-codelens-mcp .\TwinCatGateway.sln
+```
+
+Never reuse an absolute solution path from another checkout. Confirm with list_solutions that the active normalized path belongs to the current checkout and that no projects were skipped.
+
+Use Sherlock MCP for external .NET assemblies, NuGet packages, types, and members instead of guessing. Locate DLLs with find_assembly_by_* or get_project_output_paths; do not hardcode build output paths. Start lean with search_members or get_types_from_assembly, then use get_type_info and filtered member tools. Use get_type_fields and get_type_events when inspecting COM enum constants, fields, and event interfaces. Request projection='full' only on tools that support it and only when exact parameters, attributes, or modifiers are needed.
+
+Before inspecting a NuGet assembly with Sherlock, obtain the version actually referenced by the project with Roslyn CodeLens get_nuget_dependencies, then pass the exact version and target framework to find_assembly_by_nuget_package. For file references such as `Interop.TCatSysManagerLib`, use the resolved project HintPath. Confirm the selected file's identity and version with get_assembly_info before relying on its API metadata.
+
+For referenced closed-source libraries, use Sherlock to inspect API metadata and XML documentation, and Roslyn CodeLens to find usages in the current solution. Do not call both servers for the same fact unless the first result is incomplete or a version mismatch is suspected.
+
+Use IL analysis (get_method_calls or peek_il) only when public metadata, XML documentation, and source usages are insufficient.
+
+After code changes, run the real project build and relevant tests. Treat compiler/build diagnostics and the exact referenced assembly version as authoritative.
+
 ## Architecture constraints
 
 - Only the desktop gateway process may own or call DTE, `ITcSysManager`, or other TwinCAT COM objects. A focused XAE library may contain the wrappers, but it must execute only inside that process.

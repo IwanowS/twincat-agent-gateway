@@ -1,0 +1,62 @@
+[mcp_servers.sherlock]
+command = "sherlock-mcp"
+enabled = true
+required = true
+startup_timeout_sec = 30
+tool_timeout_sec = 120
+
+enabled_tools = [
+    "find_assembly_by_class_name",
+    "find_assembly_by_file_name",
+    "find_assembly_by_nuget_package",
+    "get_project_output_paths",
+    "get_assembly_info",
+    "get_types_from_assembly",
+    "search_members",
+    "get_type_info",
+    "get_type_hierarchy",
+    "get_type_methods",
+    "get_type_properties",
+    "get_type_fields",
+    "get_type_events",
+    "get_type_constructors",
+    "find_implementations_of",
+    "find_extension_methods_for",
+    "find_references_to",
+    "get_xml_docs_for_type",
+    "get_xml_docs_for_member",
+    "get_method_calls",
+]
+
+[mcp_servers.roslyn-codelens]
+command = "roslyn-codelens-mcp"
+args = ["TwinCatGateway.sln"]
+cwd = ".."
+enabled = true
+required = true
+startup_timeout_sec = 180
+tool_timeout_sec = 120
+
+enabled_tools = [
+    "list_solutions",
+    "set_active_solution",
+    "rebuild_solution",
+    "search_symbols",
+    "get_symbol_context",
+    "get_type_overview",
+    "get_file_overview",
+    "go_to_definition",
+    "get_method_source",
+    "find_references",
+    "find_implementations",
+    "find_callers",
+    "get_overloads",
+    "get_extension_methods",
+    "get_diagnostics",
+    "resolve_stack_trace",
+    "analyze_change_impact",
+    "get_project_dependencies",
+    "get_nuget_dependencies",
+    "inspect_external_assembly",
+    "peek_il",
+]
