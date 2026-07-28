@@ -37,6 +37,45 @@ public partial class MainWindow : Window
         _viewModel.Refresh();
     }
 
+    private void ReconnectButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        ExecuteUiAction(
+            _viewModel.RequestReconnect,
+            "XAE reconnect could not be requested.");
+    }
+
+    private void BuildButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        ExecuteUiAction(
+            () => _viewModel.StartBuild(),
+            "The build operation could not be queued.");
+    }
+
+    private void ActivateButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        MessageBoxResult confirmation =
+            MessageBox.Show(
+                _viewModel.ActivationConfirmation,
+                "Confirm TwinCAT activation",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        ExecuteUiAction(
+            () => _viewModel.StartActivation(),
+            "The activation operation could not be queued.");
+    }
+
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
     {
         try
@@ -50,6 +89,9 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            _viewModel.RecordUiFailure(
+                "command",
+                exception);
             MessageBox.Show(
                 "The log folder could not be opened.\n\n" + exception.Message,
                 "TwinCAT Agent Gateway",
@@ -121,5 +163,24 @@ public partial class MainWindow : Window
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
         _refreshTimer.Stop();
+    }
+
+    private void ExecuteUiAction(
+        Action action,
+        string failureMessage)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                failureMessage + "\n\n" + exception.Message,
+                "TwinCAT Agent Gateway",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            _viewModel.Refresh();
+        }
     }
 }

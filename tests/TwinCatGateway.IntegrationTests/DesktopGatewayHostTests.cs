@@ -15,6 +15,54 @@ namespace TwinCatGateway.IntegrationTests;
 public sealed class DesktopGatewayHostTests
 {
     [Fact]
+    public void DesktopViewModelFailsClosedWithoutConnectedXae()
+    {
+        using TemporaryDirectory temporary = new();
+        string configurationPath = Path.Combine(
+            temporary.Path,
+            "gateway.json");
+        string solutionPath = Path.Combine(
+            temporary.Path,
+            "missing.sln");
+        File.WriteAllText(
+            configurationPath,
+            $$"""
+            {
+              "schemaVersion": 1,
+              "logDirectory": "{{EscapeJson(temporary.Path)}}",
+              "defaultProfile": "fixture",
+              "profiles": [
+                {
+                  "name": "fixture",
+                  "solution": "{{EscapeJson(solutionPath)}}",
+                  "allowXaeLaunch": false,
+                  "allowActivation": false
+                }
+              ]
+            }
+            """);
+        using GatewayDesktopHost host = new(
+            new GatewayHostOptions
+            {
+                ConfigurationPath = configurationPath,
+            });
+
+        MainWindowViewModel viewModel = new(host);
+
+        Assert.False(viewModel.CanStartOperation);
+        Assert.False(viewModel.CanActivate);
+        Assert.True(viewModel.CanReconnect);
+        Assert.Equal(
+            BuildAction.Rebuild,
+            viewModel.SelectedBuildAction);
+        Assert.Equal("Not run", viewModel.LastBuild);
+        Assert.Equal("Not run", viewModel.LastActivation);
+        Assert.Equal("Not run", viewModel.LastTest);
+        Assert.Throws<InvalidOperationException>(
+            () => viewModel.StartActivation());
+    }
+
+    [Fact]
     public void ManualReconnectIsPublishedWithoutCallingCom()
     {
         using TemporaryDirectory temporary = new();

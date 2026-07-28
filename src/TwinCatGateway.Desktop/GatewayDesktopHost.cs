@@ -185,6 +185,17 @@ public sealed class GatewayDesktopHost : IDisposable
         coordinator.RequestReconnect();
     }
 
+    internal void RecordUiFailure(
+        string stage,
+        Exception exception)
+    {
+        _logger.Write(
+            StructuredLogLevel.Error,
+            "ui.failure",
+            $"Desktop UI stage '{stage}' failed.",
+            exception: exception);
+    }
+
     public async Task StopAsync()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
