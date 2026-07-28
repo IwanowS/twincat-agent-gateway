@@ -326,8 +326,6 @@ docs/
   сборку без modal dialog;
 - solution может собирать выбранный `.tsproj` из относительного пути за
   пределами solution root; его PLC sources входят в agent-owned workspace;
-- XAE-сохранённые `.tsproj`/`.plcproj` paths принимаются как допустимые
-  project-state hints и не отклоняют сборку;
 - несохранённая XAE версия PLC source отбрасывается и не перезаписывает
   agent edit;
 - XSD-invalid PLC object отклоняется до typed reload/build;

@@ -10,7 +10,23 @@ namespace TwinCatGateway.IntegrationTests;
 public sealed class XaeChangedPathTests
 {
     [Fact]
-    public void ReferencedTwinCatProjectMetadataOutsideSolutionIsAccepted()
+    public void ReferencedTwinCatProjectOutsideSolutionIsAccepted()
+    {
+        using TemporaryWorkspace workspace = new();
+        string twinCatProject = workspace.WriteProject(
+            "Machine.tsproj");
+
+        Assert.Equal(
+            twinCatProject,
+            XaeSession.NormalizeChangedPath(
+                workspace.SolutionPath,
+                workspace.Roots,
+                twinCatProject,
+                twinCatProject));
+    }
+
+    [Fact]
+    public void PlcProjectMetadataRemainsUnsupported()
     {
         using TemporaryWorkspace workspace = new();
         string twinCatProject = workspace.WriteProject(
@@ -18,18 +34,17 @@ public sealed class XaeChangedPathTests
         string plcProject = workspace.WriteProject(
             "Plc\\Machine.plcproj");
 
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => XaeSession.NormalizeChangedPath(
+                    workspace.SolutionPath,
+                    workspace.Roots,
+                    twinCatProject,
+                    plcProject));
+
         Assert.Equal(
-            twinCatProject,
-            XaeSession.NormalizeChangedPath(
-                workspace.SolutionPath,
-                workspace.Roots,
-                twinCatProject));
-        Assert.Equal(
-            plcProject,
-            XaeSession.NormalizeChangedPath(
-                workspace.SolutionPath,
-                workspace.Roots,
-                plcProject));
+            ErrorCodes.ExternalEditUnsupported,
+            exception.Code);
     }
 
     [Fact]
@@ -46,6 +61,9 @@ public sealed class XaeChangedPathTests
                 () => XaeSession.NormalizeChangedPath(
                     workspace.SolutionPath,
                     workspace.Roots,
+                    Path.Combine(
+                        workspace.ProjectRoot,
+                        "Machine.tsproj"),
                     unrelated));
 
         Assert.Equal(ErrorCodes.RequestInvalid, exception.Code);

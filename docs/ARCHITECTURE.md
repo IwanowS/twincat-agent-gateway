@@ -480,12 +480,12 @@ configuration/platform отклоняется как `BUILD_CONFIGURATION_NOT_FO
 ссылается на TwinCAT project за пределами собственного каталога, но не
 разрешает произвольные внешние paths.
 
-`.tsproj` и `.plcproj` внутри этой проверенной границы принимаются как
-допустимые project-state hints. Они не проходят через PLC source
-`ReloadDocData`: сохранённые XAE изменения уже представлены в project model,
-а принудительная перезагрузка всего TwinCAT project является отдельной,
-непроверенной operation semantics. Поддерживаемые `.TcPOU`, `.TcGVL` и
-`.TcDUT` сохраняют строгий fingerprint, XSD validation и typed reload workflow.
+Точный path выбранного `.tsproj` также принимается, когда caller включает
+сам solution project в `changedPaths`; он не проходит через PLC source
+`ReloadDocData`. Остальные project metadata, включая `.plcproj`, сохраняют
+предыдущее unsupported-поведение до отдельного решения о project reload
+semantics. Поддерживаемые `.TcPOU`, `.TcGVL` и `.TcDUT` сохраняют строгий
+fingerprint, XSD validation и typed reload workflow.
 
 ### 10.2 Последовательность
 
@@ -495,8 +495,7 @@ configuration/platform отклоняется как `BUILD_CONFIGURATION_NOT_FO
 3. Объединение обнаруженных файлов с необязательным `changedPaths`.
 4. Отказ для добавленных/удалённых source files, пока structural sync не
    реализован.
-5. Принятие `.tsproj`/`.plcproj` hints из выбранной workspace boundary без
-   source-document reload.
+5. Исключение точного path выбранного `.tsproj` из source-document reload.
 6. Закрытие поддерживаемых XAE editors без сохранения; dirty in-memory
    изменения отбрасываются.
 7. Типизированный reload изменённых PLC source документов через VSSDK Running Document
@@ -515,10 +514,10 @@ configuration/platform отклоняется как `BUILD_CONFIGURATION_NOT_FO
 15. Проверка `.tsproj` hashes, синхронизация file watcher и обязательное
     восстановление notifications.
 16. Чтение `LastBuildInfo`, Error List snapshot и Output delta.
-16. Нормализация diagnostics.
-17. Классификация содержательных `.tsproj` changes.
-18. Сохранение полного Output delta как отдельного build-log resource.
-19. Возврат compact result.
+17. Нормализация diagnostics.
+18. Классификация содержательных `.tsproj` changes.
+19. Сохранение полного Output delta как отдельного build-log resource.
+20. Возврат compact result.
 
 `DTE.ExecuteCommand(...)` допустим для стабильной встроенной команды XAE/VS,
 если нет надёжного отдельного typed automation method. Он всегда вызывается
@@ -774,8 +773,9 @@ solution root и под каталогом фактически выбранно
 При подключении gateway вычисляет SHA-256 fingerprint всех `.TcPOU`, `.TcGVL`
 и `.TcDUT` под обоими workspace roots. Непосредственно перед каждой
 Build/Rebuild/Clean выполняется новый scan. Фактический source diff является
-авторитетным; `changedPaths` только дополняет его и может безопасно содержать
-XAE-сохранённые `.tsproj`/`.plcproj` внутри той же границы.
+авторитетным; `changedPaths` только дополняет его и может также содержать
+точный path выбранного `.tsproj`. Другие project metadata пока не входят в
+этот контракт.
 
 Проверка на TwinCAT 3.1.4024.17 уточнила границу:
 
@@ -813,8 +813,9 @@ TwinCAT 3.1.4024.17 может во время обычной Build/Clean/Rebuil
 watcher способен увидеть эту собственную запись и показать modal
 `File Modification Detected`; Silent Mode этого не предотвращает.
 
-Поэтому gateway перед запуском операции вычисляет SHA-256 всех `.tsproj` под
-solution root и временно вызывает
+Поэтому gateway перед запуском операции вычисляет SHA-256 всех `.tsproj`,
+фактически включённых в выбранный solution, в том числе расположенных вне
+solution root, и временно вызывает
 `IVsFileChangeEx.IgnoreFile(0, path, 1)`. После `OnBuildDone`:
 
 - если файл существует и hash совпадает, gateway вызывает `SyncFile(path)`

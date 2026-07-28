@@ -36,6 +36,7 @@ public sealed class XaeSession : IDisposable
     private string? _fingerprintSolution;
     private ITcSysManager? _sysManager;
     private TwinCatSilentModeLease? _silentModeLease;
+    private string? _twinCatProjectPath;
     private string[] _workspaceRoots = Array.Empty<string>();
     private XaeSessionSnapshot _snapshot = new();
     private int _disposed;
@@ -332,6 +333,7 @@ public sealed class XaeSession : IDisposable
                     NormalizeChangedPath(
                         state.SolutionPath,
                         state.WorkspaceRoots,
+                        state.TwinCatProjectPath,
                         path));
             }
         }
@@ -814,6 +816,7 @@ public sealed class XaeSession : IDisposable
 
         ComObject.Release(_sysManager);
         _sysManager = sysManager;
+        _twinCatProjectPath = twinCatProjectPath;
         _workspaceRoots = workspaceRoots;
         info.Selected = true;
         info.SelectionReason =
@@ -863,6 +866,7 @@ public sealed class XaeSession : IDisposable
         DTE2 selectedDte = selected.TakeDte();
         ITcSysManager? selectedSysManager = null;
         AgentWorkspaceOwnershipResult? ownership = null;
+        string twinCatProjectPath = string.Empty;
         string[] workspaceRoots = Array.Empty<string>();
         try
         {
@@ -873,7 +877,7 @@ public sealed class XaeSession : IDisposable
                 selectedSysManager = AcquireSysManager(
                     selectedDte,
                     normalizedSolution,
-                    out string twinCatProjectPath);
+                    out twinCatProjectPath);
                 workspaceRoots = CreateWorkspaceRoots(
                     normalizedSolution,
                     twinCatProjectPath);
@@ -903,6 +907,7 @@ public sealed class XaeSession : IDisposable
 
         _dte = selectedDte;
         _sysManager = selectedSysManager;
+        _twinCatProjectPath = twinCatProjectPath;
         _workspaceRoots = workspaceRoots;
         instances[selectedIndex].Selected = true;
         instances[selectedIndex].SelectionReason =
@@ -1795,7 +1800,12 @@ public sealed class XaeSession : IDisposable
             return new FingerprintState(
                 _fingerprintSolution,
                 _fingerprintBaseline,
-                _workspaceRoots);
+                _workspaceRoots,
+                _twinCatProjectPath
+                    ?? throw new GatewayOperationException(
+                        ErrorCodes.SysManagerNotAvailable,
+                        "The selected TwinCAT project path is unavailable.",
+                        stage: "xae.workspace.fingerprint"));
         }
     }
 
@@ -1834,6 +1844,7 @@ public sealed class XaeSession : IDisposable
     internal static string NormalizeChangedPath(
         string solutionPath,
         IReadOnlyList<string> workspaceRoots,
+        string twinCatProjectPath,
         string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -1865,7 +1876,10 @@ public sealed class XaeSession : IDisposable
         }
 
         if (!ProjectFileFingerprintScanner.IsSupportedPath(fullPath)
-            && !IsSupportedProjectMetadataPath(fullPath))
+            && !string.Equals(
+                fullPath,
+                Path.GetFullPath(twinCatProjectPath),
+                StringComparison.OrdinalIgnoreCase))
         {
             throw new GatewayOperationException(
                 ErrorCodes.ExternalEditUnsupported,
@@ -1919,19 +1933,6 @@ public sealed class XaeSession : IDisposable
                 StringComparison.OrdinalIgnoreCase)
             || path.StartsWith(
                 rootPrefix,
-                StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static bool IsSupportedProjectMetadataPath(string path)
-    {
-        string extension = Path.GetExtension(path);
-        return string.Equals(
-                extension,
-                ".tsproj",
-                StringComparison.OrdinalIgnoreCase)
-            || string.Equals(
-                extension,
-                ".plcproj",
                 StringComparison.OrdinalIgnoreCase);
     }
 
@@ -2050,6 +2051,7 @@ public sealed class XaeSession : IDisposable
             ComObject.Release(_dte);
             _sysManager = null;
             _dte = null;
+            _twinCatProjectPath = null;
             _workspaceRoots = Array.Empty<string>();
             _snapshot = new XaeSessionSnapshot();
         }
@@ -2242,11 +2244,13 @@ public sealed class XaeSession : IDisposable
         public FingerprintState(
             string solutionPath,
             ProjectFileFingerprintSnapshot baseline,
-            IReadOnlyList<string> workspaceRoots)
+            IReadOnlyList<string> workspaceRoots,
+            string twinCatProjectPath)
         {
             SolutionPath = solutionPath;
             Baseline = baseline;
             WorkspaceRoots = workspaceRoots.ToArray();
+            TwinCatProjectPath = twinCatProjectPath;
         }
 
         public string SolutionPath { get; }
@@ -2254,6 +2258,8 @@ public sealed class XaeSession : IDisposable
         public ProjectFileFingerprintSnapshot Baseline { get; }
 
         public IReadOnlyList<string> WorkspaceRoots { get; }
+
+        public string TwinCatProjectPath { get; }
     }
 
     private sealed class StartedXaeProcess
