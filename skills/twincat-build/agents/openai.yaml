@@ -1,0 +1,4 @@
+interface:
+  display_name: "TwinCAT Build"
+  short_description: "Build and repair TwinCAT PLC projects"
+  default_prompt: "Use $twincat-build to build this TwinCAT project and fix compile errors."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "TwinCAT Activate"
+  short_description: "Safely activate an allowed TwinCAT target"
+  default_prompt: "Use $twincat-activate to verify and activate the configured TwinCAT target."
