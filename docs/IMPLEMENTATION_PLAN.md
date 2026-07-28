@@ -451,13 +451,14 @@ docs/
   `Autostart PLC Boot Project(s)`;
 - Run confirmation -> OK/Cancel согласно `runAfterActivation`;
 - отсутствие отдельного `StartRestartTwinCAT()` после XAE-команды;
-- conditional Run/Config stable-runtime postcondition;
+- stable Run postcondition при `runAfterActivation=true`; при `false` вернуть
+  фактически наблюдаемое state без принудительного Config transition;
 - discovery Auto Boot PLC через `BootProjectAutostart` и проверка online state
   каждого обязательного PLC;
 - Error List baseline/delta с классификацией runtime faults, TcUnit summary и
   warnings;
-- мониторинг dialog точного XAE process id на всём асинхронном activation
-  window;
+- общий UI Automation supervisor для modal dialogs точного XAE process id на
+  всём lifecycle любых gateway-owned XAE operations;
 - объединение Error List, `GetLastErrorMessages()` и ADS runtime evidence в
   compact activation error;
 - события activation/dialog/postcondition в общей event stream;
@@ -497,7 +498,9 @@ docs/
   необязательно и не участвует в safety decision;
 - ошибка конкретного stage видна агенту;
 - XAE-команда не считается полным успехом без ожидаемых activation и Run
-  confirmation dialogs и выбранного postcondition;
+  confirmation dialogs; при `runAfterActivation=true` дополнительно требуется
+  выбранный runtime postcondition, а при `false` результат явно остаётся
+  `activeConfigurationVerified=false`;
 - после `TwinCAT.ActivateConfiguration` не вызывается второй
   `StartRestartTwinCAT`;
 - gateway читает, но никогда не меняет tri-state Autostart checkbox;
@@ -508,7 +511,10 @@ docs/
   достаточным postcondition;
 - успешная activation с `runAfterActivation=true` подтверждает `Run` System
   Service и healthy online state каждого PLC с
-  `BootProjectAutostart=true`; при `false` подтверждается `Config`;
+  `BootProjectAutostart=true`; при `false` gateway отменяет финальный Run
+  dialog, не переводит runtime в Config и возвращает
+  `activeConfigurationVerified=false` вместе с фактически наблюдаемым
+  runtime state;
 - runtime fault из дельты Error List возвращается даже при пустом
   `GetLastErrorMessages()`, а TcUnit summary строки не считаются runtime fault
   только из-за XAE severity `Error`;
@@ -708,6 +714,14 @@ twincat-diff://<operation-id>/project-noise
 - first-run environment diagnostics;
 - config migration;
 - log retention settings;
+- заменить текущий `StructuredFileLogger` на стандартный logging pipeline
+  (`Microsoft.Extensions.Logging` или Serilog после отдельного выбора),
+  добавить настраиваемый minimum level
+  `Verbose/Debug/Information/Warning/Error/Fatal` и сохранить operationId,
+  structured properties и существующий local retention contract;
+- проверить shutdown lifecycle: отличить реально оставшийся desktop process
+  от устаревшей tray icon, подтвердить удаление icon при штатном и аварийном
+  завершении;
 - crash recovery;
 - UI polishing;
 - integration test checklist;

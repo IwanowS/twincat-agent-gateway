@@ -2,6 +2,8 @@ namespace TwinCatGateway.Contracts;
 
 public static class GatewayEventTypes
 {
+    public const string XaeDialogObserved = "xae.dialog.observed";
+
     public const string GatewayStarted = "gateway.started";
 
     public const string GatewayStopping = "gateway.stopping";
@@ -80,6 +82,9 @@ public static class GatewayEventTypes
 
     public const string ActivationConfigurationActivated =
         "activation.configurationActivated";
+
+    public const string ActivationRestartSkipped =
+        "activation.restartSkipped";
 
     public const string ActivationRestartStarted =
         "activation.restartStarted";

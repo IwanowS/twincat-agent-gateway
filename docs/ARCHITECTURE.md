@@ -306,8 +306,10 @@ Status endpoint читает immutable snapshot и не блокирует UI н
 2. единственный вызов DTE-команды `TwinCAT.ActivateConfiguration`;
 3. детерминированная обработка platform, activation/autostart и Run dialogs;
 4. встроенные в XAE build и deployment выбранной конфигурации;
-5. ожидание подтверждённого ADS-состояния `Run` или `Config` согласно
-   `runAfterActivation`;
+5. ожидание подтверждённого ADS-состояния `Run` при
+   `runAfterActivation=true`; при `false` финальный Run dialog отменяется, а
+   фактическое runtime state только наблюдается и не считается
+   подтверждением новой активной конфигурации;
 6. повторная проверка solution и AMS NetId.
 
 Команда XAE уже включает предложение перехода в Run. Поэтому activation
@@ -643,8 +645,10 @@ Gateway намеренно использует DTE command identity
 9. Не выполнять отдельный `StartRestartTwinCAT()`. При
    `runAfterActivation=true` наблюдать переход, не считая сохранённое до
    команды состояние `Run` доказательством нового запуска. При `false`
-   подтвердить состояние `Config`. Состояние `Exception` является немедленным
-   terminal failure, а не причиной ждать общий timeout.
+   отменить только финальный запрос перехода в Run, не выполнять
+   принудительный переход в Config и вернуть фактически наблюдаемое runtime
+   state вместе с `activeConfigurationVerified=false`. Состояние `Exception`
+   является немедленным terminal failure, а не причиной ждать общий timeout.
 10. При `runAfterActivation=true` определить через XAE PLC projects с
     `BootProjectAutostart=true` и проверить
     online state каждого такого PLC. Успех требует стабильного `Run` System
@@ -676,9 +680,23 @@ compact activation error даже когда `ITcSysManager2.GetLastErrorMessage
 
 Silent Mode для activation намеренно выключен: скрытые default choices
 оказались неэквивалентны безопасной пользовательской последовательности.
-Во время всей operation gateway отслеживает окна только точного XAE process
-id, сохраняет заголовок и нормализованный текст, а кнопки выбирает по
-стандартным dialog control IDs, а не по локализованным надписям.
+Выделенный MTA UI Automation supervisor живёт вместе с выбранной XAE session
+и подписан на `WindowPattern.WindowOpenedEvent` во время любых gateway-owned
+XAE operations, включая open solution, synchronization, Build/Rebuild/Clean и
+activation. Он фильтрует окна по точному XAE process id, классу Win32
+`#32770` и modal state. Поскольку UIA event может быть пропущен или дерево
+Desktop недоступно в несовпадающем интерактивном контексте, supervisor
+дополнительно сверяет top-level HWND через Win32 `EnumWindows`, после чего
+читает controls через UI Automation.
+
+Каждый обнаруженный modal dialog, включая неизвестный, записывается в
+structured log и общую event stream: сохраняются заголовок, нормализованный
+английский content signature, stage, controls и выбранное действие. Известные
+dialogs распознаются по частичному английскому content, а кнопки выбираются по
+стандартным numeric dialog control IDs, не по локализованным надписям. Если
+неизвестный dialog имеет `IDCANCEL`, gateway отменяет его и завершает operation
+с `XAE_UNKNOWN_MODAL_DIALOG`. Без безопасной Cancel-кнопки окно остаётся
+открытым, а последующие операции блокируются до вмешательства пользователя.
 Gateway никогда не переключает Autostart checkbox автоматически.
 
 Если TcUnit executor или profile отсутствует, запрос с эффективным

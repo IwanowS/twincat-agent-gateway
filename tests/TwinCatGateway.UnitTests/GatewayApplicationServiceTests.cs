@@ -525,6 +525,10 @@ public sealed class GatewayApplicationServiceTests
         Assert.True(result.Ok);
         Assert.False(result.RunAfterActivation);
         Assert.Equal(
+            ActivationCompletion.RestartSkipped,
+            result.Completion);
+        Assert.False(result.ActiveConfigurationVerified);
+        Assert.Equal(
             accepted.OperationId,
             fixture.Service.GetStatus()
                 .LastActivation?.OperationId);
@@ -774,6 +778,14 @@ public sealed class GatewayApplicationServiceTests
                 Profile = parameters.Profile,
                 RunAfterActivation =
                     parameters.RunAfterActivation,
+                Completion = parameters.RunAfterActivation
+                    ? ActivationCompletion.AppliedAndRunning
+                    : ActivationCompletion.RestartSkipped,
+                ActiveConfigurationVerified =
+                    parameters.RunAfterActivation,
+                ObservedRuntimeMode = parameters.RunAfterActivation
+                    ? RuntimeMode.Run
+                    : RuntimeMode.Unknown,
                 Solution =
                     @"C:\Projects\Machine\Machine.sln",
                 Target = new TargetIdentity

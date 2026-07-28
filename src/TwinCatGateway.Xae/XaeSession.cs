@@ -31,8 +31,10 @@ public sealed class XaeSession : IDisposable
         "\r",
     };
     private readonly ComStaDispatcher _dispatcher;
+    private readonly object _dialogSync = new();
     private readonly object _fingerprintSync = new();
     private readonly bool _ownsDispatcher;
+    private XaeDialogSupervisor? _dialogSupervisor;
     private DTE2? _dte;
     private XaeBuildEventLease? _activeBuild;
     private ProjectFileFingerprintSnapshot? _fingerprintBaseline;
@@ -55,6 +57,9 @@ public sealed class XaeSession : IDisposable
         _dispatcher = dispatcher ?? new ComStaDispatcher();
         _ownsDispatcher = dispatcher is null;
     }
+
+    public event EventHandler<XaeDialogObservationEventArgs>?
+        DialogObserved;
 
     public Task<XaeSessionSnapshot> DiscoverAsync(
         TimeSpan timeout,
@@ -82,6 +87,13 @@ public sealed class XaeSession : IDisposable
                     deadlineUtc,
                     "xae.attach"),
                 cancellationToken).ConfigureAwait(false);
+        EnsureDialogSupervisor(
+            snapshot.SelectedInstance?.ProcessId
+                ?? throw new GatewayOperationException(
+                    ErrorCodes.XaeNotFound,
+                    "The selected XAE process identity is unavailable.",
+                    retryable: true,
+                    stage: "xae.attach"));
         if (snapshot.SynchronizationState
             != SynchronizationState.Confirmed)
         {
@@ -143,12 +155,21 @@ public sealed class XaeSession : IDisposable
         IReadOnlyList<XaeLaunchCandidate> candidates =
             XaeProgIdResolver.ResolveCandidates(configuredProgId);
         StartedXaeProcess started = StartFirstAvailable(candidates);
+        EnsureDialogSupervisor(started.ProcessId);
+        using XaeDialogOperationScope dialogScope =
+            BeginDialogOperation(
+                $"xae-launch-{started.ProcessId}",
+                "opensolution",
+                "xae.launch");
 
-        await WaitForLaunchedDteAsync(
+        await dialogScope.ObserveAsync(
+            WaitForLaunchedDteAsync(
             started,
             deadlineUtc,
-            cancellationToken).ConfigureAwait(false);
-        await _dispatcher.InvokeAsync(
+            cancellationToken)).ConfigureAwait(false);
+        dialogScope.SetStage("xae.openSolution");
+        await dialogScope.ObserveAsync(
+            _dispatcher.InvokeAsync(
             () =>
             {
                 OpenSolutionOnSta(
@@ -157,13 +178,14 @@ public sealed class XaeSession : IDisposable
                 return true;
             },
             GetRemaining(deadlineUtc, "xae.openSolution"),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken)).ConfigureAwait(false);
         XaeSessionSnapshot snapshot =
-            await WaitForLaunchedSolutionAsync(
+            await dialogScope.ObserveAsync(
+                WaitForLaunchedSolutionAsync(
             normalizedSolution,
             started.ProcessId,
             deadlineUtc,
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken)).ConfigureAwait(false);
         ConfirmFingerprintBaseline(
             normalizedSolution,
             cancellationToken);
@@ -196,17 +218,49 @@ public sealed class XaeSession : IDisposable
         }
     }
 
-    public Task<XaeSessionSnapshot> VerifyAttachedAsync(
+    public async Task<XaeSessionSnapshot> VerifyAttachedAsync(
         string solutionPath,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         string normalizedSolution = NormalizeSolutionPath(solutionPath);
-        return _dispatcher.InvokeAsync(
+        XaeSessionSnapshot snapshot = await _dispatcher.InvokeAsync(
             () => VerifyAttachedOnSta(normalizedSolution),
             timeout,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
+        EnsureDialogSupervisor(
+            snapshot.SelectedInstance?.ProcessId
+                ?? throw new GatewayOperationException(
+                    ErrorCodes.XaeNotFound,
+                    "The selected XAE process identity is unavailable.",
+                    retryable: true,
+                    stage: "xae.verify"));
+        return snapshot;
+    }
+
+    public XaeDialogOperationScope BeginDialogOperation(
+        string operationId,
+        string operationName,
+        string stage,
+        bool? runAfterActivation = null)
+    {
+        ThrowIfDisposed();
+        lock (_dialogSync)
+        {
+            return (_dialogSupervisor
+                    ?? throw new GatewayOperationException(
+                        ErrorCodes.XaeNotFound,
+                        "No selected XAE process is available for dialog "
+                            + "monitoring.",
+                        retryable: true,
+                        stage: stage))
+                .BeginOperation(
+                    operationId,
+                    operationName,
+                    stage,
+                    runAfterActivation);
+        }
     }
 
     public async Task<XaeActivationCommandResult>
@@ -217,28 +271,39 @@ public sealed class XaeSession : IDisposable
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        using XaeDialogOperationScope dialogScope =
+            BeginDialogOperation(
+                Guid.NewGuid().ToString("N"),
+                "activate",
+                "activation.activateConfiguration",
+                runAfterActivation);
+        return await ActivateConfigurationAsync(
+            solutionPath,
+            expectedAmsNetId,
+            runAfterActivation,
+            dialogScope,
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<XaeActivationCommandResult>
+        ActivateConfigurationAsync(
+        string solutionPath,
+        string expectedAmsNetId,
+        bool runAfterActivation,
+        XaeDialogOperationScope dialogScope,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
         ThrowIfDisposed();
+        if (dialogScope is null)
+        {
+            throw new ArgumentNullException(nameof(dialogScope));
+        }
+
         string normalizedSolution =
             NormalizeSolutionPath(solutionPath);
         DateTimeOffset deadlineUtc = CreateDeadline(timeout);
-        int processId = await _dispatcher.InvokeAsync(
-            () =>
-            {
-                return _snapshot.SelectedInstance?.ProcessId
-                    ?? throw new GatewayOperationException(
-                        ErrorCodes.XaeNotFound,
-                        "The selected XAE process identity is unavailable.",
-                        retryable: true,
-                        stage: "activation.preflight");
-            },
-            GetRemaining(
-                deadlineUtc,
-                "activation.preflight"),
-            cancellationToken).ConfigureAwait(false);
-        using XaeActivationDialogController dialogController =
-            XaeActivationDialogController.Start(
-                processId,
-                runAfterActivation);
         Task activation = _dispatcher.InvokeAsync(
             () =>
             {
@@ -251,20 +316,10 @@ public sealed class XaeSession : IDisposable
                 deadlineUtc,
                 "activation.activateConfiguration"),
             cancellationToken);
-        await Task.WhenAny(
-            activation,
-            dialogController.FailureDetected).ConfigureAwait(false);
-        if (dialogController.FailureDetected.IsCompleted)
-        {
-            ObserveFault(activation);
-            throw CreateActivationDialogError(
-                await dialogController.FailureDetected
-                    .ConfigureAwait(false));
-        }
-
-        await activation.ConfigureAwait(false);
+        await dialogScope.ObserveAsync(activation)
+            .ConfigureAwait(false);
         XaeActivationCommandResult result =
-            dialogController.StopAndGetResult();
+            dialogScope.GetActivationResult();
         if (!result.ActivationConfirmed
             || !result.RunDecisionHandled)
         {
@@ -325,6 +380,7 @@ public sealed class XaeSession : IDisposable
             },
             timeout,
             cancellationToken).ConfigureAwait(false);
+        StopDialogSupervisor();
     }
 
     public async Task<ExternalChangeSynchronizationResult>
@@ -736,6 +792,7 @@ public sealed class XaeSession : IDisposable
         finally
         {
             ClearFingerprintBaseline();
+            StopDialogSupervisor();
             if (_ownsDispatcher)
             {
                 _dispatcher.Dispose();
@@ -1277,51 +1334,6 @@ public sealed class XaeSession : IDisposable
                     innerException: exception);
             }
         }
-    }
-
-    private static GatewayOperationException
-        CreateActivationDialogError(
-        XaeActivationDialogInfo dialog)
-    {
-        string title = string.IsNullOrWhiteSpace(dialog.Title)
-            ? "(untitled)"
-            : dialog.Title;
-        string details = string.IsNullOrWhiteSpace(dialog.Text)
-            ? string.Empty
-            : $": {dialog.Text}";
-        string message = LimitDiagnosticText(
-            $"XAE displayed a '{dialog.Kind}' dialog '{title}'"
-            + details
-            + (dialog.ActionRequested
-                ? $". The fail-closed '{dialog.Action}' action "
-                    + "was requested."
-                : ". The dialog was not confirmed automatically."));
-        return new GatewayOperationException(
-            ErrorCodes.ActivationDialogDetected,
-            message,
-            retryable: false,
-            stage: "activation.dialog");
-    }
-
-    private static void ObserveFault(Task operation)
-    {
-        operation.ContinueWith(
-            completed =>
-            {
-                _ = completed.Exception;
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.OnlyOnFaulted
-                | TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
-    }
-
-    private static string LimitDiagnosticText(string value)
-    {
-        const int maximumLength = 1024;
-        return value.Length <= maximumLength
-            ? value
-            : value.Substring(0, maximumLength);
     }
 
     private void RestartTwinCatConfigModeOnSta(
@@ -2629,6 +2641,54 @@ public sealed class XaeSession : IDisposable
         TwinCatSilentModeLease? lease = _silentModeLease;
         _silentModeLease = null;
         lease?.Dispose();
+    }
+
+    private void EnsureDialogSupervisor(int processId)
+    {
+        XaeDialogSupervisor? previous;
+        XaeDialogSupervisor next;
+        lock (_dialogSync)
+        {
+            if (_dialogSupervisor?.ProcessId == processId)
+            {
+                return;
+            }
+
+            next = new XaeDialogSupervisor(processId);
+            next.DialogObserved += ForwardDialogObservation;
+            previous = _dialogSupervisor;
+            _dialogSupervisor = next;
+        }
+
+        if (previous is not null)
+        {
+            previous.DialogObserved -= ForwardDialogObservation;
+            previous.Dispose();
+        }
+    }
+
+    private void StopDialogSupervisor()
+    {
+        XaeDialogSupervisor? supervisor;
+        lock (_dialogSync)
+        {
+            supervisor = _dialogSupervisor;
+            _dialogSupervisor = null;
+        }
+
+        if (supervisor is not null)
+        {
+            supervisor.DialogObserved -= ForwardDialogObservation;
+            supervisor.Dispose();
+        }
+    }
+
+    private void ForwardDialogObservation(
+        object sender,
+        XaeDialogObservationEventArgs eventArgs)
+    {
+        _ = sender;
+        DialogObserved?.Invoke(this, eventArgs);
     }
 
     private void ThrowIfDisposed()

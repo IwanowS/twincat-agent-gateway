@@ -300,6 +300,9 @@ public sealed class MvpContractSerializationTests
             },
             RecoveryAttempted = true,
             RunAfterActivation = false,
+            Completion = ActivationCompletion.RestartSkipped,
+            ActiveConfigurationVerified = false,
+            ObservedRuntimeMode = RuntimeMode.Run,
             AutostartBootProjects =
                 AutostartBootProjectSelection.PartiallyEnabled,
             Resources =
@@ -327,8 +330,21 @@ public sealed class MvpContractSerializationTests
         Assert.True(result.RecoveryAttempted);
         Assert.False(result.RunAfterActivation);
         Assert.Equal(
+            ActivationCompletion.RestartSkipped,
+            result.Completion);
+        Assert.False(result.ActiveConfigurationVerified);
+        Assert.Equal(
+            RuntimeMode.Run,
+            result.ObservedRuntimeMode);
+        Assert.Equal(
             AutostartBootProjectSelection.PartiallyEnabled,
             result.AutostartBootProjects);
+        Assert.Contains(
+            "\"completion\":\"restartSkipped\"",
+            json);
+        Assert.Contains(
+            "\"observedRuntimeMode\":\"run\"",
+            json);
         Assert.Contains(
             "\"autostartBootProjects\":\"partiallyEnabled\"",
             json);

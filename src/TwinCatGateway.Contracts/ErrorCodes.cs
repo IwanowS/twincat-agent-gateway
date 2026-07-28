@@ -78,6 +78,27 @@ public static class ErrorCodes
     public const string ActivateConfigurationFailed = "ACTIVATE_CONFIGURATION_FAILED";
     public const string ActivationDialogDetected =
         "ACTIVATION_DIALOG_DETECTED";
+
+    public const string XaeUnknownModalDialog =
+        "XAE_UNKNOWN_MODAL_DIALOG";
+
+    public const string XaeUnexpectedModalDialog =
+        "XAE_UNEXPECTED_MODAL_DIALOG";
+
+    public const string XaeDialogButtonNotFound =
+        "XAE_DIALOG_BUTTON_NOT_FOUND";
+
+    public const string XaeDialogActionFailed =
+        "XAE_DIALOG_ACTION_FAILED";
+
+    public const string XaeDialogReportedFailure =
+        "XAE_DIALOG_REPORTED_FAILURE";
+
+    public const string XaeBlockedByModalDialog =
+        "XAE_BLOCKED_BY_MODAL_DIALOG";
+
+    public const string XaeDialogMonitorUnavailable =
+        "XAE_DIALOG_MONITOR_UNAVAILABLE";
     public const string TwinCatRestartFailed = "TWINCAT_RESTART_FAILED";
     public const string TwinCatStateUnknown = "TWINCAT_STATE_UNKNOWN";
     public const string TestAdsUnavailable = "TEST_ADS_UNAVAILABLE";

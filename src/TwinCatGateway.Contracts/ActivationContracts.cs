@@ -10,6 +10,13 @@ public enum AutostartBootProjectSelection
     PartiallyEnabled,
 }
 
+public enum ActivationCompletion
+{
+    Unknown,
+    AppliedAndRunning,
+    RestartSkipped,
+}
+
 public sealed class ActivateParameters
 {
     public string Profile { get; set; } = string.Empty;
@@ -38,6 +45,12 @@ public sealed class ActivationResult
     public bool RecoveryAttempted { get; set; }
 
     public bool RunAfterActivation { get; set; }
+
+    public ActivationCompletion Completion { get; set; }
+
+    public bool ActiveConfigurationVerified { get; set; }
+
+    public RuntimeMode ObservedRuntimeMode { get; set; }
 
     public AutostartBootProjectSelection AutostartBootProjects { get; set; }
 

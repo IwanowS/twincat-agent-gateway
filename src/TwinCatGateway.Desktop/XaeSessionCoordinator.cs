@@ -66,6 +66,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             _logs,
             _logger,
             _events);
+        _session.DialogObserved += OnDialogObserved;
     }
 
     public async Task RunAsync(CancellationToken cancellationToken)
@@ -189,9 +190,15 @@ internal sealed class XaeSessionCoordinator : IDisposable
         TimeSpan timeout = TimeSpan.FromSeconds(
             parameters.TimeoutSeconds ?? 120);
         XaeBuildExecutionResult execution;
+        using XaeDialogOperationScope dialogScope =
+            _session.BeginDialogOperation(
+                operationId,
+                parameters.Action.ToString().ToLowerInvariant(),
+                "xae.build");
         try
         {
-            execution = await _session.ExecuteBuildAsync(
+            execution = await dialogScope.ObserveAsync(
+                _session.ExecuteBuildAsync(
                     parameters.Action,
                     parameters.ChangedPaths,
                     configuration,
@@ -200,7 +207,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     parameters.DiscardDirtyDocuments,
                     _profile.AllowDirtyDocumentDiscard,
                     timeout,
-                    cancellationToken)
+                    cancellationToken))
                 .ConfigureAwait(false);
         }
         catch (GatewayOperationException exception) when (
@@ -358,10 +365,16 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
         DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
         ExternalChangeSynchronizationResult execution;
+        using XaeDialogOperationScope dialogScope =
+            _session.BeginDialogOperation(
+                operationId,
+                "synchronize",
+                "xae.synchronize");
         try
         {
             execution =
-                await _session.SynchronizeExternalChangesAsync(
+                await dialogScope.ObserveAsync(
+                    _session.SynchronizeExternalChangesAsync(
                     parameters.ChangedPaths,
                     _profile.ExternalChangePolicy,
                     parameters.DiscardDirtyDocuments,
@@ -369,7 +382,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     force: true,
                     TimeSpan.FromSeconds(
                         parameters.TimeoutSeconds ?? 120),
-                    cancellationToken).ConfigureAwait(false);
+                    cancellationToken)).ConfigureAwait(false);
         }
         catch
         {
@@ -426,13 +439,20 @@ internal sealed class XaeSessionCoordinator : IDisposable
         DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
         DateTimeOffset deadlineUtc = startedAtUtc.AddSeconds(
             parameters.TimeoutSeconds ?? 120);
+        using XaeDialogOperationScope dialogScope =
+            _session.BeginDialogOperation(
+                operationId,
+                "activate",
+                "activation.preflight",
+                parameters.RunAfterActivation);
         XaeSessionSnapshot snapshot =
-            await _session.VerifyAttachedAsync(
+            await dialogScope.ObserveAsync(
+                _session.VerifyAttachedAsync(
                 _profile.Solution,
                 GetRemaining(
                     deadlineUtc,
                     "activation.preflight"),
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken)).ConfigureAwait(false);
         VerifyTarget(
             snapshot,
             expectedAmsNetId,
@@ -449,47 +469,44 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         RuntimeMode initialRuntimeMode = runtime.Status.Mode;
-        bool recoveryAttempted = RequiresConfigModeBeforeActivation(
-            initialRuntimeMode,
-            parameters.RunAfterActivation);
+        bool recoveryAttempted =
+            initialRuntimeMode == RuntimeMode.Exception;
         if (recoveryAttempted)
         {
+            dialogScope.SetStage("activation.recoverToConfig");
             RecordActivationEvent(
                 operationId,
                 GatewayEventTypes.ActivationRecoveryStarted,
                 "activation.recoverToConfig",
-                parameters.RunAfterActivation
-                    ? "TwinCAT Config Mode recovery started."
-                    : "TwinCAT Config Mode preparation started for "
-                        + "activation without Run.",
+                "TwinCAT Config Mode recovery started.",
                 expectedAmsNetId);
-            await _session.RestartTwinCatConfigModeAsync(
+            await dialogScope.ObserveAsync(
+                _session.RestartTwinCatConfigModeAsync(
                 _profile.Solution,
                 expectedAmsNetId,
                 GetRemaining(
                     deadlineUtc,
                     "activation.recoverToConfig"),
-                cancellationToken).ConfigureAwait(false);
-            runtime = await WaitForRuntimeModeAsync(
+                cancellationToken)).ConfigureAwait(false);
+            runtime = await dialogScope.ObserveAsync(
+                WaitForRuntimeModeAsync(
                 expectedAmsNetId,
                 RuntimeMode.Config,
                 deadlineUtc,
                 ErrorCodes.ConfigModeRecoveryFailed,
                 "TwinCAT did not reach Config Mode after recovery.",
                 "activation.recoverToConfig",
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken)).ConfigureAwait(false);
             PublishConnected(snapshot, runtime);
             RecordActivationEvent(
                 operationId,
                 GatewayEventTypes.ActivationRecoverySucceeded,
                 "activation.recoverToConfig",
-                parameters.RunAfterActivation
-                    ? "TwinCAT reached Config Mode."
-                    : "TwinCAT reached Config Mode before activation "
-                        + "without Run.",
+                "TwinCAT reached Config Mode.",
                 expectedAmsNetId);
         }
 
+        dialogScope.SetStage("activation.activateConfiguration");
         RecordActivationEvent(
             operationId,
             GatewayEventTypes.ActivationConfigurationStarted,
@@ -501,54 +518,76 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 _profile.Solution,
                 expectedAmsNetId,
                 parameters.RunAfterActivation,
+                dialogScope,
                 GetRemaining(
                     deadlineUtc,
                     "activation.activateConfiguration"),
                 cancellationToken).ConfigureAwait(false);
-        RecordActivationDialogEvents(
-            operationId,
-            command.Dialogs,
-            expectedAmsNetId);
 
-        RuntimeMode expectedMode = parameters.RunAfterActivation
-            ? RuntimeMode.Run
-            : RuntimeMode.Config;
-        runtime = await WaitForRuntimeModeAsync(
-            expectedAmsNetId,
-            expectedMode,
-            deadlineUtc,
-            parameters.RunAfterActivation
-                ? ErrorCodes.TwinCatRestartFailed
-                : ErrorCodes.ConfigModeRequired,
-            parameters.RunAfterActivation
-                ? "TwinCAT did not reach Run after activation."
-                : "TwinCAT did not remain in Config Mode after activation.",
-            "activation.verify",
-            cancellationToken).ConfigureAwait(false);
-        snapshot = await _session.VerifyAttachedAsync(
+        dialogScope.SetStage("activation.verify");
+        if (parameters.RunAfterActivation)
+        {
+            runtime = await dialogScope.ObserveAsync(
+                WaitForRuntimeModeAsync(
+                    expectedAmsNetId,
+                    RuntimeMode.Run,
+                    deadlineUtc,
+                    ErrorCodes.TwinCatRestartFailed,
+                    "TwinCAT did not reach Run after activation.",
+                    "activation.verify",
+                    cancellationToken)).ConfigureAwait(false);
+        }
+        else
+        {
+            runtime = ReadRuntimeStatus(snapshot);
+        }
+
+        snapshot = await dialogScope.ObserveAsync(
+            _session.VerifyAttachedAsync(
             _profile.Solution,
             GetRemaining(
                 deadlineUtc,
                 "activation.verify"),
-            cancellationToken).ConfigureAwait(false);
+            cancellationToken)).ConfigureAwait(false);
         VerifyTarget(
             snapshot,
             expectedAmsNetId,
             "activation.verify");
         PublishConnected(snapshot, runtime);
-        RecordActivationEvent(
-            operationId,
-            GatewayEventTypes.ActivationConfigurationActivated,
-            "activation.verify",
-            "TwinCAT configuration activation was verified.",
-            expectedAmsNetId);
+        ActivationCompletion completion;
+        bool activeConfigurationVerified;
+        if (parameters.RunAfterActivation)
+        {
+            completion = ActivationCompletion.AppliedAndRunning;
+            activeConfigurationVerified = true;
+            RecordActivationEvent(
+                operationId,
+                GatewayEventTypes.ActivationConfigurationActivated,
+                "activation.verify",
+                "TwinCAT configuration activation was verified.",
+                expectedAmsNetId);
+        }
+        else
+        {
+            completion = ActivationCompletion.RestartSkipped;
+            activeConfigurationVerified = false;
+            RecordActivationEvent(
+                operationId,
+                GatewayEventTypes.ActivationRestartSkipped,
+                "activation.verify",
+                "TwinCAT configuration was built and transferred, but "
+                    + "the final runtime transition was skipped.",
+                expectedAmsNetId);
+        }
+
         RecordActivationEvent(
             operationId,
             GatewayEventTypes.ActivationRuntimeReady,
             "activation.verify",
             parameters.RunAfterActivation
                 ? "TwinCAT runtime reached Run."
-                : "TwinCAT runtime remained in Config Mode.",
+                : "TwinCAT runtime state was observed without treating "
+                    + "it as proof that the new configuration is active.",
             expectedAmsNetId);
 
         long durationMs = Math.Max(
@@ -566,6 +605,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 parameters.RunAfterActivation,
                 command.AutostartSelection,
                 command.Dialogs,
+                completion,
+                activeConfigurationVerified,
                 runtime,
                 durationMs));
         ActivationResult result = new()
@@ -583,6 +624,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
             RecoveryAttempted = recoveryAttempted,
             RunAfterActivation =
                 parameters.RunAfterActivation,
+            Completion = completion,
+            ActiveConfigurationVerified =
+                activeConfigurationVerified,
+            ObservedRuntimeMode = runtime.Status.Mode,
             AutostartBootProjects =
                 command.AutostartSelection,
             Resources =
@@ -751,6 +796,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             return;
         }
 
+        _session.DialogObserved -= OnDialogObserved;
         _session.Dispose();
         _wakeSignal.Dispose();
     }
@@ -1275,52 +1321,90 @@ internal sealed class XaeSessionCoordinator : IDisposable
             DateTimeOffset.UtcNow);
     }
 
-    private void RecordActivationDialogEvents(
-        string operationId,
-        IReadOnlyList<XaeActivationDialogObservation> dialogs,
-        string amsNetId)
+    private void OnDialogObserved(
+        object sender,
+        XaeDialogObservationEventArgs eventArgs)
     {
-        foreach (XaeActivationDialogObservation dialog in dialogs)
+        _ = sender;
+        XaeDialogObservation dialog = eventArgs.Observation;
+        string buttons = string.Join(
+            ", ",
+            dialog.Buttons.Select(button =>
+                $"{button.AutomationId}=\"{button.Name}\""));
+        Dictionary<string, string> properties = new()
         {
-            Dictionary<string, string> properties = new()
-            {
-                ["profile"] = _profile.Name,
-                ["solution"] = _profile.Solution,
-                ["amsNetId"] = amsNetId,
-                ["dialogKind"] = dialog.Kind,
-                ["dialogTitle"] = dialog.Title,
-                ["action"] = dialog.Action,
-                ["actionRequested"] =
-                    dialog.ActionRequested.ToString(),
-            };
-            string? targetName = _profile.ExpectedTarget?.Name;
-            if (!string.IsNullOrWhiteSpace(targetName))
-            {
-                properties["targetName"] = targetName!;
-            }
-
-            _logger.Write(
-                StructuredLogLevel.Information,
-                GatewayEventTypes.ActivationDialogHandled,
-                $"XAE activation dialog '{dialog.Kind}' was handled "
-                    + $"with action '{dialog.Action}'.",
-                operationId,
-                properties);
-            _events.Record(
-                new GatewayEvent
-                {
-                    Type = GatewayEventTypes.ActivationDialogHandled,
-                    Severity = DiagnosticSeverity.Info,
-                    OperationId = operationId,
-                    OperationKind = OperationKind.Activate,
-                    Stage = "activation.dialog",
-                    Message =
-                        $"XAE activation dialog '{dialog.Kind}' was "
-                        + $"handled with action '{dialog.Action}'.",
-                    Properties = properties,
-                },
-                DateTimeOffset.UtcNow);
+            ["processId"] = dialog.ProcessId.ToString(
+                CultureInfo.InvariantCulture),
+            ["nativeWindowHandle"] =
+                dialog.NativeWindowHandle.ToString(
+                    CultureInfo.InvariantCulture),
+            ["runtimeId"] = dialog.RuntimeId,
+            ["title"] = dialog.Title,
+            ["content"] = dialog.Content,
+            ["kind"] = dialog.Kind,
+            ["known"] = dialog.Known.ToString(),
+            ["modal"] = dialog.Modal.ToString(),
+            ["frameworkId"] = dialog.FrameworkId,
+            ["className"] = dialog.ClassName,
+            ["buttons"] = buttons,
+            ["action"] = dialog.Action,
+            ["actionRequested"] =
+                dialog.ActionRequested.ToString(),
+            ["actionCompleted"] =
+                dialog.ActionCompleted.ToString(),
+            ["failure"] = dialog.Failure.ToString(),
+        };
+        if (!string.IsNullOrWhiteSpace(dialog.OperationName))
+        {
+            properties["operationName"] =
+                dialog.OperationName!;
         }
+
+        _logger.Write(
+            dialog.Failure
+                ? StructuredLogLevel.Warning
+                : StructuredLogLevel.Information,
+            GatewayEventTypes.XaeDialogObserved,
+            $"XAE modal dialog '{dialog.Kind}' was observed"
+                + (string.IsNullOrWhiteSpace(dialog.Action)
+                    ? "."
+                    : $" with action '{dialog.Action}'."),
+            dialog.OperationId,
+            properties);
+        _events.Record(
+            new GatewayEvent
+            {
+                Type = GatewayEventTypes.XaeDialogObserved,
+                Severity = dialog.Failure
+                    ? DiagnosticSeverity.Warning
+                    : DiagnosticSeverity.Info,
+                OperationId = dialog.OperationId,
+                OperationKind = MapDialogOperationKind(
+                    dialog.OperationName),
+                Stage = dialog.Stage ?? "xae.dialog",
+                Message =
+                    $"XAE modal dialog '{dialog.Kind}' was observed"
+                    + (string.IsNullOrWhiteSpace(dialog.Action)
+                        ? "."
+                        : $" with action '{dialog.Action}'."),
+                Properties = properties,
+            },
+            dialog.ObservedAtUtc);
+    }
+
+    private static OperationKind? MapDialogOperationKind(
+        string? operationName)
+    {
+        return operationName?.ToLowerInvariant() switch
+        {
+            "build" or "rebuild" or "clean" =>
+                OperationKind.Build,
+            "synchronize" => OperationKind.Synchronize,
+            "activate" => OperationKind.Activate,
+            "recovertoconfig" => OperationKind.RecoverToConfig,
+            "opensolution" => OperationKind.OpenSolution,
+            _ => null,
+        };
     }
 
     private static async Task<AdsRuntimeStatusReadResult>
@@ -1439,7 +1523,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
         RuntimeMode initialRuntimeMode,
         bool runAfterActivation,
         AutostartBootProjectSelection autostartSelection,
-        IReadOnlyList<XaeActivationDialogObservation> dialogs,
+        IReadOnlyList<XaeDialogObservation> dialogs,
+        ActivationCompletion completion,
+        bool activeConfigurationVerified,
         AdsRuntimeStatusReadResult runtime,
         long durationMs)
     {
@@ -1461,15 +1547,19 @@ internal sealed class XaeSessionCoordinator : IDisposable
             $"RunAfterActivation: {runAfterActivation}");
         builder.AppendLine(
             $"AutostartBootProjects: {autostartSelection}");
-        foreach (XaeActivationDialogObservation dialog in dialogs)
+        builder.AppendLine($"Completion: {completion}");
+        builder.AppendLine(
+            $"ActiveConfigurationVerified: "
+                + $"{activeConfigurationVerified}");
+        foreach (XaeDialogObservation dialog in dialogs)
         {
             builder.AppendLine(
                 $"Dialog: {dialog.Kind}; Action={dialog.Action}; "
                     + $"Requested={dialog.ActionRequested}; "
                     + $"Title={dialog.Title}");
-            if (!string.IsNullOrWhiteSpace(dialog.Text))
+            if (!string.IsNullOrWhiteSpace(dialog.Content))
             {
-                builder.AppendLine($"DialogText: {dialog.Text}");
+                builder.AppendLine($"DialogText: {dialog.Content}");
             }
         }
         builder.AppendLine(
@@ -1479,15 +1569,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 + $"{runtime.Diagnostics.AdsState ?? "unknown"}");
         builder.AppendLine($"DurationMs: {durationMs}");
         return builder.ToString();
-    }
-
-    internal static bool RequiresConfigModeBeforeActivation(
-        RuntimeMode currentMode,
-        bool runAfterActivation)
-    {
-        return currentMode == RuntimeMode.Exception
-            || (!runAfterActivation
-                && currentMode != RuntimeMode.Config);
     }
 
     private static AdsRuntimeStatusReadResult ReadRuntimeStatus(
