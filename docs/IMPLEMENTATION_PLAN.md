@@ -473,6 +473,14 @@ docs/
 
 После activation подтверждать завершение тестов через узкий read-only ADS adapter и получать результат из свежего xUnit XML.
 
+### Граница MVP
+
+- один project profile назначает ровно один TcUnit PLC;
+- `tcUnit.adsPort`, completion symbols и `reportPath` относятся только к нему;
+- другие PLC в solution не входят в test result и не должны публиковать в тот
+  же файл;
+- агрегация нескольких PLC и несколько TcUnit publishers не входят в MVP.
+
 ### Задачи
 
 - profile PLC runtime port и фиксированные TcUnit symbol paths;
@@ -513,6 +521,26 @@ docs/
 - successful test cases не перечисляются в compact result;
 - failed tests содержат suite/name/message;
 - полный XML доступен отдельно.
+
+### Post-MVP: несколько TcUnit PLC
+
+Поддержка нескольких PLC планируется как отдельное versioned расширение
+контракта, а не как неявное изменение single-PLC semantics:
+
+1. добавить список test PLC descriptors с устойчивой logical identity,
+   `adsPort`, фиксированными completion symbols и уникальным `reportPath`;
+2. валидировать уникальность ADS ports, logical identities и report paths,
+   запрещая несколько publishers для одного файла;
+3. снимать baselines всех отчётов до activation и связывать все результаты с
+   одной successful activation;
+4. выполнять completion/report flow отдельно для каждого PLC с общим
+   cancellation/deadline и per-PLC stage events;
+5. возвращать per-PLC counts/failures/resources и агрегированный overall
+   result, который завершается неуспешно при неуспехе любого обязательного PLC;
+6. сохранить обратную совместимость single-PLC profile либо предоставить
+   явную миграцию schema version;
+7. добавить contract tests и реальный стендовый acceptance с двумя PLC,
+   двумя ADS ports и двумя различными xUnit files.
 
 ## 12. Milestone 9 — MCP adapter и skills
 

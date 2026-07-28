@@ -807,6 +807,13 @@ contract. Например, `TcModuleClass.xsd` не нужен MVP, пока ge
 
 ## 15. TcUnit с read-only ADS completion
 
+MVP поддерживает ровно один назначенный TcUnit PLC на project profile.
+Объект `tcUnit` содержит один ADS port, одну пару completion symbols и один
+report path; он не является списком. Solution может содержать другие PLC,
+но они не входят в результат этой test operation. Их xUnit publisher должен
+быть выключен либо писать в другой файл: gateway не агрегирует несколько
+PLC и не допускает нескольких writers для настроенного report path.
+
 Предполагаемый workflow:
 
 1. Агент исправляет код.
@@ -854,9 +861,11 @@ route/port возвращает `TEST_ADS_UNAVAILABLE`, missing fixed symbol —
 Требования к test project:
 
 - TcUnit library version закреплена и доступна в library repository стенда;
+- profile однозначно назначает один test PLC через его ADS port;
 - test program назначена PLC task и не зависит от production I/O;
 - `GVL_Param_TcUnit.xUnitEnablePublish=TRUE`;
 - `GVL_Param_TcUnit.xUnitFilePath` указывает на разрешённый и доступный gateway path;
+- другие PLC в той же solution не публикуют в этот report path;
 - tests, которые используют `TEST_FINISHED()`, могут занимать несколько PLC cycles, поэтому fixed delay не заменяет completion signal;
 - для separate test solution production code подключается как library/source reference, а activation разрешена только test profile.
 
