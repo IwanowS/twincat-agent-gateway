@@ -27,7 +27,7 @@
         "amsNetId": "192.168.3.31.1.1"
       },
       "configuration": "Debug",
-      "platform": "TwinCAT CE7 (ARMV7)",
+      "platform": "TwinCAT RT (x64)",
       "requireRecentSuccessfulBuild": true,
       "recentBuildMaxAgeSeconds": 600,
       "autoWaitForTcUnit": false
