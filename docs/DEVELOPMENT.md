@@ -34,6 +34,19 @@ dotnet test tests/TwinCatGateway.ContractTests/TwinCatGateway.ContractTests.cspr
 
 `dotnet build` is the supported build command because the solution contains both .NET Framework 4.8 and .NET 8 projects. Visual Studio 2019/XAE Shell is the automation target; its older MSBuild cannot orchestrate the pinned .NET 8 solution. Use `dotnet build` for focused desktop/XAE project checks as well.
 
+## Versioning
+
+Nerdbank.GitVersioning derives all assembly, file, informational, and package
+versions from the repository-root `version.json`. The `0.1` version line uses
+Git height as the patch component, so commits after the version baseline receive
+distinct versions after the existing `0.1.0` MVP. A tag matching
+`v<major>.<minor>.<patch>` marks a public release; other builds retain commit
+identity in their version.
+
+Do not add project-local `<Version>` properties or pass a separate version to
+the portable publishing script. Change `version.json` when starting a new
+version line, and commit that change before relying on the resulting version.
+
 ## Integration-test policy
 
 Local integration tests may inspect files and compile test assemblies, but must not activate a TwinCAT configuration, restart TwinCAT, change runtime mode, log in to a PLC, write ADS values, or select a substitute target.

@@ -57,7 +57,8 @@ powershell -NoProfile -ExecutionPolicy Bypass `
   -File .\scripts\Publish-Portable.ps1
 ```
 
-Extract `artifacts\TwinCatAgentGateway-0.1.0-windows.zip`, copy
+The archive name contains the Git-derived package version, for example
+`artifacts\TwinCatAgentGateway-0.1.1-g1a2b3c4d5-windows.zip`. Extract it, copy
 `twincat-gateway.example.json` to the project as `twincat-gateway.json`, and
 set the solution path. The shipped example is build-only: activation is
 disabled.

@@ -3,8 +3,6 @@ param(
     [ValidateSet('Debug', 'Release')]
     [string]$Configuration = 'Release',
 
-    [string]$Version = '0.1.0',
-
     [string]$OutputDirectory
 )
 
@@ -13,10 +11,36 @@ Set-StrictMode -Version Latest
 
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $artifactsRoot = Join-Path $repositoryRoot 'artifacts'
+$desktopProject = Join-Path `
+    $repositoryRoot `
+    'src\TwinCatGateway.Desktop\TwinCatGateway.Desktop.csproj'
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = $artifactsRoot
 }
 
+function Get-PackageVersion {
+    $versionOutput = @(
+        & dotnet msbuild `
+            $desktopProject `
+            '-nologo' `
+            '-target:GetBuildVersion' `
+            '-getProperty:NuGetPackageVersion'
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not determine the Git-derived package version."
+    }
+
+    $resolvedVersion = $versionOutput |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+        Select-Object -Last 1
+    if ([string]::IsNullOrWhiteSpace($resolvedVersion)) {
+        throw "Git-derived package version is empty."
+    }
+
+    return $resolvedVersion.Trim()
+}
+
+$Version = Get-PackageVersion
 $outputRoot = [IO.Path]::GetFullPath($OutputDirectory)
 $packageName = "TwinCatAgentGateway-$Version-windows"
 $stagingRoot = Join-Path `
@@ -38,10 +62,41 @@ function Invoke-DotNetPublish {
         $Project `
         '--configuration' $Configuration `
         '--no-restore' `
-        '--output' $Destination `
-        "-p:Version=$Version"
+        '--output' $Destination
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet publish failed for '$Project' with exit code $LASTEXITCODE."
+    }
+}
+
+function Compress-PortableArchive {
+    param(
+        [Parameter(Mandatory)]
+        [string]$Source,
+
+        [Parameter(Mandatory)]
+        [string]$Destination
+    )
+
+    $maxAttempts = 5
+    for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+        try {
+            if (Test-Path -LiteralPath $Destination) {
+                Remove-Item -LiteralPath $Destination -Force
+            }
+
+            Compress-Archive `
+                -LiteralPath $Source `
+                -DestinationPath $Destination `
+                -CompressionLevel Optimal
+            return
+        }
+        catch {
+            if ($attempt -ge $maxAttempts) {
+                throw
+            }
+
+            Start-Sleep -Milliseconds 500
+        }
     }
 }
 
@@ -52,9 +107,7 @@ try {
         Out-Null
 
     Invoke-DotNetPublish `
-        -Project (Join-Path `
-            $repositoryRoot `
-            'src\TwinCatGateway.Desktop\TwinCatGateway.Desktop.csproj') `
+        -Project $desktopProject `
         -Destination (Join-Path $packageRoot 'desktop')
     Invoke-DotNetPublish `
         -Project (Join-Path `
@@ -86,14 +139,9 @@ try {
         -Destination $packageRoot `
         -Recurse
 
-    if (Test-Path -LiteralPath $archivePath) {
-        Remove-Item -LiteralPath $archivePath -Force
-    }
-
-    Compress-Archive `
-        -LiteralPath $packageRoot `
-        -DestinationPath $archivePath `
-        -CompressionLevel Optimal
+    Compress-PortableArchive `
+        -Source $packageRoot `
+        -Destination $archivePath
     Write-Output $archivePath
 }
 finally {
