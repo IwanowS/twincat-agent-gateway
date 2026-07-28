@@ -82,6 +82,18 @@ public sealed class IpcProtocolTests
                             Ok = true,
                             OperationId = "operation-1",
                             Action = parameters.Action,
+                        },
+                        new RuntimeAlert
+                        {
+                            Code = "PLC_RUNTIME_EXCEPTION",
+                            Severity = DiagnosticSeverity.Error,
+                            Message =
+                                "PLC runtime is in Exception.",
+                            OccurredAtUtc =
+                                DateTimeOffset.UtcNow,
+                            EventCursor = 7,
+                            RuntimeName = "PlcProject2",
+                            AdsPort = 852,
                         }));
             });
         string request =
@@ -113,6 +125,10 @@ public sealed class IpcProtocolTests
         Assert.True(response.Ok);
         Assert.Equal("request-1", response.RequestId);
         Assert.Equal(BuildAction.Clean, response.Result?.Action);
+        Assert.Equal(
+            "PLC_RUNTIME_EXCEPTION",
+            response.RuntimeAlert?.Code);
+        Assert.Equal(852, response.RuntimeAlert?.AdsPort);
     }
 
     [Fact]

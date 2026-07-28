@@ -31,11 +31,27 @@ public static class AdsRuntimeStatusReader
         string amsNetId,
         TimeSpan timeout)
     {
+        return Read(
+            amsNetId,
+            SystemServicePort,
+            timeout);
+    }
+
+    public static AdsRuntimeStatusReadResult Read(
+        string amsNetId,
+        int port,
+        TimeSpan timeout)
+    {
         if (string.IsNullOrWhiteSpace(amsNetId))
         {
             throw new ArgumentException(
                 "Target AMS NetId is required.",
                 nameof(amsNetId));
+        }
+
+        if (port <= 0 || port > ushort.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(port));
         }
 
         if (timeout <= TimeSpan.Zero
@@ -45,22 +61,40 @@ public static class AdsRuntimeStatusReader
                 nameof(timeout));
         }
 
+        using AdsClient client = new();
+        return Read(
+            client,
+            amsNetId,
+            port,
+            timeout,
+            connect: true);
+    }
+
+    internal static AdsRuntimeStatusReadResult Read(
+        AdsClient client,
+        string amsNetId,
+        int port,
+        TimeSpan timeout,
+        bool connect)
+    {
         DateTimeOffset readAtUtc = DateTimeOffset.UtcNow;
         AdsRuntimeDiagnostics diagnostics = new()
         {
             AmsNetId = amsNetId,
-            Port = SystemServicePort,
+            Port = port,
             ReadAtUtc = readAtUtc,
         };
         try
         {
-            using AdsClient client = new()
+            client.Timeout =
+                checked((int)timeout.TotalMilliseconds);
+            if (connect)
             {
-                Timeout = checked((int)timeout.TotalMilliseconds),
-            };
-            client.Connect(
-                amsNetId,
-                SystemServicePort);
+                client.Connect(
+                    amsNetId,
+                    port);
+            }
+
             AdsErrorCode error = client.TryReadState(
                 out StateInfo state);
             if (error != AdsErrorCode.NoError)

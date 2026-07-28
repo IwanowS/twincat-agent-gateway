@@ -64,6 +64,7 @@ public sealed class GatewayStatusSnapshotStore
             {
                 Started = null,
                 Mode = RuntimeMode.Unknown,
+                SystemMode = RuntimeMode.Unknown,
             },
         };
     }
@@ -105,6 +106,10 @@ public sealed class GatewayStatusSnapshotStore
             {
                 Started = source.TwinCat.Started,
                 Mode = source.TwinCat.Mode,
+                SystemMode = source.TwinCat.SystemMode,
+                ObservedAtUtc = source.TwinCat.ObservedAtUtc,
+                Alert = CloneRuntimeAlert(
+                    source.TwinCat.Alert),
             },
             CurrentOperation = CloneOperation(source.CurrentOperation),
             LastBuild = CloneBuild(source.LastBuild),
@@ -193,6 +198,23 @@ public sealed class GatewayStatusSnapshotStore
                 OperationId = source.OperationId,
                 Stage = source.Stage,
                 RawLogRef = source.RawLogRef,
+            };
+    }
+
+    public static RuntimeAlert? CloneRuntimeAlert(
+        RuntimeAlert? source)
+    {
+        return source is null
+            ? null
+            : new RuntimeAlert
+            {
+                Code = source.Code,
+                Severity = source.Severity,
+                Message = source.Message,
+                OccurredAtUtc = source.OccurredAtUtc,
+                EventCursor = source.EventCursor,
+                RuntimeName = source.RuntimeName,
+                AdsPort = source.AdsPort,
             };
     }
 

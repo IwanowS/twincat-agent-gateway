@@ -49,6 +49,10 @@ disabled until the operator deliberately changes `allowActivation`.
     "allowStart": true,
     "allowShutdown": false
   },
+  "runtimeMonitoring": {
+    "pollIntervalMilliseconds": 1000,
+    "readTimeoutMilliseconds": 500
+  },
   "profiles": [
     {
       "name": "default",
@@ -112,6 +116,7 @@ when passed through `--config`.
 | `logRetentionDays` | integer, `14` | Retention window. Valid range: 1 through 3650 days. |
 | `ui` | object, default object | UI configuration. Must not be `null`. |
 | `agentProcessControl` | object, default object | Agent lifecycle policy. Must not be `null`. |
+| `runtimeMonitoring` | object, default object | Read-only ADS runtime polling. Must not be `null`. |
 | `profiles` | array, empty by default | One or more unique project profiles are required for a configured gateway. |
 
 ## `ui` options
@@ -131,6 +136,17 @@ process.
 | `allowShutdown` | Boolean, `false` | Permits the destructive MCP `gateway_shutdown` tool to close this desktop gateway after its IPC response has been written. It never closes a user-owned XAE instance. |
 
 Neither option permits an agent to select another solution or target.
+
+## `runtimeMonitoring` options
+
+The desktop gateway polls the verified System Service and the PLC ADS ports
+discovered from the exact selected `.tsproj`. Unchanged observations remain
+inside the gateway and do not create events or consume model tokens.
+
+| Property | Type and default | Meaning |
+|---|---|---|
+| `pollIntervalMilliseconds` | integer, `1000` | Delay between completed polling rounds. Valid range: 100 through 60000 milliseconds. |
+| `readTimeoutMilliseconds` | integer, `500` | Upper bound for each ADS state read. Valid range: 100 through 10000 milliseconds. |
 
 ## Project profile options
 

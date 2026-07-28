@@ -86,6 +86,38 @@ public static class GatewayConfigurationValidator
                 "agentProcessControl",
                 "Agent process-control settings are required.");
         }
+
+        if (configuration.RuntimeMonitoring is null)
+        {
+            Add(
+                issues,
+                "runtimeMonitoring",
+                "Runtime-monitoring settings are required.");
+        }
+        else
+        {
+            if (configuration.RuntimeMonitoring.PollIntervalMilliseconds
+                < 100
+                || configuration.RuntimeMonitoring.PollIntervalMilliseconds
+                > 60000)
+            {
+                Add(
+                    issues,
+                    "runtimeMonitoring.pollIntervalMilliseconds",
+                    "Runtime polling interval must be between 100 and 60000 milliseconds.");
+            }
+
+            if (configuration.RuntimeMonitoring.ReadTimeoutMilliseconds
+                < 100
+                || configuration.RuntimeMonitoring.ReadTimeoutMilliseconds
+                > 10000)
+            {
+                Add(
+                    issues,
+                    "runtimeMonitoring.readTimeoutMilliseconds",
+                    "Runtime read timeout must be between 100 and 10000 milliseconds.");
+            }
+        }
     }
 
     private static void ValidateProfiles(

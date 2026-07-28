@@ -63,6 +63,29 @@ public sealed class TwinCatStatus
     public bool? Started { get; set; }
 
     public RuntimeMode Mode { get; set; } = RuntimeMode.Unknown;
+
+    public RuntimeMode SystemMode { get; set; } = RuntimeMode.Unknown;
+
+    public DateTimeOffset? ObservedAtUtc { get; set; }
+
+    public RuntimeAlert? Alert { get; set; }
+}
+
+public sealed class RuntimeAlert
+{
+    public string Code { get; set; } = string.Empty;
+
+    public DiagnosticSeverity Severity { get; set; }
+
+    public string Message { get; set; } = string.Empty;
+
+    public DateTimeOffset OccurredAtUtc { get; set; }
+
+    public long EventCursor { get; set; }
+
+    public string? RuntimeName { get; set; }
+
+    public int? AdsPort { get; set; }
 }
 
 public sealed class GatewayStatusResult
@@ -139,6 +162,8 @@ public sealed class XaeDiagnostics
 
 public sealed class AdsRuntimeDiagnostics
 {
+    public string? RuntimeName { get; set; }
+
     public string? AmsNetId { get; set; }
 
     public int Port { get; set; } = 10000;
@@ -172,6 +197,8 @@ public sealed class GatewayDiagnosticsResult
     public XaeDiagnostics Xae { get; set; } = new();
 
     public AdsRuntimeDiagnostics Runtime { get; set; } = new();
+
+    public List<AdsRuntimeDiagnostics> PlcRuntimes { get; set; } = new();
 
     public ComDiagnostics Com { get; set; } = new();
 

@@ -26,6 +26,15 @@ public sealed class GatewayStatusSnapshotStoreTests
         initial.Xae.Connected = true;
         initial.Xae.AgentWorkspaceOwned = true;
         initial.Xae.DiscardedDocumentCount = 3;
+        initial.TwinCat.SystemMode = RuntimeMode.Run;
+        initial.TwinCat.Alert = new RuntimeAlert
+        {
+            Code = "PLC_RUNTIME_EXCEPTION",
+            Severity = DiagnosticSeverity.Error,
+            Message = "PLC exception.",
+            RuntimeName = "PlcProject2",
+            AdsPort = 852,
+        };
         initial.LastActivation = new ActivationSummary
         {
             Ok = true,
@@ -44,6 +53,8 @@ public sealed class GatewayStatusSnapshotStoreTests
         first.Xae.Connected = false;
         first.Xae.AgentWorkspaceOwned = false;
         first.Xae.DiscardedDocumentCount = 0;
+        Assert.IsType<RuntimeAlert>(
+            first.TwinCat.Alert).Code = "mutated";
         Assert.IsType<ActivationSummary>(first.LastActivation).Target.Name = "mutated";
 
         GatewayStatusResult second = store.Read();
@@ -68,6 +79,12 @@ public sealed class GatewayStatusSnapshotStoreTests
         Assert.True(second.Xae.Connected);
         Assert.True(second.Xae.AgentWorkspaceOwned);
         Assert.Equal(3, second.Xae.DiscardedDocumentCount);
+        Assert.Equal(
+            RuntimeMode.Run,
+            second.TwinCat.SystemMode);
+        Assert.Equal(
+            "PLC_RUNTIME_EXCEPTION",
+            second.TwinCat.Alert?.Code);
         Assert.Equal("target", second.LastActivation?.Target.Name);
     }
 

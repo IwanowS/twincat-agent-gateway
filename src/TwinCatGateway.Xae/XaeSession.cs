@@ -1559,6 +1559,8 @@ public sealed class XaeSession : IDisposable
             activeConfiguration;
         _snapshot.ActivePlatform = activePlatform;
         _snapshot.TargetAmsNetId = targetAmsNetId;
+        _snapshot.TwinCatProjectPath =
+            _twinCatProjectPath;
         _snapshot.LastErrorMessages =
             lastErrorMessages;
         _snapshot.DiagnosticIssues = issues;
@@ -2923,6 +2925,7 @@ public sealed class XaeSession : IDisposable
             ActiveConfiguration = source.ActiveConfiguration,
             ActivePlatform = source.ActivePlatform,
             TargetAmsNetId = source.TargetAmsNetId,
+            TwinCatProjectPath = source.TwinCatProjectPath,
             LastErrorMessages =
                 source.LastErrorMessages.ToArray(),
             DiagnosticIssues =

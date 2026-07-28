@@ -29,17 +29,15 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly StructuredFileLogger _logger;
     private readonly LocalLogStore _logs;
     private readonly IGatewayEventSink _events;
+    private readonly AdsRuntimeMonitor _runtimeMonitor;
     private readonly XaeSession _session = new();
     private readonly TcUnitRunExecutor _tcUnit;
     private readonly SemaphoreSlim _wakeSignal = new(0, 1);
     private XaeSessionSnapshot _lastSnapshot = new();
     private ComDiagnostics _lastComDiagnostics = new();
-    private AdsRuntimeDiagnostics _lastRuntimeDiagnostics = new();
     private string? _lastErrorMessage;
     private int? _lastHResult;
     private string? _lastFailureSignature;
-    private string? _lastRuntimeFailureSignature;
-    private string? _lastRuntimeStateSignature;
     private bool _wasConnected;
     private int _reconnectRequested;
     private int _disposed;
@@ -49,7 +47,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         GatewayStatusSnapshotStore status,
         StructuredFileLogger logger,
         LocalLogStore logs,
-        IGatewayEventSink events)
+        IGatewayEventSink events,
+        AdsRuntimeMonitor runtimeMonitor)
     {
         _profile = profile
             ?? throw new ArgumentNullException(nameof(profile));
@@ -61,6 +60,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ?? throw new ArgumentNullException(nameof(logs));
         _events = events
             ?? throw new ArgumentNullException(nameof(events));
+        _runtimeMonitor = runtimeMonitor
+            ?? throw new ArgumentNullException(
+                nameof(runtimeMonitor));
         _tcUnit = new TcUnitRunExecutor(
             _profile,
             _logs,
@@ -109,9 +111,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         AttachTimeout,
                         cancellationToken).ConfigureAwait(false);
                 connected = true;
-                AdsRuntimeStatusReadResult runtime =
-                    ReadRuntimeStatus(snapshot);
-                PublishConnected(snapshot, runtime);
+                PublishConnected(snapshot);
             }
             catch (OperationCanceledException) when (
                 cancellationToken.IsCancellationRequested)
@@ -156,8 +156,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     LastHResult = _lastHResult,
                 },
                 Com = CloneCom(_lastComDiagnostics),
-                Runtime = CloneRuntime(
-                    _lastRuntimeDiagnostics),
+                Runtime =
+                    _runtimeMonitor.GetSystemDiagnostics(),
+                PlcRuntimes = _runtimeMonitor
+                    .GetPlcDiagnostics()
+                    .ToList(),
             };
         }
     }
@@ -490,7 +493,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 "TwinCAT did not reach Config Mode after recovery.",
                 "activation.recoverToConfig",
                 cancellationToken)).ConfigureAwait(false);
-            PublishConnected(snapshot, runtime);
+            PublishConnected(snapshot);
             RecordActivationEvent(
                 operationId,
                 GatewayEventTypes.ActivationRecoverySucceeded,
@@ -590,7 +593,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             snapshot,
             expectedAmsNetId,
             "activation.verify");
-        PublishConnected(snapshot, runtime);
+        PublishConnected(snapshot);
         ActivationCompletion completion;
         bool activeConfigurationVerified;
         if (parameters.RunAfterActivation)
@@ -860,35 +863,14 @@ internal sealed class XaeSessionCoordinator : IDisposable
     }
 
     private void PublishConnected(
-        XaeSessionSnapshot snapshot,
-        AdsRuntimeStatusReadResult runtime)
+        XaeSessionSnapshot snapshot)
     {
         ComDiagnostics diagnostics = _session.GetComDiagnostics();
         bool logConnection;
-        bool logRuntimeFailure;
-        bool publishRuntimeState;
-        string runtimeStateSignature = CreateRuntimeStateSignature(
-            runtime);
         lock (_sync)
         {
             _lastSnapshot = CloneSnapshot(snapshot);
             _lastComDiagnostics = CloneCom(diagnostics);
-            _lastRuntimeDiagnostics =
-                CloneRuntime(runtime.Diagnostics);
-            logRuntimeFailure =
-                runtime.Diagnostics.ErrorCode is not null
-                && !string.Equals(
-                    _lastRuntimeFailureSignature,
-                    runtime.Diagnostics.ErrorCode,
-                    StringComparison.Ordinal);
-            _lastRuntimeFailureSignature =
-                runtime.Diagnostics.ErrorCode;
-            publishRuntimeState = !string.Equals(
-                _lastRuntimeStateSignature,
-                runtimeStateSignature,
-                StringComparison.Ordinal);
-            _lastRuntimeStateSignature =
-                runtimeStateSignature;
             _lastFailureSignature = null;
             logConnection = !_wasConnected;
             _wasConnected = true;
@@ -897,6 +879,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
         DteInstanceInfo selected = snapshot.SelectedInstance
             ?? throw new InvalidOperationException(
                 "A connected XAE snapshot has no selected instance.");
+        _runtimeMonitor.UpdateTarget(
+            snapshot.TargetAmsNetId,
+            snapshot.TwinCatProjectPath);
         _status.Update(status =>
         {
             if (status.Gateway.State != GatewayState.Stopping
@@ -916,10 +901,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 snapshot.SynchronizationState;
             status.Xae.DirtyDocumentCount =
                 snapshot.DirtyDocumentCount;
-            status.TwinCat.Started =
-                runtime.Status.Started;
-            status.TwinCat.Mode =
-                runtime.Status.Mode;
             return status;
         });
         if (logConnection)
@@ -959,38 +940,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 DateTimeOffset.UtcNow);
         }
 
-        if (publishRuntimeState)
-        {
-            _events.Record(
-                CreateRuntimeStateEvent(runtime),
-                DateTimeOffset.UtcNow);
-        }
-
-        if (logRuntimeFailure)
-        {
-            Dictionary<string, string> properties =
-                CreateRuntimeProperties(runtime);
-            _logger.Write(
-                StructuredLogLevel.Warning,
-                "ads.runtime_status.failed",
-                "Could not read the selected target runtime state.",
-                properties: properties,
-                exception: runtime.Failure);
-            GatewayError error = new()
-            {
-                Code = ErrorCodes.TwinCatStateUnknown,
-                Message =
-                    "Could not read the selected target runtime state.",
-                Retryable = true,
-                Stage = "ads.runtimeStatus",
-            };
-            _events.Record(
-                CreateErrorEvent(
-                    GatewayEventTypes.RuntimeStatusReadFailed,
-                    error,
-                    properties),
-                DateTimeOffset.UtcNow);
-        }
     }
 
     private void PublishFailure(
@@ -1018,7 +967,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             _lastFailureSignature = signature;
             wasConnected = _wasConnected;
             _wasConnected = false;
-            _lastRuntimeStateSignature = null;
         }
 
         _status.Update(status =>
@@ -1039,8 +987,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             status.Xae.SynchronizationState =
                 SynchronizationState.Uninitialized;
             status.Xae.DirtyDocumentCount = 0;
-            status.TwinCat.Started = null;
-            status.TwinCat.Mode = RuntimeMode.Unknown;
             return status;
         });
         if (wasConnected)
@@ -1108,73 +1054,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             Properties = properties
                 ?? new Dictionary<string, string>(),
         };
-    }
-
-    private static GatewayEvent CreateRuntimeStateEvent(
-        AdsRuntimeStatusReadResult runtime)
-    {
-        DiagnosticSeverity severity;
-        switch (runtime.Status.Mode)
-        {
-            case RuntimeMode.Exception:
-                severity = DiagnosticSeverity.Error;
-                break;
-            case RuntimeMode.Unknown:
-                severity = DiagnosticSeverity.Warning;
-                break;
-            default:
-                severity = DiagnosticSeverity.Info;
-                break;
-        }
-
-        return new GatewayEvent
-        {
-            Type = GatewayEventTypes.RuntimeStateChanged,
-            Severity = severity,
-            Stage = "ads.runtimeStatus",
-            Message =
-                $"TwinCAT runtime state changed to {runtime.Status.Mode}.",
-            Properties = CreateRuntimeProperties(runtime),
-        };
-    }
-
-    private static Dictionary<string, string>
-        CreateRuntimeProperties(
-            AdsRuntimeStatusReadResult runtime)
-    {
-        return new Dictionary<string, string>
-        {
-            ["amsNetId"] =
-                runtime.Diagnostics.AmsNetId ?? "unknown",
-            ["port"] = runtime.Diagnostics.Port.ToString(
-                CultureInfo.InvariantCulture),
-            ["started"] =
-                runtime.Status.Started?.ToString()
-                ?? "unknown",
-            ["mode"] = runtime.Status.Mode.ToString(),
-            ["adsState"] =
-                runtime.Diagnostics.AdsState ?? "unknown",
-            ["deviceState"] =
-                runtime.Diagnostics.DeviceState?.ToString(
-                    CultureInfo.InvariantCulture)
-                ?? "unknown",
-            ["errorCode"] =
-                runtime.Diagnostics.ErrorCode ?? "none",
-        };
-    }
-
-    private static string CreateRuntimeStateSignature(
-        AdsRuntimeStatusReadResult runtime)
-    {
-        return string.Join(
-            "|",
-            runtime.Status.Started?.ToString() ?? "unknown",
-            runtime.Status.Mode.ToString(),
-            runtime.Diagnostics.AdsState ?? "unknown",
-            runtime.Diagnostics.DeviceState?.ToString(
-                CultureInfo.InvariantCulture)
-                ?? "unknown",
-            runtime.Diagnostics.ErrorCode ?? "none");
     }
 
     private async Task<XaeSessionSnapshot> ReadSnapshotAfterFailureAsync()
@@ -1268,6 +1147,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 source.ActiveConfiguration,
             ActivePlatform = source.ActivePlatform,
             TargetAmsNetId = source.TargetAmsNetId,
+            TwinCatProjectPath =
+                source.TwinCatProjectPath,
             LastErrorMessages =
                 source.LastErrorMessages.ToArray(),
             DiagnosticIssues =
@@ -1303,20 +1184,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             RetryCount = source.RetryCount,
             LastCallLatencyMs = source.LastCallLatencyMs,
             LastHResult = source.LastHResult,
-        };
-    }
-
-    private static AdsRuntimeDiagnostics CloneRuntime(
-        AdsRuntimeDiagnostics source)
-    {
-        return new AdsRuntimeDiagnostics
-        {
-            AmsNetId = source.AmsNetId,
-            Port = source.Port,
-            AdsState = source.AdsState,
-            DeviceState = source.DeviceState,
-            ErrorCode = source.ErrorCode,
-            ReadAtUtc = source.ReadAtUtc,
         };
     }
 

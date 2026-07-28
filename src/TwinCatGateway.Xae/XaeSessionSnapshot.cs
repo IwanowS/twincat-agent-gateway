@@ -30,6 +30,8 @@ public sealed class XaeSessionSnapshot
 
     public string? TargetAmsNetId { get; set; }
 
+    public string? TwinCatProjectPath { get; set; }
+
     public IReadOnlyList<string> LastErrorMessages { get; set; } =
         new List<string>();
 

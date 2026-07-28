@@ -11,4 +11,6 @@ public sealed class GatewayResponse<TResult>
     public TResult? Result { get; set; }
 
     public GatewayError? Error { get; set; }
+
+    public RuntimeAlert? RuntimeAlert { get; set; }
 }

@@ -210,6 +210,33 @@ public sealed class MvpContractSerializationTests
             {
                 Started = null,
                 Mode = RuntimeMode.Unknown,
+                SystemMode = RuntimeMode.Run,
+                ObservedAtUtc = new DateTimeOffset(
+                    2026,
+                    7,
+                    29,
+                    0,
+                    0,
+                    0,
+                    TimeSpan.Zero),
+                Alert = new RuntimeAlert
+                {
+                    Code = "PLC_RUNTIME_EXCEPTION",
+                    Severity = DiagnosticSeverity.Error,
+                    Message =
+                        "PLC runtime 'PlcProject2' is in Exception.",
+                    OccurredAtUtc = new DateTimeOffset(
+                        2026,
+                        7,
+                        29,
+                        0,
+                        0,
+                        0,
+                        TimeSpan.Zero),
+                    EventCursor = 41,
+                    RuntimeName = "PlcProject2",
+                    AdsPort = 852,
+                },
             },
             EventStreamId = "stream-42",
             LatestEventCursor = 42,
@@ -222,6 +249,13 @@ public sealed class MvpContractSerializationTests
         Assert.NotNull(result);
         Assert.Null(result.TwinCat.Started);
         Assert.Equal(RuntimeMode.Unknown, result.TwinCat.Mode);
+        Assert.Equal(
+            RuntimeMode.Run,
+            result.TwinCat.SystemMode);
+        Assert.Equal(
+            "PLC_RUNTIME_EXCEPTION",
+            result.TwinCat.Alert?.Code);
+        Assert.Equal(852, result.TwinCat.Alert?.AdsPort);
         Assert.True(result.Gateway.Ready);
         Assert.Equal(
             @"C:\Projects\Machine\twincat-gateway.json",
@@ -480,6 +514,7 @@ public sealed class MvpContractSerializationTests
     {
         AdsRuntimeDiagnostics diagnostics = new()
         {
+            RuntimeName = "TwinCAT System",
             AmsNetId = "192.168.3.31.1.1",
             Port = 10000,
             AdsState = "Exception",
@@ -503,6 +538,7 @@ public sealed class MvpContractSerializationTests
                 ContractJson.SerializerOptions);
 
         Assert.NotNull(result);
+        Assert.Equal("TwinCAT System", result.RuntimeName);
         Assert.Equal("192.168.3.31.1.1", result.AmsNetId);
         Assert.Equal(10000, result.Port);
         Assert.Equal("Exception", result.AdsState);

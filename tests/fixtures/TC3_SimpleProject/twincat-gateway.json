@@ -10,6 +10,10 @@
     "allowStart": true,
     "allowShutdown": false
   },
+  "runtimeMonitoring": {
+    "pollIntervalMilliseconds": 1000,
+    "readTimeoutMilliseconds": 500
+  },
   "profiles": [
     {
       "name": "fixture",

@@ -33,6 +33,14 @@ public sealed class GatewayConfigurationTests
         Assert.False(
             configuration.AgentProcessControl.AllowShutdown);
         Assert.Equal(
+            1000,
+            configuration.RuntimeMonitoring
+                .PollIntervalMilliseconds);
+        Assert.Equal(
+            500,
+            configuration.RuntimeMonitoring
+                .ReadTimeoutMilliseconds);
+        Assert.Equal(
             Path.Combine(
                 AppContext.BaseDirectory,
                 "Machine.sln"),
@@ -263,6 +271,38 @@ public sealed class GatewayConfigurationTests
         Assert.Contains(
             validation.Issues,
             issue => issue.Path == "profiles");
+    }
+
+    [Theory]
+    [InlineData(99, 500, "pollIntervalMilliseconds")]
+    [InlineData(60001, 500, "pollIntervalMilliseconds")]
+    [InlineData(1000, 99, "readTimeoutMilliseconds")]
+    [InlineData(1000, 10001, "readTimeoutMilliseconds")]
+    public void RuntimeMonitoringBoundsAreValidated(
+        int pollIntervalMilliseconds,
+        int readTimeoutMilliseconds,
+        string expectedPath)
+    {
+        GatewayConfiguration configuration =
+            CreateValidConfiguration();
+        configuration.RuntimeMonitoring =
+            new RuntimeMonitoringConfiguration
+            {
+                PollIntervalMilliseconds =
+                    pollIntervalMilliseconds,
+                ReadTimeoutMilliseconds =
+                    readTimeoutMilliseconds,
+            };
+
+        ConfigurationValidationResult validation =
+            GatewayConfigurationValidator.Validate(
+                configuration);
+
+        Assert.Contains(
+            validation.Issues,
+            issue => issue.Path.EndsWith(
+                expectedPath,
+                StringComparison.Ordinal));
     }
 
     [Fact]

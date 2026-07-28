@@ -45,7 +45,10 @@ public sealed class GatewayRequestDispatcher
             }
 
             object? result = Dispatch(request);
-            return Task.FromResult(GatewayDispatchResult.Success(result));
+            return Task.FromResult(
+                GatewayDispatchResult.Success(
+                    result,
+                    GetRuntimeAlert()));
         }
         catch (GatewayOperationException exception)
         {
@@ -58,7 +61,8 @@ public sealed class GatewayRequestDispatcher
                         Retryable = exception.Retryable,
                         Stage = exception.Stage,
                         RawLogRef = exception.RawLogRef,
-                    }));
+                    },
+                    GetRuntimeAlert()));
         }
     }
 
@@ -83,7 +87,14 @@ public sealed class GatewayRequestDispatcher
             {
                 ShutdownRequested = true,
             },
+            GetRuntimeAlert(),
             callback);
+    }
+
+    private RuntimeAlert? GetRuntimeAlert()
+    {
+        return GatewayStatusSnapshotStore.CloneRuntimeAlert(
+            _service.GetStatus().TwinCat.Alert);
     }
 
     private object? Dispatch(GatewayRequestContext request)

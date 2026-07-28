@@ -18,8 +18,10 @@ public sealed class GatewayDesktopHost : IDisposable
     private readonly NamedPipeGatewayServer _server;
     private readonly GatewayStatusSnapshotStore _status;
     private readonly GatewayEventJournal _events;
+    private readonly AdsRuntimeMonitor? _runtimeMonitor;
     private readonly XaeSessionCoordinator? _xaeCoordinator;
     private Task? _serverTask;
+    private Task? _runtimeMonitorTask;
     private Task? _xaeTask;
     private int _shutdownRequested;
     private int _started;
@@ -57,6 +59,13 @@ public sealed class GatewayDesktopHost : IDisposable
         _status = new GatewayStatusSnapshotStore(
             GatewayStatusSnapshotStore.CreateInitial(version));
         _events = new GatewayEventJournal(_status);
+        _runtimeMonitor = ActiveProfile is null
+            ? null
+            : new AdsRuntimeMonitor(
+                _status,
+                _logger,
+                _events,
+                Configuration.RuntimeMonitoring);
         OperationStore operations = new();
         _queue = new OperationQueue(
             operations,
@@ -69,7 +78,8 @@ public sealed class GatewayDesktopHost : IDisposable
                 _status,
                 _logger,
                 logs,
-                _events);
+                _events,
+                _runtimeMonitor!);
         Func<GatewayDiagnosticsResult>? diagnosticsProvider =
             _xaeCoordinator is null
                 ? null
@@ -208,6 +218,12 @@ public sealed class GatewayDesktopHost : IDisposable
         }
 
         _serverTask = ObserveServerAsync(_server.RunAsync(_shutdown.Token));
+        if (_runtimeMonitor is not null)
+        {
+            _runtimeMonitorTask =
+                _runtimeMonitor.RunAsync(_shutdown.Token);
+        }
+
         if (_xaeCoordinator is not null)
         {
             _xaeTask = _xaeCoordinator.RunAsync(_shutdown.Token);
@@ -264,6 +280,11 @@ public sealed class GatewayDesktopHost : IDisposable
                 await _xaeTask.ConfigureAwait(false);
             }
 
+            if (_runtimeMonitorTask is not null)
+            {
+                await _runtimeMonitorTask.ConfigureAwait(false);
+            }
+
             return;
         }
 
@@ -289,8 +310,14 @@ public sealed class GatewayDesktopHost : IDisposable
             await _xaeTask.ConfigureAwait(false);
         }
 
+        if (_runtimeMonitorTask is not null)
+        {
+            await _runtimeMonitorTask.ConfigureAwait(false);
+        }
+
         await _queue.StopAsync().ConfigureAwait(false);
         _xaeCoordinator?.Dispose();
+        _runtimeMonitor?.Dispose();
         _server.Dispose();
         _shutdown.Dispose();
         _logger.Write(

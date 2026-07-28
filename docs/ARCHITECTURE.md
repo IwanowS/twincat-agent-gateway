@@ -73,8 +73,8 @@ AI-агент должен иметь возможность редактиро�
                │ VS2019/XAE Shell│     │ system port 10000    │
                └─────────────────┘     │ + PLC runtime port   │
                                        └──────────────────────┘
-                                       ReadState + fixed TcUnit
-                                       completion symbols only
+                                       System/PLC ReadState +
+                                       fixed TcUnit symbols only
 
 ┌─────────────────────────────┐
 │ TwinCatGateway.Cli          │ .NET 8, repository development only
@@ -342,7 +342,12 @@ Gateway не меняет tri-state `Autostart PLC Boot Project(s)`; значе�
 - возвращает counts и failed tests;
 - хранит исходный XML как resource.
 
-ADS adapters не принимают от вызывающего кода произвольные NetId, port или symbol path, не пишут значения, не вызывают RPC и не меняют runtime state. Status adapter вызывает только `TryReadState` на фиксированном System Service port 10000 выбранного XAE target. Activation/restart остаются обязанностью `ActivationService` через Automation Interface.
+ADS adapters не принимают от вызывающего кода произвольные NetId, port или
+symbol path, не пишут значения, не вызывают RPC и не меняют runtime state.
+Status adapter вызывает `TryReadState` для фиксированного System Service port
+10000 и PLC runtime ports, обнаруженных из точного выбранного `.tsproj`.
+Activation/restart остаются обязанностью `ActivationService` через Automation
+Interface.
 
 Стандартные symbol paths задаются operator-controlled profile и проверяются на закреплённой версии TcUnit. Они не считаются стабильным публичным API TcUnit и не передаются произвольными аргументами MCP/CLI.
 
@@ -883,57 +888,49 @@ PLC `Exception` не является частью activation transaction. Ак�
 отдельное runtime event и сам по себе не меняет уже завершённый результат
 activation operation.
 
-Continuous monitor использует гибридную схему:
+Continuous monitor использует единый background polling:
 
-- долгоживущий `AdsClient` для System Service port 10000 выполняет bounded
-  heartbeat через `TryReadState`/`ReadStateAsync`. Событие
-  `AdsStateChanged` на этом порту недоступно, поэтому здесь polling обязателен;
-- для PLC runtime ports, обнаруженных только из выбранного XAE project graph,
-  gateway регистрирует `RegisterAdsStateChangedAsync` и получает переходы PLC
-  event-driven. Caller не может передать произвольный ADS port;
-- heartbeat остаётся необходимым и при подписке на PLC events: согласно
-  официальному примеру Beckhoff, `ConnectionStateChanged` обновляется только
-  при установке/закрытии соединения либо когда активный ADS-вызов обнаружил
-  изменение. Потеря сети не гарантирует самостоятельного callback без обмена;
-- heartbeat имеет bounded timeout и configurable interval. Значения
-  фиксируются после real-XAE измерений; официальный пример Beckhoff использует
-  периодический `TryReadState`, а не предлагает считать этот период частью
-  protocol contract;
-- одинаковые observations coalesce, а изменения System/PLC state,
+- monitor работает независимо от XAE STA operation loop, поэтому продолжает
+  наблюдение во время build/activation и при временной потере XAE session;
+- после выбора и проверки target он удерживает долгоживущий `AdsClient` для
+  каждого endpoint. NetId берётся из XAE, а PLC runtime ports обнаруживаются
+  только из точного выбранного `.tsproj`; caller не может передать произвольный
+  NetId или port;
+- на каждом цикле сначала читается System Service port 10000. PLC ports
+  опрашиваются только когда System Service находится в `Run` или `Exception`;
+- `runtimeMonitoring.pollIntervalMilliseconds` и
+  `runtimeMonitoring.readTimeoutMilliseconds` задают bounded период и timeout.
+  Значения по умолчанию — 1000 ms и 500 ms;
+- одинаковые observations coalesce. Только изменения System/PLC state,
   disconnect, reconnect и read failure записываются в retained gateway event
   stream с timestamp, NetId, port, предыдущим и новым состоянием;
+- aggregate `mode` становится `exception`, если в `Exception` находится System
+  Service или хотя бы один PLC runtime. Недоступный активный endpoint даёт
+  `unknown`; в остальных случаях aggregate mode следует за System Service;
 - сетевой disconnect является отдельным runtime-health event. `unknown`
-  остаётся представлением недостоверного текущего состояния, но диагностика
-  сохраняет причину, последний успешный read и момент потери связи.
+  остаётся представлением недостоверного текущего состояния, а detailed
+  diagnostics сохраняет endpoint, последнюю попытку и error code.
 
-Официальные ограничения API, определяющие эту схему:
-`AdsStateChanged` поддерживается только ADS ports с device notifications
-(например PLC port 851), но не System Service port 10000; официальный пример
-`ConnectionStateChanged` выполняет периодический `TryReadState`, чтобы
-активный обмен обнаруживал изменения соединения.
+MVP намеренно не смешивает polling с `AdsStateChanged`: это событие недоступно
+на System Service port 10000, а обнаружение сетевого disconnect всё равно
+требует активного ADS-вызова. Единый цикл проще дедуплицировать, тестировать и
+ограничивать по времени. Это внутренний обмен gateway с runtime; неизменившиеся
+observations не создают MCP-запросов и не расходуют токены модели.
 
 ### 12.5 Доставка runtime events агенту
 
 Gateway всегда сохраняет runtime transitions в существующей cursor-based
 event stream, чтобы временно отсутствующий клиент мог дочитать события после
-reconnect. MCP notification нельзя считать гарантированным способом
-автономно разбудить модель после завершения её turn:
+reconnect. Последний активный runtime alert также входит в `TwinCatStatus` и
+в корень каждого последующего IPC/MCP response. Поэтому агент видит exception
+или disconnect при следующем обычном обращении к gateway без обязательного
+`twincat_watch_runtime` и без дополнительного tool call.
 
-- `notifications/resources/updated` применимо как best-effort сигнал только
-  для MCP-клиента, который предварительно подписался на runtime resource;
-- logging notifications не являются domain alert contract;
-- надёжный interactive workflow требует отдельного read-only long-poll tool
-  наподобие
-  `twincat_watch_runtime(eventStreamId, afterCursor, timeoutSeconds)`. Tool
-  возвращается сразу при exception, disconnect, reconnect или выбранном
-  state transition и используется агентом только во время явной команды
-  «наблюдать»;
-- уведомление после завершения agent turn требует host-level wakeup,
-  automation или другого внешнего delivery mechanism; стандартный MCP
-  resource update сам по себе такой гарантии не задаёт.
-
-Long-poll tool и subscribable runtime resource являются предложением для
-следующего изменения public contract и не входят в текущий MCP tool list.
+Transport notification нельзя считать гарантированным способом автономно
+разбудить модель после завершения её turn. Для этого нужна поддержка delivery
+и wakeup со стороны MCP host. Будущий `subscriptions/listen` может доставлять
+best-effort runtime resource updates поверх существующего cursor replay, но не
+заменяет retained event stream и не входит в текущий public contract.
 
 ## 13. Редактирование через файлы
 
@@ -1345,7 +1342,11 @@ IPC_VERSION_MISMATCH
 - Named Pipe ACL ограничена текущим пользователем.
 - Activation запрещена по умолчанию.
 - Для этого репозитория локальная activation/restart и другие изменения состояния TwinCAT runtime запрещены; такие сценарии выполняются только на явно разрешённом удалённом тестовом стенде.
-- ADS разрешён только для `ReadState` на фиксированном System Service port 10000 и чтения фиксированных TcUnit completion symbols на target, выбранном и проверенном через XAE/profile. Произвольные NetId, ports, symbol paths, ADS writes, RPC и `WriteControl` не входят в gateway API.
+- ADS разрешён только для `ReadState` на фиксированном System Service port
+  10000, `ReadState` на PLC runtime ports из точного выбранного `.tsproj` и
+  чтения фиксированных TcUnit completion symbols на target, выбранном и
+  проверенном через XAE/profile. Произвольные NetId, caller-selected ports,
+  symbol paths, ADS writes, RPC и `WriteControl` не входят в gateway API.
 - Profile задаётся локальной конфигурацией, а не произвольными аргументами агента.
 - Solution/target выводятся перед activation в UI и operation log.
 - MCP не получает произвольный COM invoke tool.
@@ -1397,8 +1398,7 @@ Metrics не обязательны для MVP, но structured events долж�
 - Beckhoff: ConnectionStateChanged polling example — https://infosys.beckhoff.com/content/1033/tc3_adsnetref/7312679051.html
 - Beckhoff: AdsClient.TryReadState — https://infosys.beckhoff.com/content/1033/tc3_ads.net/9407838987.html
 - Beckhoff: ADS System Service port 10000 — https://infosys.beckhoff.com/content/1033/tcadscommon/12439473419.html
-- MCP: Resources and subscriptions — https://modelcontextprotocol.io/specification/2025-06-18/server/resources
-- MCP: Server notifications schema — https://modelcontextprotocol.io/specification/2025-06-18/schema
+- MCP: Subscriptions/listen pattern — https://modelcontextprotocol.io/specification/2026-07-28/basic/patterns/subscriptions
 - Microsoft: IVsDocDataFileChangeControl — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivsdocdatafilechangecontrol
 - Microsoft: IVsPersistDocData.ReloadDocData — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivspersistdocdata.reloaddocdata
 - Microsoft: IVsFileChangeEx — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivsfilechangeex

@@ -41,6 +41,13 @@ public sealed class AgentProcessControlConfiguration
     public bool AllowShutdown { get; set; }
 }
 
+public sealed class RuntimeMonitoringConfiguration
+{
+    public int PollIntervalMilliseconds { get; set; } = 1000;
+
+    public int ReadTimeoutMilliseconds { get; set; } = 500;
+}
+
 public sealed class GatewayConfiguration
 {
     public int SchemaVersion { get; set; } = 1;
@@ -56,6 +63,9 @@ public sealed class GatewayConfiguration
     public GatewayUiConfiguration Ui { get; set; } = new();
 
     public AgentProcessControlConfiguration AgentProcessControl { get; set; } =
+        new();
+
+    public RuntimeMonitoringConfiguration RuntimeMonitoring { get; set; } =
         new();
 
     public List<ProjectProfile> Profiles { get; set; } = new();
