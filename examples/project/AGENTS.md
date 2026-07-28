@@ -2,6 +2,14 @@
 
 Use only the TwinCAT Agent Gateway MCP tools for TwinCAT operations.
 
+## Development status
+
+The TwinCAT Agent Gateway MCP server and its agent skills are under active
+development. If an MCP operation or skill fails, behaves unexpectedly, or
+returns an undocumented result, stop the affected workflow and notify the user
+with the operation name and a concise error summary. Do not silently hide the
+failure or substitute another TwinCAT automation path.
+
 1. Call the required TwinCAT MCP operation.
 2. If it returns `GATEWAY_NOT_RUNNING`, call `gateway_start` once.
 3. Wait until the returned status reports `ready: true`.
