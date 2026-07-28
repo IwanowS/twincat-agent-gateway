@@ -24,10 +24,16 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel>
-                <TextBlock FontSize="26"
-                           FontWeight="SemiBold"
-                           Foreground="#17212B"
-                           Text="TwinCAT Agent Gateway" />
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock FontSize="26"
+                               FontWeight="SemiBold"
+                               Foreground="#17212B"
+                               Text="TwinCAT Agent Gateway" />
+                    <TextBlock Margin="12,9,0,0"
+                               FontSize="13"
+                               Foreground="#6A7681"
+                               Text="{Binding Version}" />
+                </StackPanel>
                 <TextBlock Margin="0,6,0,0"
                            FontSize="13"
                            Foreground="#5C6975"

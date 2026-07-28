@@ -60,6 +60,12 @@ Different configurations found from multiple workspace roots fail with
 `GATEWAY_CONFIG_AMBIGUOUS`. No `appsettings.Local.json` is discovered
 implicitly; it remains accepted only through explicit `--config`.
 
+A manual `twincat-gateway` launch with no discovered configuration opens a
+setup-only window that displays the product version and embedded instructions.
+It does not start the gateway host, open a Named Pipe, or block an agent from
+starting a configured gateway. An explicit missing `--config` and an agent
+launch without configuration still fail closed.
+
 ## Register Codex MCP
 
 After `twincat-gateway-mcp` resolves in a new PowerShell, run:

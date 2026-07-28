@@ -74,15 +74,28 @@ public sealed class GatewayHostOptions
                 $"Unknown gateway argument '{argument}'.");
         }
 
-        GatewayConfigurationLocation location =
-            GatewayConfigurationDiscovery.Discover(
+        GatewayConfigurationLocation? location;
+        try
+        {
+            location = GatewayConfigurationDiscovery.Discover(
                 configuredPath,
                 workspaceRoots: null,
                 currentDirectory
                     ?? Environment.CurrentDirectory);
+        }
+        catch (GatewayOperationException exception)
+            when (launchSource
+                    == GatewayLaunchSource.Manual
+                && string.IsNullOrWhiteSpace(configuredPath)
+                && exception.Code
+                    == ErrorCodes.GatewayConfigNotFound)
+        {
+            location = null;
+        }
+
         return new GatewayHostOptions
         {
-            ConfigurationPath = location.Path,
+            ConfigurationPath = location?.Path,
             LaunchSource = launchSource,
             UiModeOverride = uiModeOverride,
         };

@@ -17,6 +17,7 @@ public partial class App : Application
     private SingleInstanceGuard? _singleInstance;
     private GatewayDesktopHost? _host;
     private MainWindow? _window;
+    private SetupWindow? _setupWindow;
     private TrayIconController? _trayIcon;
     private GatewayInstanceRegistration? _instanceRegistration;
     private bool _exitRequested;
@@ -29,6 +30,13 @@ public partial class App : Application
         try
         {
             options = GatewayHostOptions.FromArguments(e.Args);
+            if (string.IsNullOrWhiteSpace(
+                    options.ConfigurationPath))
+            {
+                StartSetupMode();
+                return;
+            }
+
             if (!SingleInstanceGuard.TryAcquire(
                     "TwinCatAgentGateway",
                     out _singleInstance))
@@ -192,5 +200,29 @@ public partial class App : Application
         }
 
         _window.Activate();
+    }
+
+    private void StartSetupMode()
+    {
+        if (!SingleInstanceGuard.TryAcquire(
+                "TwinCatAgentGateway.Setup",
+                out _singleInstance))
+        {
+            MessageBox.Show(
+                "TwinCAT Agent Gateway setup is already open "
+                + "for this user.",
+                "TwinCAT Agent Gateway",
+                MessageBoxButton.OK,
+                MessageBoxImage.Information);
+            Shutdown();
+            return;
+        }
+
+        _setupWindow = new SetupWindow();
+        _setupWindow.Closed +=
+            (_, _) => Shutdown();
+        MainWindow = _setupWindow;
+        _setupWindow.Show();
+        _setupWindow.Activate();
     }
 }

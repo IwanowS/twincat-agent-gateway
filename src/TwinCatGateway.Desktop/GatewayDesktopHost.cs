@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Contracts;
@@ -32,7 +31,7 @@ public sealed class GatewayDesktopHost : IDisposable
             throw new ArgumentNullException(nameof(options));
         }
 
-        string version = GetVersion();
+        string version = GatewayProductVersion.Value;
         HostConfiguration hostConfiguration = LoadConfiguration(options);
         StartupError = hostConfiguration.Error;
         Configuration = hostConfiguration.Configuration;
@@ -393,17 +392,6 @@ public sealed class GatewayDesktopHost : IDisposable
                 Environment.SpecialFolder.LocalApplicationData),
             "TwinCatAgentGateway",
             "Logs");
-    }
-
-    private static string GetVersion()
-    {
-        Version? version = typeof(GatewayDesktopHost)
-            .Assembly
-            .GetName()
-            .Version;
-        return version is null
-            ? "0.1.0"
-            : $"{version.Major}.{version.Minor}.{version.Build}";
     }
 
     private sealed class HostConfiguration

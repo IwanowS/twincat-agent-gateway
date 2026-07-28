@@ -16,6 +16,8 @@ public sealed class DesktopGatewayHostTests
 {
     private static readonly string[] UnknownArguments =
         { "--unknown" };
+    private static readonly string[] AgentLaunchArguments =
+        { "--launch-source", "agent" };
 
     [Fact]
     public void HostOptionsParseLaunchIdentityAndUiOverride()
@@ -68,6 +70,65 @@ public sealed class DesktopGatewayHostTests
     }
 
     [Fact]
+    public void ManualLaunchWithoutConfigurationEntersSetupMode()
+    {
+        using TemporaryDirectory temporary = new();
+        Directory.CreateDirectory(
+            Path.Combine(temporary.Path, ".git"));
+
+        GatewayHostOptions options =
+            GatewayHostOptions.FromArguments(
+                Array.Empty<string>(),
+                temporary.Path);
+
+        Assert.Null(options.ConfigurationPath);
+        Assert.Equal(
+            GatewayLaunchSource.Manual,
+            options.LaunchSource);
+    }
+
+    [Fact]
+    public void AgentLaunchWithoutConfigurationFailsClosed()
+    {
+        using TemporaryDirectory temporary = new();
+        Directory.CreateDirectory(
+            Path.Combine(temporary.Path, ".git"));
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => GatewayHostOptions.FromArguments(
+                    AgentLaunchArguments,
+                    temporary.Path));
+
+        Assert.Equal(
+            ErrorCodes.GatewayConfigNotFound,
+            exception.Code);
+    }
+
+    [Fact]
+    public void ExplicitMissingConfigurationFailsClosed()
+    {
+        using TemporaryDirectory temporary = new();
+        string missingPath = Path.Combine(
+            temporary.Path,
+            "missing.json");
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => GatewayHostOptions.FromArguments(
+                    new[]
+                    {
+                        "--config",
+                        missingPath,
+                    },
+                    temporary.Path));
+
+        Assert.Equal(
+            ErrorCodes.GatewayConfigNotFound,
+            exception.Code);
+    }
+
+    [Fact]
     public void DesktopOutputContainsCanonicalSetupInstructions()
     {
         string instructions =
@@ -80,6 +141,9 @@ public sealed class DesktopGatewayHostTests
         Assert.Contains(
             "gateway_start once",
             instructions);
+        Assert.False(
+            string.IsNullOrWhiteSpace(
+                GatewayProductVersion.Value));
     }
 
     [Fact]
@@ -123,6 +187,9 @@ public sealed class DesktopGatewayHostTests
         Assert.Equal(
             BuildAction.Rebuild,
             viewModel.SelectedBuildAction);
+        Assert.Equal(
+            GatewayProductVersion.DisplayText,
+            viewModel.Version);
         Assert.Equal("Not run", viewModel.LastBuild);
         Assert.Equal("Not run", viewModel.LastActivation);
         Assert.Equal("Not run", viewModel.LastTest);

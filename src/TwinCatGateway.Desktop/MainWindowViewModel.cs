@@ -44,6 +44,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public MainWindowViewModel(GatewayDesktopHost host)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
+        Version = GatewayProductVersion.DisplayText;
         StartupError = host.StartupError;
         Refresh();
     }
@@ -104,6 +105,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     public string? StartupError { get; }
+
+    public string Version { get; }
 
     public string LogDirectory => _host.LogDirectory;
 

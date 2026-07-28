@@ -92,8 +92,8 @@ Per-user установка содержит два независимых пр�
 Оба доступны через стабильный user-PATH каталог. `dotnet tool` и
 универсальный .NET 8 command host не используются.
 
-Gateway имеет один per-user singleton. После захвата mutex desktop host
-атомарно публикует в
+Configured gateway имеет один per-user singleton. После захвата mutex desktop
+host атомарно публикует в
 `%LOCALAPPDATA%\TwinCatAgentGateway\gateway-instance.json` PID, process start
 time, pipe, нормализованные config/solution paths, profile, launch source и
 effective UI mode. Record не является публичным control API: MCP проверяет PID
@@ -106,6 +106,13 @@ effective UI mode. Record не является публичным control API: 
 ```text
 twincat-gateway [--config <path>] [--ui-mode auto|window|tray]
 ```
+
+Если при ручном запуске config не найден и не был явно передан, приложение
+открывает отдельный setup-only UI с версией и встроенной справкой. Этот процесс
+использует отдельный setup mutex, не запускает gateway host, не открывает Named
+Pipe, не публикует instance record и не блокирует запуск configured gateway.
+Явный отсутствующий `--config` и agent launch без config остаются
+`GATEWAY_CONFIG_NOT_FOUND`.
 
 Agent launch возможен только через MCP tool `gateway_start`. Он:
 
@@ -126,7 +133,7 @@ Agent launch возможен только через MCP tool `gateway_start`. 
 
 Основное имя — `twincat-gateway.json`. Относительные `solution`,
 `logDirectory` и TcUnit `reportPath` разрешаются относительно каталога config.
-Discovery выполняется одинаково для manual и MCP:
+Порядок discovery одинаков для manual и MCP:
 
 1. явный `--config`;
 2. workspace roots, полученные MCP от клиента;
@@ -135,7 +142,8 @@ Discovery выполняется одинаково для manual и MCP:
    корня диска.
 
 Разные config из нескольких workspace roots дают
-`GATEWAY_CONFIG_AMBIGUOUS`; отсутствие — `GATEWAY_CONFIG_NOT_FOUND`.
+`GATEWAY_CONFIG_AMBIGUOUS`. Отсутствие даёт
+`GATEWAY_CONFIG_NOT_FOUND`, кроме setup-only ручного запуска, описанного выше.
 `appsettings.Local.json` не ищется автоматически и принимается только как
 явный `--config`.
 
@@ -995,6 +1003,9 @@ Tool result должен быть достаточен для обычного �
 - отображение ошибок fingerprint/reload synchronization.
 - кнопка `Setup instructions`, читающая тот же канонический файл, который
   печатает installer.
+- product version в configured и setup-only окнах.
+- setup-only окно при ручном запуске без обнаруженной конфигурации; оно не
+  является gateway process и не предоставляет IPC.
 
 UI не должен содержать отдельную реализацию операций; он вызывает тот же application service, что IPC.
 

@@ -637,7 +637,8 @@ twincat-diff://<operation-id>/project-noise
 - отдельная установка skills в user/project/explicit destination;
 - portable packaging как дополнительный формат;
 - project-local `twincat-gateway.json` и одинаковый manual/MCP discovery;
-- WPF `auto|window|tray`, manual/agent launch identity и canonical setup UI;
+- WPF `auto|window|tray`, manual/agent launch identity, product version и
+  configurationless setup-only UI без gateway singleton/IPC;
 - first-run environment diagnostics;
 - config migration;
 - log retention settings;

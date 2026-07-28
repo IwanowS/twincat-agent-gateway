@@ -1,0 +1,69 @@
+<Window x:Class="TwinCatGateway.Desktop.SetupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="TwinCAT Agent Gateway setup"
+        Width="820"
+        Height="620"
+        MinWidth="680"
+        MinHeight="480"
+        Background="#F4F6F8"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <StackPanel>
+            <StackPanel Orientation="Horizontal">
+                <TextBlock FontSize="26"
+                           FontWeight="SemiBold"
+                           Foreground="#17212B"
+                           Text="TwinCAT Agent Gateway" />
+                <TextBlock x:Name="VersionText"
+                           Margin="12,9,0,0"
+                           FontSize="13"
+                           Foreground="#6A7681" />
+            </StackPanel>
+            <TextBlock Margin="0,6,0,0"
+                       FontSize="15"
+                       FontWeight="SemiBold"
+                       Foreground="#B54708"
+                       Text="Not configured" />
+        </StackPanel>
+
+        <Border Grid.Row="1"
+                Margin="0,20,0,0"
+                Padding="16"
+                Background="#FFF7E8"
+                BorderBrush="#F3D7A4"
+                BorderThickness="1"
+                CornerRadius="8">
+            <TextBlock Foreground="#664D20"
+                       TextWrapping="Wrap"
+                       Text="No twincat-gateway.json was found. This setup window does not start the gateway, connect to XAE, or open a Named Pipe. Add a project configuration, then start the application from that project." />
+        </Border>
+
+        <TextBox x:Name="InstructionsText"
+                 Grid.Row="2"
+                 Margin="0,16,0,0"
+                 Padding="14"
+                 FontFamily="Consolas"
+                 FontSize="13"
+                 IsReadOnly="True"
+                 TextWrapping="Wrap"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Disabled" />
+
+        <Button Grid.Row="3"
+                Width="96"
+                Margin="0,16,0,0"
+                Padding="12,7"
+                HorizontalAlignment="Right"
+                IsCancel="True"
+                Click="CloseButton_Click"
+                Content="Close" />
+    </Grid>
+</Window>
