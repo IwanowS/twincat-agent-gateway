@@ -41,12 +41,11 @@ function Get-OptionalProperty {
     }
 
     $property = $InputObject.PSObject.Properties[$Name]
-    return if ($null -eq $property) {
-        $null
+    if ($null -eq $property) {
+        return $null
     }
-    else {
-        $property.Value
-    }
+
+    return $property.Value
 }
 
 $listJson = & $CodexCommand mcp list --json
@@ -111,7 +110,7 @@ if ($registered.Count -gt 0) {
             $currentCommand,
             $McpCommand,
             [StringComparison]::OrdinalIgnoreCase) `
-        -and $currentArguments.Count -eq 0
+        -and @($currentArguments).Count -eq 0
 }
 
 if ($matches) {
