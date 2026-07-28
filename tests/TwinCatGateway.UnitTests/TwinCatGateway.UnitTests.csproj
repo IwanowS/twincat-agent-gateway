@@ -18,6 +18,7 @@
     <ProjectReference Include="..\..\src\TwinCatGateway.Client\TwinCatGateway.Client.csproj" />
     <ProjectReference Include="..\..\src\TwinCatGateway.Cli\TwinCatGateway.Cli.csproj" />
     <ProjectReference Include="..\..\src\TwinCatGateway.Core\TwinCatGateway.Core.csproj" />
+    <ProjectReference Include="..\..\src\TwinCatGateway.Mcp\TwinCatGateway.Mcp.csproj" />
   </ItemGroup>
 
   <ItemGroup>
