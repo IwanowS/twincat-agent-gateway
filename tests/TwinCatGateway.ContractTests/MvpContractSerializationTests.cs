@@ -82,6 +82,7 @@ public sealed class MvpContractSerializationTests
                 Version = "16.0",
                 Solution = @"C:\Projects\Machine\Machine.sln",
                 AgentWorkspaceOwned = true,
+                DiscardedDocumentCount = 2,
             },
             TwinCat = new TwinCatStatus
             {
@@ -100,6 +101,8 @@ public sealed class MvpContractSerializationTests
         Assert.Null(result.TwinCat.Started);
         Assert.Equal(RuntimeMode.Unknown, result.TwinCat.Mode);
         Assert.True(result.Xae.AgentWorkspaceOwned);
+        Assert.Equal(2, result.Xae.DiscardedDocumentCount);
+        Assert.Contains("\"discardedDocumentCount\":2", json);
         Assert.Equal("stream-42", result.EventStreamId);
         Assert.Equal(42, result.LatestEventCursor);
         Assert.Contains("\"mode\":\"unknown\"", json);

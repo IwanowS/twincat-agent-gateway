@@ -28,6 +28,8 @@ public sealed class XaeStatus
     public string? Solution { get; set; }
 
     public bool AgentWorkspaceOwned { get; set; }
+
+    public int DiscardedDocumentCount { get; set; }
 }
 
 public sealed class TwinCatStatus

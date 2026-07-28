@@ -84,6 +84,8 @@ public sealed class GatewayStatusSnapshotStore
                 Solution = source.Xae.Solution,
                 AgentWorkspaceOwned =
                     source.Xae.AgentWorkspaceOwned,
+                DiscardedDocumentCount =
+                    source.Xae.DiscardedDocumentCount,
             },
             TwinCat = new TwinCatStatus
             {

@@ -667,6 +667,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             status.Xae.Solution = selected.Solution;
             status.Xae.AgentWorkspaceOwned =
                 snapshot.AgentWorkspaceOwned;
+            status.Xae.DiscardedDocumentCount =
+                snapshot.DiscardedDocumentCount;
             status.TwinCat.Started =
                 runtime.Status.Started;
             status.TwinCat.Mode =
@@ -786,6 +788,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             status.Xae.Version = null;
             status.Xae.Solution = null;
             status.Xae.AgentWorkspaceOwned = false;
+            status.Xae.DiscardedDocumentCount = 0;
             status.TwinCat.Started = null;
             status.TwinCat.Mode = RuntimeMode.Unknown;
             return status;

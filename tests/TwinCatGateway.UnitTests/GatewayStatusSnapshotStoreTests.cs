@@ -16,6 +16,7 @@ public sealed class GatewayStatusSnapshotStoreTests
         initial.Gateway.State = GatewayState.Ready;
         initial.Xae.Connected = true;
         initial.Xae.AgentWorkspaceOwned = true;
+        initial.Xae.DiscardedDocumentCount = 3;
         initial.LastActivation = new ActivationSummary
         {
             Ok = true,
@@ -33,6 +34,7 @@ public sealed class GatewayStatusSnapshotStoreTests
         first.Gateway.State = GatewayState.Faulted;
         first.Xae.Connected = false;
         first.Xae.AgentWorkspaceOwned = false;
+        first.Xae.DiscardedDocumentCount = 0;
         Assert.IsType<ActivationSummary>(first.LastActivation).Target.Name = "mutated";
 
         GatewayStatusResult second = store.Read();
@@ -40,6 +42,7 @@ public sealed class GatewayStatusSnapshotStoreTests
         Assert.Equal(GatewayState.Ready, second.Gateway.State);
         Assert.True(second.Xae.Connected);
         Assert.True(second.Xae.AgentWorkspaceOwned);
+        Assert.Equal(3, second.Xae.DiscardedDocumentCount);
         Assert.Equal("target", second.LastActivation?.Target.Name);
     }
 
