@@ -62,6 +62,18 @@ failed.
 Build with the pinned SDK as usual, then run the already-built .NET Framework
 integration assembly through VSTest's x86 platform:
 
+Before fixture edits and before/after real-XAE tests, inspect the interactive
+x86 ROT rather than relying on sandbox process metadata:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\Get-XaeSessions.ps1 -AsJson
+```
+
+The output includes the number of XAE/Visual Studio processes, ROT sessions,
+loaded solutions, PID, HWND/title, start time, ProgID, and exact
+`Solution.FullName`. A process visible only outside ROT is reported explicitly.
+
 ```powershell
 $env:TWINCAT_GATEWAY_XAE_SOLUTION = 'C:\absolute\path\to\project.sln'
 dotnet vstest `

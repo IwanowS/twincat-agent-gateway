@@ -54,6 +54,15 @@ Real-XAE integration tests require the explicitly configured remote TwinCAT 3.1.
 
 Real-XAE DTE/ROT checks must execute under the same interactive Windows account, session, and integrity level as XAE. A sandbox account may see the XAE PID while seeing an empty ROT and no main-window handle. Treat that combination as an execution-context mismatch; rerun the read-only discovery outside the agent sandbox before asking the user to reopen or terminate XAE. Use the x86 VSTest command documented in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
 
+Before changing the TwinCAT fixture or starting/finishing a real-XAE test,
+run `scripts\Get-XaeSessions.ps1 -AsJson` outside the agent sandbox. The
+development-only probe relaunches itself as x86 Windows PowerShell and reports
+the process count, HWND/title, ROT visibility, and exact `Solution.FullName`
+for every XAE/Visual Studio DTE session. Never infer that XAE has no visible
+window or loaded solution from sandbox `Get-Process` output alone. Re-run the
+probe after a gateway-owned test to verify that its XAE process actually
+exited before the next external edit.
+
 ### .NET Code and Assembly Analysis
 
 The project MCP configuration requires these global .NET tools at the validated versions. On a new machine, install them once:
