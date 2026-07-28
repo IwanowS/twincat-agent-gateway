@@ -10,6 +10,26 @@ namespace TwinCatGateway.UnitTests;
 public sealed class GatewayConfigurationTests
 {
     [Fact]
+    public void ShippedExampleIsValidAndActivationSafe()
+    {
+        string path = Path.Combine(
+            AppContext.BaseDirectory,
+            "appsettings.example.json");
+
+        GatewayConfiguration configuration =
+            new GatewayConfigurationLoader().Load(path);
+        ConfigurationValidationResult validation =
+            GatewayConfigurationValidator.Validate(configuration);
+        ProjectProfile profile = Assert.Single(
+            configuration.Profiles);
+
+        Assert.True(validation.IsValid);
+        Assert.False(profile.AllowActivation);
+        Assert.Null(profile.ExpectedTarget);
+        Assert.Null(profile.TcUnit);
+    }
+
+    [Fact]
     public void LoaderReadsCommentsTrailingCommasAndCamelCaseEnums()
     {
         string path = Path.GetTempFileName();
