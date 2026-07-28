@@ -26,4 +26,4 @@ Logs default to
 not remove configuration, logs, TwinCAT projects, or runtime state. Delete logs
 separately only after reviewing them.
 
-See `docs\DEVELOPMENT.md` for environment and integration diagnostics.
+See `docs\TROUBLESHOOTING.md` for failure codes and recovery steps.

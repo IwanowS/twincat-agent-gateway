@@ -1,0 +1,50 @@
+# Release notes
+
+## 0.1.0 MVP
+
+TwinCAT Agent Gateway 0.1.0 provides:
+
+- typed x86 STA automation of TwinCAT XAE without `dynamic`;
+- exact solution-path ROT selection and gateway-owned XAE launch;
+- Build/Rebuild/Clean with external-edit synchronization and compact
+  diagnostics;
+- XSD-backed PLC object validation and `.tsproj` reorder classification;
+- explicit allow-listed remote activation/restart with verified postconditions;
+- one-PLC linked TcUnit completion and fresh xUnit result collection;
+- versioned Named Pipe contracts, .NET 8 CLI, and stdio MCP adapter;
+- minimal WPF operations/status UI and portable ZIP packaging.
+
+### Verified matrix (2026-07-28)
+
+| Component | Verified |
+|---|---|
+| Host OS | Windows 10 22H2, build 19045 |
+| TwinCAT XAE | 3.1.4024.17 |
+| XAE host | 32-bit TcXaeShell 15.0 |
+| Desktop target | .NET Framework 4.8 x86 |
+| Installed .NET Framework release | 533325 |
+| Repository SDK | .NET SDK 8.0.416 with `global.json` roll-forward |
+| Remote test runtime | AMS NetId `192.168.3.31.1.1` |
+| MCP SDK | stable `ModelContextProtocol` 1.4.1 |
+
+Verified real-XAE scenarios include exact attach/launch, typed
+`ITcSysManager`, Silent Mode without modal dialogs, Build/Rebuild/Clean,
+configuration/platform switching, explicit remote activation and restart,
+read-only ADS runtime verification, and a fresh linked TcUnit xUnit report.
+
+The repository solution, unit tests, contract tests, focused desktop
+integration tests, real-XAE checks, and portable package build were run
+warning-free for this release candidate.
+
+### Known MVP limits
+
+- one TcUnit PLC/report publisher per profile; multi-PLC aggregation is planned
+  post-MVP;
+- added/removed PLC source files require structural synchronization not present
+  in 0.1.0;
+- no general ADS client, ADS writes, RPC, PLC login, debugger, or local runtime
+  control;
+- no TwinCAT 4026/Visual Studio 2022 specialization;
+- no installer; distribution is a framework-dependent portable ZIP;
+- full-day soak and clean-machine installation remain release-environment
+  checks and are not inferred from automated tests.
