@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace TwinCatGateway.Core;
@@ -22,6 +23,7 @@ public sealed class StructuredFileLogger : IOperationExceptionSink
     private readonly string _path;
     private readonly JsonSerializerOptions _serializerOptions = new()
     {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 

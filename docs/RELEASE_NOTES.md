@@ -18,6 +18,8 @@ TwinCAT Agent Gateway 0.1.0 provides:
   window/tray lifecycle;
 - minimal WPF operations/status UI, per-user installer, and portable ZIP
   packaging.
+- JSON responses, configuration, registry records, and structured NDJSON logs
+  keep Unicode text readable as UTF-8 instead of escaping it as `\uXXXX`.
 
 ### Verified matrix (2026-07-28)
 

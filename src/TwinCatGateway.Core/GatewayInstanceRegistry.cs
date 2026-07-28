@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TwinCatGateway.Contracts;
@@ -171,6 +172,7 @@ public sealed class GatewayInstanceRegistry
     {
         JsonSerializerOptions options = new()
         {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             PropertyNamingPolicy =
                 JsonNamingPolicy.CamelCase,
             PropertyNameCaseInsensitive = true,

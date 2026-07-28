@@ -107,6 +107,22 @@ public sealed class LocalLogStoreTests
         Assert.Contains("detailed failure", content);
     }
 
+    [Fact]
+    public void StructuredLoggerWritesUnicodeAsReadableUtf8()
+    {
+        using TemporaryDirectory temporary = new();
+        StructuredFileLogger logger = new(temporary.Path);
+
+        logger.Write(
+            StructuredLogLevel.Warning,
+            "build.message",
+            "Ошибка сборки");
+
+        string content = File.ReadAllText(logger.Path);
+        Assert.Contains("Ошибка сборки", content);
+        Assert.DoesNotContain("\\u", content);
+    }
+
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()

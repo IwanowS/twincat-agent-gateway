@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using TwinCatGateway.Contracts;
@@ -16,6 +17,7 @@ public sealed class GatewayConfigurationLoader
         _serializerOptions = new JsonSerializerOptions
         {
             AllowTrailingCommas = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
             PropertyNameCaseInsensitive = true,
             ReadCommentHandling = JsonCommentHandling.Skip,
