@@ -7,6 +7,7 @@
     <PlatformTarget>x86</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
     <AssemblyName>twincat-gateway</AssemblyName>
+    <ApplicationIcon>..\..\assets\icon.ico</ApplicationIcon>
     <Description>Interactive x86 desktop host for the TwinCAT XAE gateway.</Description>
   </PropertyGroup>
 
@@ -19,6 +20,8 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="..\..\assets\icon.ico"
+              Link="Assets\icon.ico" />
     <None Include="..\..\setup\SETUP_INSTRUCTIONS.txt"
           Link="SETUP_INSTRUCTIONS.txt"
           CopyToOutputDirectory="PreserveNewest" />

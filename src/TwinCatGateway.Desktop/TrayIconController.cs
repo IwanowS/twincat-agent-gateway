@@ -13,7 +13,9 @@ public sealed class TrayIconController : IDisposable
 
     public TrayIconController()
     {
-        _icon = (Icon)SystemIcons.Application.Clone();
+        _icon = Icon.ExtractAssociatedIcon(
+                Forms.Application.ExecutablePath)
+            ?? (Icon)SystemIcons.Application.Clone();
         _menu = new Forms.ContextMenuStrip();
         _menu.Items.Add(
             "Open",
