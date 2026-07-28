@@ -76,6 +76,14 @@ public sealed class GatewayStatusSnapshotStore
             {
                 State = source.Gateway.State,
                 Version = source.Gateway.Version,
+                Ready = source.Gateway.Ready,
+                ConfigurationPath =
+                    source.Gateway.ConfigurationPath,
+                ActiveProfile =
+                    source.Gateway.ActiveProfile,
+                LaunchSource =
+                    source.Gateway.LaunchSource,
+                UiMode = source.Gateway.UiMode,
             },
             Xae = new XaeStatus
             {

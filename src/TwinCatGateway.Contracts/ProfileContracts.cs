@@ -9,6 +9,31 @@ public enum ZeroTestsPolicy
     Allow,
 }
 
+public enum GatewayUiMode
+{
+    Auto,
+    Window,
+    Tray,
+}
+
+public enum GatewayLaunchSource
+{
+    Manual,
+    Agent,
+}
+
+public sealed class GatewayUiConfiguration
+{
+    public GatewayUiMode Mode { get; set; } = GatewayUiMode.Auto;
+}
+
+public sealed class AgentProcessControlConfiguration
+{
+    public bool AllowStart { get; set; } = true;
+
+    public bool AllowShutdown { get; set; }
+}
+
 public sealed class GatewayConfiguration
 {
     public int SchemaVersion { get; set; } = 1;
@@ -20,6 +45,11 @@ public sealed class GatewayConfiguration
     public string? LogDirectory { get; set; }
 
     public int LogRetentionDays { get; set; } = 14;
+
+    public GatewayUiConfiguration Ui { get; set; } = new();
+
+    public AgentProcessControlConfiguration AgentProcessControl { get; set; } =
+        new();
 
     public List<ProjectProfile> Profiles { get; set; } = new();
 }

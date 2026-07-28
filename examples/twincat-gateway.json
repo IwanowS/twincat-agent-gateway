@@ -3,10 +3,17 @@
   "pipeName": "TwinCatAgentGateway",
   "defaultProfile": "default",
   "logRetentionDays": 14,
+  "ui": {
+    "mode": "auto"
+  },
+  "agentProcessControl": {
+    "allowStart": true,
+    "allowShutdown": false
+  },
   "profiles": [
     {
       "name": "default",
-      "solution": "C:\\TwinCATProjects\\Machine\\Machine.sln",
+      "solution": "Machine.sln",
       "allowXaeLaunch": true,
       "allowActivation": false,
       "requireRecentSuccessfulBuild": true,

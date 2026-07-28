@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
+using TwinCatGateway.Contracts;
+using TwinCatGateway.Core;
 
 namespace TwinCatGateway.Desktop;
 
@@ -8,8 +9,14 @@ public sealed class GatewayHostOptions
 {
     public string? ConfigurationPath { get; set; }
 
+    public GatewayLaunchSource LaunchSource { get; set; } =
+        GatewayLaunchSource.Manual;
+
+    public GatewayUiMode? UiModeOverride { get; set; }
+
     public static GatewayHostOptions FromArguments(
-        IReadOnlyList<string> arguments)
+        IReadOnlyList<string> arguments,
+        string? currentDirectory = null)
     {
         if (arguments is null)
         {
@@ -38,30 +45,15 @@ public sealed class GatewayHostOptions
             configuredPath = arguments[++index];
         }
 
-        configuredPath ??= Environment.GetEnvironmentVariable(
-            "TWINCAT_GATEWAY_CONFIG");
-        configuredPath ??= FindDefaultConfiguration();
+        GatewayConfigurationLocation location =
+            GatewayConfigurationDiscovery.Discover(
+                configuredPath,
+                workspaceRoots: null,
+                currentDirectory
+                    ?? Environment.CurrentDirectory);
         return new GatewayHostOptions
         {
-            ConfigurationPath = configuredPath,
+            ConfigurationPath = location.Path,
         };
-    }
-
-    private static string? FindDefaultConfiguration()
-    {
-        string currentDirectory = Path.Combine(
-            Environment.CurrentDirectory,
-            "appsettings.Local.json");
-        if (File.Exists(currentDirectory))
-        {
-            return currentDirectory;
-        }
-
-        string applicationDirectory = Path.Combine(
-            AppDomain.CurrentDomain.BaseDirectory,
-            "appsettings.Local.json");
-        return File.Exists(applicationDirectory)
-            ? applicationDirectory
-            : null;
     }
 }

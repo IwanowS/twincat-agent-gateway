@@ -68,8 +68,12 @@ try {
         -Destination (Join-Path $packageRoot 'mcp')
 
     Copy-Item `
-        -LiteralPath (Join-Path $repositoryRoot 'appsettings.example.json') `
-        -Destination $packageRoot
+        -LiteralPath (Join-Path `
+            $repositoryRoot `
+            'examples\twincat-gateway.json') `
+        -Destination (Join-Path `
+            $packageRoot `
+            'twincat-gateway.example.json')
     Copy-Item `
         -LiteralPath (Join-Path $repositoryRoot 'packaging\PORTABLE_README.md') `
         -Destination (Join-Path $packageRoot 'README.md')

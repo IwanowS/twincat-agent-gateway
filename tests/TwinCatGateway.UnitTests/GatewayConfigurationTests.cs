@@ -14,7 +14,7 @@ public sealed class GatewayConfigurationTests
     {
         string path = Path.Combine(
             AppContext.BaseDirectory,
-            "appsettings.example.json");
+            "twincat-gateway.example.json");
 
         GatewayConfiguration configuration =
             new GatewayConfigurationLoader().Load(path);
@@ -24,6 +24,19 @@ public sealed class GatewayConfigurationTests
             configuration.Profiles);
 
         Assert.True(validation.IsValid);
+        Assert.Equal(
+            GatewayUiMode.Auto,
+            configuration.Ui.Mode);
+        Assert.True(
+            configuration.AgentProcessControl.AllowStart);
+        Assert.False(
+            configuration.AgentProcessControl.AllowShutdown);
+        Assert.Equal(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "Machine.sln"),
+            profile.Solution,
+            ignoreCase: true);
         Assert.False(profile.AllowActivation);
         Assert.Null(profile.ExpectedTarget);
         Assert.Null(profile.TcUnit);

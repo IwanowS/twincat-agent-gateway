@@ -37,6 +37,14 @@ public sealed class GatewayDesktopHost : IDisposable
         StartupError = hostConfiguration.Error;
         Configuration = hostConfiguration.Configuration;
         ActiveProfile = hostConfiguration.ActiveProfile;
+        ConfigurationPath = string.IsNullOrWhiteSpace(
+                options.ConfigurationPath)
+            ? null
+            : Path.GetFullPath(options.ConfigurationPath!);
+        LaunchSource = options.LaunchSource;
+        EffectiveUiMode = options.UiModeOverride
+            ?? Configuration.Ui?.Mode
+            ?? GatewayUiMode.Auto;
         LogDirectory = ResolveLogDirectory(Configuration);
         _logger = new StructuredFileLogger(LogDirectory);
         LocalLogStore logs = new(
@@ -114,6 +122,13 @@ public sealed class GatewayDesktopHost : IDisposable
         initial.Gateway.State = StartupError is null
             ? GatewayState.Disconnected
             : GatewayState.Faulted;
+        initial.Gateway.Ready = StartupError is null;
+        initial.Gateway.ConfigurationPath =
+            ConfigurationPath;
+        initial.Gateway.ActiveProfile =
+            ActiveProfile?.Name;
+        initial.Gateway.LaunchSource = LaunchSource;
+        initial.Gateway.UiMode = EffectiveUiMode;
         _status.Replace(initial);
     }
 
@@ -122,6 +137,12 @@ public sealed class GatewayDesktopHost : IDisposable
     public GatewayConfiguration Configuration { get; }
 
     public ProjectProfile? ActiveProfile { get; }
+
+    public string? ConfigurationPath { get; }
+
+    public GatewayLaunchSource LaunchSource { get; }
+
+    public GatewayUiMode EffectiveUiMode { get; }
 
     public string LogDirectory { get; }
 
@@ -216,6 +237,7 @@ public sealed class GatewayDesktopHost : IDisposable
         _status.Update(status =>
         {
             status.Gateway.State = GatewayState.Stopping;
+            status.Gateway.Ready = false;
             return status;
         });
         _events.Record(

@@ -17,6 +17,17 @@ public sealed class GatewayStatus
     public GatewayState State { get; set; }
 
     public string Version { get; set; } = string.Empty;
+
+    public bool Ready { get; set; }
+
+    public string? ConfigurationPath { get; set; }
+
+    public string? ActiveProfile { get; set; }
+
+    public GatewayLaunchSource LaunchSource { get; set; } =
+        GatewayLaunchSource.Manual;
+
+    public GatewayUiMode UiMode { get; set; } = GatewayUiMode.Auto;
 }
 
 public sealed class XaeStatus

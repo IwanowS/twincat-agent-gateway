@@ -23,8 +23,8 @@
 
   <ItemGroup>
     <None
-      Include="..\..\appsettings.example.json"
-      Link="appsettings.example.json"
+      Include="..\..\examples\twincat-gateway.json"
+      Link="twincat-gateway.example.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
       Include="..\fixtures\TC3_SimpleProject\TC3_SimpleProject\TC3_SimpleProject.tsproj"

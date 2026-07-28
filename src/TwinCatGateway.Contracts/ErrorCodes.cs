@@ -4,7 +4,20 @@ public static class ErrorCodes
 {
     public const string RequestInvalid = "REQUEST_INVALID";
     public const string MethodNotFound = "METHOD_NOT_FOUND";
+    public const string GatewayNotRunning = "GATEWAY_NOT_RUNNING";
     public const string GatewayNotReady = "GATEWAY_NOT_READY";
+    public const string GatewayConfigNotFound =
+        "GATEWAY_CONFIG_NOT_FOUND";
+    public const string GatewayConfigAmbiguous =
+        "GATEWAY_CONFIG_AMBIGUOUS";
+    public const string GatewayStartDisabled =
+        "GATEWAY_START_DISABLED";
+    public const string GatewayStartFailed =
+        "GATEWAY_START_FAILED";
+    public const string GatewayStartTimeout =
+        "GATEWAY_START_TIMEOUT";
+    public const string GatewayRunningDifferentProject =
+        "GATEWAY_RUNNING_DIFFERENT_PROJECT";
     public const string OperationNotFound = "OPERATION_NOT_FOUND";
     public const string OperationNotCancellable = "OPERATION_NOT_CANCELLABLE";
     public const string OperationTimeout = "OPERATION_TIMEOUT";

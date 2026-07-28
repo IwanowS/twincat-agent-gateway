@@ -67,6 +67,25 @@ public static class GatewayConfigurationValidator
                 "logDirectory",
                 "Log directory must be an absolute path.");
         }
+
+        if (configuration.Ui is null)
+        {
+            Add(issues, "ui", "UI settings are required.");
+        }
+        else if (!Enum.IsDefined(
+                     typeof(GatewayUiMode),
+                     configuration.Ui.Mode))
+        {
+            Add(issues, "ui.mode", "UI mode is invalid.");
+        }
+
+        if (configuration.AgentProcessControl is null)
+        {
+            Add(
+                issues,
+                "agentProcessControl",
+                "Agent process-control settings are required.");
+        }
     }
 
     private static void ValidateProfiles(

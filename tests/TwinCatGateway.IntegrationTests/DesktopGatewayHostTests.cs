@@ -152,6 +152,8 @@ public sealed class DesktopGatewayHostTests
             new GatewayHostOptions
             {
                 ConfigurationPath = configurationPath,
+                LaunchSource = GatewayLaunchSource.Agent,
+                UiModeOverride = GatewayUiMode.Tray,
             });
         host.Start();
         NamedPipeGatewayClient client = new(pipeName);
@@ -186,6 +188,20 @@ public sealed class DesktopGatewayHostTests
 
         Assert.True(response.Ok);
         Assert.Equal(GatewayState.Disconnected, response.Result?.Gateway.State);
+        Assert.True(response.Result?.Gateway.Ready);
+        Assert.Equal(
+            Path.GetFullPath(configurationPath),
+            response.Result?.Gateway.ConfigurationPath,
+            ignoreCase: true);
+        Assert.Equal(
+            "fixture",
+            response.Result?.Gateway.ActiveProfile);
+        Assert.Equal(
+            GatewayLaunchSource.Agent,
+            response.Result?.Gateway.LaunchSource);
+        Assert.Equal(
+            GatewayUiMode.Tray,
+            response.Result?.Gateway.UiMode);
         Assert.Equal("fixture", host.ActiveProfile?.Name);
         Assert.Null(host.StartupError);
         Assert.True(response.Result?.LatestEventCursor > 0);

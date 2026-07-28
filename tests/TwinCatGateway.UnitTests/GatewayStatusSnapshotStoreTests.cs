@@ -14,6 +14,13 @@ public sealed class GatewayStatusSnapshotStoreTests
         GatewayStatusResult initial =
             GatewayStatusSnapshotStore.CreateInitial("0.1.0");
         initial.Gateway.State = GatewayState.Ready;
+        initial.Gateway.Ready = true;
+        initial.Gateway.ConfigurationPath =
+            @"C:\Project\twincat-gateway.json";
+        initial.Gateway.ActiveProfile = "fixture";
+        initial.Gateway.LaunchSource =
+            GatewayLaunchSource.Agent;
+        initial.Gateway.UiMode = GatewayUiMode.Tray;
         initial.Xae.Connected = true;
         initial.Xae.AgentWorkspaceOwned = true;
         initial.Xae.DiscardedDocumentCount = 3;
@@ -40,6 +47,19 @@ public sealed class GatewayStatusSnapshotStoreTests
         GatewayStatusResult second = store.Read();
 
         Assert.Equal(GatewayState.Ready, second.Gateway.State);
+        Assert.True(second.Gateway.Ready);
+        Assert.Equal(
+            @"C:\Project\twincat-gateway.json",
+            second.Gateway.ConfigurationPath);
+        Assert.Equal(
+            "fixture",
+            second.Gateway.ActiveProfile);
+        Assert.Equal(
+            GatewayLaunchSource.Agent,
+            second.Gateway.LaunchSource);
+        Assert.Equal(
+            GatewayUiMode.Tray,
+            second.Gateway.UiMode);
         Assert.True(second.Xae.Connected);
         Assert.True(second.Xae.AgentWorkspaceOwned);
         Assert.Equal(3, second.Xae.DiscardedDocumentCount);

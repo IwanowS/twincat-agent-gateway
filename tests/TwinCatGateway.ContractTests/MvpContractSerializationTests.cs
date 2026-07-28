@@ -75,6 +75,12 @@ public sealed class MvpContractSerializationTests
             {
                 State = GatewayState.Ready,
                 Version = "0.1.0",
+                Ready = true,
+                ConfigurationPath =
+                    @"C:\Projects\Machine\twincat-gateway.json",
+                ActiveProfile = "bench",
+                LaunchSource = GatewayLaunchSource.Agent,
+                UiMode = GatewayUiMode.Tray,
             },
             Xae = new XaeStatus
             {
@@ -100,6 +106,17 @@ public sealed class MvpContractSerializationTests
         Assert.NotNull(result);
         Assert.Null(result.TwinCat.Started);
         Assert.Equal(RuntimeMode.Unknown, result.TwinCat.Mode);
+        Assert.True(result.Gateway.Ready);
+        Assert.Equal(
+            @"C:\Projects\Machine\twincat-gateway.json",
+            result.Gateway.ConfigurationPath);
+        Assert.Equal("bench", result.Gateway.ActiveProfile);
+        Assert.Equal(
+            GatewayLaunchSource.Agent,
+            result.Gateway.LaunchSource);
+        Assert.Equal(
+            GatewayUiMode.Tray,
+            result.Gateway.UiMode);
         Assert.True(result.Xae.AgentWorkspaceOwned);
         Assert.Equal(2, result.Xae.DiscardedDocumentCount);
         Assert.Contains("\"discardedDocumentCount\":2", json);
