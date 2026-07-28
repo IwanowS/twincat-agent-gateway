@@ -33,6 +33,18 @@ public sealed class GatewayProtocolHandler
         string requestJson,
         CancellationToken cancellationToken)
     {
+        GatewayProtocolResponse response =
+            await HandleForTransportAsync(
+                requestJson,
+                cancellationToken).ConfigureAwait(false);
+        return response.Json;
+    }
+
+    internal async Task<GatewayProtocolResponse>
+        HandleForTransportAsync(
+            string requestJson,
+            CancellationToken cancellationToken)
+    {
         string requestId = string.Empty;
         try
         {
@@ -40,10 +52,12 @@ public sealed class GatewayProtocolHandler
             requestId = request.RequestId;
             if (request.ProtocolVersion != ProtocolVersion.Current)
             {
-                return SerializeError(
-                    requestId,
-                    ErrorCodes.IpcVersionMismatch,
-                    $"Protocol version {request.ProtocolVersion} is not supported.");
+                return new GatewayProtocolResponse(
+                    SerializeError(
+                        requestId,
+                        ErrorCodes.IpcVersionMismatch,
+                        $"Protocol version {request.ProtocolVersion} is not supported."),
+                    afterResponseWritten: null);
             }
 
             GatewayDispatchResult dispatch =
@@ -56,23 +70,31 @@ public sealed class GatewayProtocolHandler
                 Result = dispatch.Result,
                 Error = dispatch.Error,
             };
-            return JsonSerializer.Serialize(response, _serializerOptions);
+            return new GatewayProtocolResponse(
+                JsonSerializer.Serialize(
+                    response,
+                    _serializerOptions),
+                dispatch.AfterResponseWritten);
         }
         catch (JsonException exception)
         {
             RecordException(requestId, exception);
-            return SerializeError(
-                requestId,
-                ErrorCodes.RequestInvalid,
-                "The IPC request is not valid JSON or has invalid fields.");
+            return new GatewayProtocolResponse(
+                SerializeError(
+                    requestId,
+                    ErrorCodes.RequestInvalid,
+                    "The IPC request is not valid JSON or has invalid fields."),
+                afterResponseWritten: null);
         }
         catch (Exception exception) when (!(exception is OperationCanceledException))
         {
             RecordException(requestId, exception);
-            return SerializeError(
-                requestId,
-                ErrorCodes.OperationFailed,
-                "The gateway request failed unexpectedly. See the local log for details.");
+            return new GatewayProtocolResponse(
+                SerializeError(
+                    requestId,
+                    ErrorCodes.OperationFailed,
+                    "The gateway request failed unexpectedly. See the local log for details."),
+                afterResponseWritten: null);
         }
     }
 
@@ -183,5 +205,27 @@ public sealed class GatewayProtocolHandler
         public object? Result { get; set; }
 
         public GatewayError? Error { get; set; }
+    }
+
+    internal sealed class GatewayProtocolResponse
+    {
+        private Action? _afterResponseWritten;
+
+        public GatewayProtocolResponse(
+            string json,
+            Action? afterResponseWritten)
+        {
+            Json = json;
+            _afterResponseWritten = afterResponseWritten;
+        }
+
+        public string Json { get; }
+
+        public void NotifyResponseWritten()
+        {
+            Interlocked.Exchange(
+                ref _afterResponseWritten,
+                null)?.Invoke();
+        }
     }
 }

@@ -86,6 +86,32 @@ public sealed class TwinCatTools
     }
 
     [McpServerTool(
+        Name = "gateway_shutdown",
+        ReadOnly = false,
+        Destructive = true,
+        Idempotent = true,
+        OpenWorld = false)]
+    [Description(
+        "Explicitly close TwinCAT Agent Gateway when the "
+        + "project configuration permits agent shutdown. "
+        + "Does not close a user-owned XAE instance.")]
+    public async Task<string> ShutdownGatewayAsync(
+        McpServer? server = null,
+        CancellationToken cancellationToken = default)
+    {
+        GatewayToolSession session =
+            await ResolveSessionAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        GatewayResponse<GatewayShutdownResult> response =
+            await session.Client
+                .ShutdownAsync(cancellationToken)
+                .ConfigureAwait(false);
+        return McpGatewayJson.Serialize(response);
+    }
+
+    [McpServerTool(
         Name = "twincat_status",
         ReadOnly = true,
         Idempotent = true,

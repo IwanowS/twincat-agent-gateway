@@ -206,6 +206,13 @@ public sealed class GatewayOperationPollerTests
             throw new NotSupportedException();
         }
 
+        public Task<GatewayResponse<GatewayShutdownResult>>
+            ShutdownAsync(
+                CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<GatewayResponse<GatewayDiagnosticsResult>>
             GetDiagnosticsAsync(
                 CancellationToken cancellationToken = default)

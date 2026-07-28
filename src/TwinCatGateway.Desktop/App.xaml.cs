@@ -57,6 +57,7 @@ public partial class App : Application
             }
 
             _host = new GatewayDesktopHost(options);
+            _host.ShutdownRequested += Host_ShutdownRequested;
             _host.Start();
             using (Process process = Process.GetCurrentProcess())
             {
@@ -187,6 +188,20 @@ public partial class App : Application
         _exitRequested = true;
         _window?.Close();
         Shutdown();
+    }
+
+    private void Host_ShutdownRequested(
+        object? sender,
+        EventArgs e)
+    {
+        Dispatcher.BeginInvoke(
+            new Action(
+                () =>
+                {
+                    _exitRequested = true;
+                    _window?.Close();
+                    Shutdown();
+                }));
     }
 
     private void ShowMainWindow()

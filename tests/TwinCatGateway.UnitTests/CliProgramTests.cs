@@ -323,6 +323,13 @@ public sealed class CliProgramTests
             return Task.FromResult(StatusResponse);
         }
 
+        public Task<GatewayResponse<GatewayShutdownResult>>
+            ShutdownAsync(
+                CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<GatewayResponse<OperationAccepted>>
             StartBuildAsync(
                 BuildParameters parameters,

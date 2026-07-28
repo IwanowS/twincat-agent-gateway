@@ -18,6 +18,8 @@ public static class ErrorCodes
         "GATEWAY_INTERACTIVE_LAUNCH_UNAVAILABLE";
     public const string GatewayStartTimeout =
         "GATEWAY_START_TIMEOUT";
+    public const string GatewayShutdownDisabled =
+        "GATEWAY_SHUTDOWN_DISABLED";
     public const string GatewayRunningDifferentProject =
         "GATEWAY_RUNNING_DIFFERENT_PROJECT";
     public const string OperationNotFound = "OPERATION_NOT_FOUND";

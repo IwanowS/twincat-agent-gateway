@@ -439,6 +439,13 @@ public sealed class GatewayMcpRuntimeTests
                 });
         }
 
+        public Task<GatewayResponse<GatewayShutdownResult>>
+            ShutdownAsync(
+                CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException();
+        }
+
         public Task<GatewayResponse<HealthResult>>
             GetHealthAsync(
                 CancellationToken cancellationToken = default)

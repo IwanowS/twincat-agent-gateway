@@ -37,6 +37,18 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
             cancellationToken);
     }
 
+    public Task<GatewayResponse<GatewayShutdownResult>> ShutdownAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return _client.SendAsync<
+            EmptyParameters,
+            GatewayShutdownResult>(
+            GatewayMethods.Shutdown,
+            new EmptyParameters(),
+            wait: true,
+            cancellationToken);
+    }
+
     public Task<GatewayResponse<GatewayDiagnosticsResult>> GetDiagnosticsAsync(
         CancellationToken cancellationToken = default)
     {

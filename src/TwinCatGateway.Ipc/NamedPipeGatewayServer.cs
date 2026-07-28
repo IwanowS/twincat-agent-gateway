@@ -109,13 +109,16 @@ public sealed class NamedPipeGatewayServer : IDisposable
                 string request = await IpcFrameProtocol.ReadAsync(
                     pipe,
                     cancellationToken).ConfigureAwait(false);
-                string response = await _handler.HandleAsync(
+                GatewayProtocolHandler.GatewayProtocolResponse
+                    response =
+                    await _handler.HandleForTransportAsync(
                     request,
                     cancellationToken).ConfigureAwait(false);
                 await IpcFrameProtocol.WriteAsync(
                     pipe,
-                    response,
+                    response.Json,
                     cancellationToken).ConfigureAwait(false);
+                response.NotifyResponseWritten();
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {

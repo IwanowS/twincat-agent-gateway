@@ -13,6 +13,9 @@ public interface ITwinCatGatewayClient
     Task<GatewayResponse<GatewayStatusResult>> GetStatusAsync(
         CancellationToken cancellationToken = default);
 
+    Task<GatewayResponse<GatewayShutdownResult>> ShutdownAsync(
+        CancellationToken cancellationToken = default);
+
     Task<GatewayResponse<GatewayDiagnosticsResult>>
         GetDiagnosticsAsync(
             CancellationToken cancellationToken = default);

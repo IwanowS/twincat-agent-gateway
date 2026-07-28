@@ -143,8 +143,13 @@ environment block и integrity context интерактивного пользо
 gateway вручную.
 
 Обычные tools при отсутствии процесса возвращают `GATEWAY_NOT_RUNNING`.
-Завершение MCP не закрывает desktop gateway. `allowShutdown` зарезервирован
-как явная policy-граница; agent shutdown tool в MVP отсутствует.
+Завершение MCP не закрывает desktop gateway. Отдельный destructive tool
+`gateway_shutdown` проверяет загруженный
+`agentProcessControl.allowShutdown`. При `false` он возвращает
+`GATEWAY_SHUTDOWN_DISABLED`. При `true` desktop gateway сначала записывает
+успешный IPC response, затем через completion callback инициирует WPF
+shutdown. Это не закрывает XAE instance, открытый пользователем; обычные
+правила gateway-owned XAE cleanup сохраняются.
 
 ### 4.2 Project-local configuration
 
@@ -1011,6 +1016,7 @@ route/port возвращает `TEST_ADS_UNAVAILABLE`, missing fixed symbol —
 
 ```text
 gateway_start
+gateway_shutdown
 twincat_status
 twincat_build
 twincat_activate

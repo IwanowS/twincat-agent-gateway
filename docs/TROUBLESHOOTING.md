@@ -18,6 +18,8 @@ the WPF host, not the repository development CLI.
   process automatically; ask the user to resolve the project ownership.
 - `GATEWAY_START_DISABLED`: project policy has `allowStart: false`; manual
   launch is required.
+- `GATEWAY_SHUTDOWN_DISABLED`: project policy has `allowShutdown: false`;
+  close the gateway manually or explicitly enable shutdown for this project.
 - `GATEWAY_INTERACTIVE_LAUNCH_UNAVAILABLE`: MCP could not hand the configured
   desktop gateway launch to the interactive Windows Explorer session. Start
   `twincat-gateway --config <absolute-path>` manually; the agent does not fall

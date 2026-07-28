@@ -56,6 +56,33 @@ public sealed class MvpContractSerializationTests
     }
 
     [Fact]
+    public void GatewayShutdownResultRoundTrips()
+    {
+        GatewayResponse<GatewayShutdownResult> source = new()
+        {
+            Ok = true,
+            Result = new GatewayShutdownResult
+            {
+                ShutdownRequested = true,
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        GatewayResponse<GatewayShutdownResult> result =
+            JsonSerializer.Deserialize<
+                GatewayResponse<GatewayShutdownResult>>(
+                    json,
+                    ContractJson.SerializerOptions)
+            ?? throw new InvalidOperationException(
+                "Gateway shutdown result did not deserialize.");
+
+        Assert.True(result.Ok);
+        Assert.True(result.Result?.ShutdownRequested);
+    }
+
+    [Fact]
     public void BuildResultRoundTripsAsCompactContract()
     {
         BuildResult build = new()

@@ -10,3 +10,8 @@ public sealed class GatewayStartResult
 
     public GatewayStatusResult Status { get; set; } = new();
 }
+
+public sealed class GatewayShutdownResult
+{
+    public bool ShutdownRequested { get; set; }
+}

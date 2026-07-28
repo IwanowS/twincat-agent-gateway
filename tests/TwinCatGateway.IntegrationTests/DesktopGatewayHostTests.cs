@@ -297,7 +297,77 @@ public sealed class DesktopGatewayHostTests
             gatewayEvent =>
                 gatewayEvent.Type
                     == GatewayEventTypes
-                        .XaeReconnectRequested);
+                .XaeReconnectRequested);
+    }
+
+    [Fact]
+    public async Task ShutdownRequestIsDeniedByDefault()
+    {
+        using TemporaryDirectory temporary = new();
+        string pipeName =
+            "TwinCatGatewayTests-" + Guid.NewGuid().ToString("N");
+        using GatewayDesktopHost host =
+            CreateShutdownHost(
+                temporary,
+                pipeName,
+                allowShutdown: false);
+        host.Start();
+        NamedPipeGatewayClient client =
+            new(
+                pipeName,
+                TimeSpan.FromSeconds(5));
+
+        GatewayResponse<GatewayShutdownResult> response =
+            await client.SendAsync<
+                EmptyParameters,
+                GatewayShutdownResult>(
+                GatewayMethods.Shutdown,
+                new EmptyParameters(),
+                wait: true,
+                CancellationToken.None);
+
+        Assert.False(response.Ok);
+        Assert.Equal(
+            ErrorCodes.GatewayShutdownDisabled,
+            response.Error?.Code);
+    }
+
+    [Fact]
+    public async Task AllowedShutdownIsRaisedAfterSuccessfulResponse()
+    {
+        using TemporaryDirectory temporary = new();
+        string pipeName =
+            "TwinCatGatewayTests-" + Guid.NewGuid().ToString("N");
+        using GatewayDesktopHost host =
+            CreateShutdownHost(
+                temporary,
+                pipeName,
+                allowShutdown: true);
+        TaskCompletionSource<bool> requested = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        host.ShutdownRequested +=
+            (_, _) => requested.TrySetResult(true);
+        host.Start();
+        NamedPipeGatewayClient client =
+            new(
+                pipeName,
+                TimeSpan.FromSeconds(5));
+
+        GatewayResponse<GatewayShutdownResult> response =
+            await client.SendAsync<
+                EmptyParameters,
+                GatewayShutdownResult>(
+                GatewayMethods.Shutdown,
+                new EmptyParameters(),
+                wait: true,
+                CancellationToken.None);
+        Task completed = await Task.WhenAny(
+            requested.Task,
+            Task.Delay(TimeSpan.FromSeconds(5)));
+
+        Assert.True(response.Ok);
+        Assert.True(response.Result?.ShutdownRequested);
+        Assert.Same(requested.Task, completed);
     }
 
     [Fact]
@@ -721,6 +791,46 @@ public sealed class DesktopGatewayHostTests
     private static string EscapeJson(string value)
     {
         return value.Replace(@"\", @"\\").Replace(@"""", @"\""");
+    }
+
+    private static GatewayDesktopHost CreateShutdownHost(
+        TemporaryDirectory temporary,
+        string pipeName,
+        bool allowShutdown)
+    {
+        string configurationPath = Path.Combine(
+            temporary.Path,
+            "gateway.json");
+        string solutionPath = Path.Combine(
+            temporary.Path,
+            "missing.sln");
+        File.WriteAllText(
+            configurationPath,
+            $$"""
+            {
+              "schemaVersion": 1,
+              "pipeName": "{{pipeName}}",
+              "logDirectory": "{{EscapeJson(temporary.Path)}}",
+              "defaultProfile": "fixture",
+              "agentProcessControl": {
+                "allowStart": true,
+                "allowShutdown": {{allowShutdown.ToString().ToLowerInvariant()}}
+              },
+              "profiles": [
+                {
+                  "name": "fixture",
+                  "solution": "{{EscapeJson(solutionPath)}}",
+                  "allowXaeLaunch": false,
+                  "allowActivation": false
+                }
+              ]
+            }
+            """);
+        return new GatewayDesktopHost(
+            new GatewayHostOptions
+            {
+                ConfigurationPath = configurationPath,
+            });
     }
 
     private sealed class TemporaryDirectory : IDisposable

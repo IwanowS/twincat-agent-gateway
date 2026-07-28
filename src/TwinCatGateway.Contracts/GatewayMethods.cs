@@ -3,6 +3,7 @@ namespace TwinCatGateway.Contracts;
 public static class GatewayMethods
 {
     public const string Health = "health";
+    public const string Shutdown = "shutdown";
     public const string Status = "status";
     public const string GetDiagnostics = "getDiagnostics";
     public const string Build = "build";

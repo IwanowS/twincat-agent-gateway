@@ -44,6 +44,8 @@ See the [canonical setup instructions](setup/SETUP_INSTRUCTIONS.txt) and the
 `twincat-gateway` is the WPF application. Agents use
 `twincat-gateway-mcp`; normal MCP operations never start the WPF process.
 Only the explicit `gateway_start` tool may do so after checking project policy.
+The explicit `gateway_shutdown` tool closes it only when
+`agentProcessControl.allowShutdown` is `true`.
 
 ## Portable package
 

@@ -100,6 +100,48 @@ public sealed class NamedPipeGatewayTests
         Assert.True(statusResponse.Result?.Ready);
     }
 
+    [Fact]
+    public async Task CompletionCallbackRunsAfterResponseWrite()
+    {
+        string pipeName =
+            "TwinCatGatewayTests-" + Guid.NewGuid().ToString("N");
+        TaskCompletionSource<bool> responseWritten =
+            NewCompletionSource();
+        GatewayProtocolHandler handler = new(
+            (request, cancellationToken) =>
+                Task.FromResult(
+                    GatewayDispatchResult.Success(
+                        new GatewayShutdownResult
+                        {
+                            ShutdownRequested = true,
+                        },
+                        () => responseWritten.TrySetResult(true))));
+        using NamedPipeGatewayServer server = new(pipeName, handler);
+        using CancellationTokenSource shutdown = new();
+        Task serverTask = server.RunAsync(shutdown.Token);
+        NamedPipeGatewayClient client = new(pipeName);
+
+        GatewayResponse<GatewayShutdownResult> response =
+            await client.SendAsync<
+                EmptyParameters,
+                GatewayShutdownResult>(
+                GatewayMethods.Shutdown,
+                new EmptyParameters(),
+                wait: true,
+                CancellationToken.None);
+        await WithTimeoutAsync(
+            responseWritten.Task,
+            TimeSpan.FromSeconds(2));
+
+        shutdown.Cancel();
+        await WithTimeoutAsync(
+            serverTask,
+            TimeSpan.FromSeconds(5));
+
+        Assert.True(response.Ok);
+        Assert.True(response.Result?.ShutdownRequested);
+    }
+
     private static async Task WaitAsync(
         Task task,
         CancellationToken cancellationToken)

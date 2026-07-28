@@ -567,6 +567,7 @@ docs/
 
 ```text
 gateway_start
+gateway_shutdown
 twincat_status
 twincat_build
 twincat_activate
@@ -621,6 +622,9 @@ twincat-diff://<operation-id>/project-noise
 - `gateway_start` проверяет workspace config, `allowStart`, singleton identity
   и Ready, делает не более одной попытки через desktop view интерактивного
   Explorer и идемпотентен для того же проекта;
+- `gateway_shutdown` помечен destructive, проверяет загруженный
+  `allowShutdown`, отправляет успешный response до остановки desktop gateway
+  и не закрывает user-owned XAE;
 - Desktop gateway не наследует agent-added environment; отсутствие
   интерактивного Explorer завершается fail-closed без прямого process fallback;
 - gateway другого проекта не закрывается и не переключается;

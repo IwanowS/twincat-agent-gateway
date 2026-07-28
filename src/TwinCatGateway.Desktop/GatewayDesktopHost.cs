@@ -21,6 +21,7 @@ public sealed class GatewayDesktopHost : IDisposable
     private readonly XaeSessionCoordinator? _xaeCoordinator;
     private Task? _serverTask;
     private Task? _xaeTask;
+    private int _shutdownRequested;
     private int _started;
     private int _disposed;
 
@@ -105,7 +106,10 @@ public sealed class GatewayDesktopHost : IDisposable
             tcUnitPreparationExecutor:
                 tcUnitPreparationExecutor,
             tcUnitExecutor: tcUnitExecutor);
-        GatewayRequestDispatcher dispatcher = new(ApplicationService);
+        GatewayRequestDispatcher dispatcher = new(
+            ApplicationService,
+            Configuration.AgentProcessControl.AllowShutdown,
+            RequestShutdown);
         GatewayProtocolHandler protocol = new(
             dispatcher.DispatchAsync,
             (operationId, exception) =>
@@ -155,6 +159,8 @@ public sealed class GatewayDesktopHost : IDisposable
     public string? StartupError { get; }
 
     public bool CanReconnectXae => _xaeCoordinator is not null;
+
+    public event EventHandler? ShutdownRequested;
 
     public void Start()
     {
@@ -210,6 +216,22 @@ public sealed class GatewayDesktopHost : IDisposable
             ?? throw new InvalidOperationException(
                 "No valid project profile is configured.");
         coordinator.RequestReconnect();
+    }
+
+    private void RequestShutdown()
+    {
+        if (Interlocked.Exchange(
+            ref _shutdownRequested,
+            1) != 0)
+        {
+            return;
+        }
+
+        _logger.Write(
+            StructuredLogLevel.Information,
+            "gateway.shutdown.requested",
+            "Gateway shutdown was requested through IPC.");
+        ShutdownRequested?.Invoke(this, EventArgs.Empty);
     }
 
     internal void RecordUiFailure(

@@ -124,7 +124,7 @@ process.
 | Property | Type and default | Meaning |
 |---|---|---|
 | `allowStart` | Boolean, `true` | Permits the MCP `gateway_start` tool to launch the desktop gateway for this exact project. |
-| `allowShutdown` | Boolean, `false` | Reserved policy boundary for a future explicit shutdown operation. The MVP exposes no agent shutdown tool. |
+| `allowShutdown` | Boolean, `false` | Permits the destructive MCP `gateway_shutdown` tool to close this desktop gateway after its IPC response has been written. It never closes a user-owned XAE instance. |
 
 Neither option permits an agent to select another solution or target.
 

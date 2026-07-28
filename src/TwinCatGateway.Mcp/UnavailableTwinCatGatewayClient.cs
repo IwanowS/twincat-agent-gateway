@@ -60,6 +60,14 @@ internal sealed class UnavailableTwinCatGatewayClient
             cancellationToken);
     }
 
+    public Task<GatewayResponse<GatewayShutdownResult>>
+        ShutdownAsync(
+            CancellationToken cancellationToken = default)
+    {
+        return Response<GatewayShutdownResult>(
+            cancellationToken);
+    }
+
     public Task<GatewayResponse<GatewayDiagnosticsResult>>
         GetDiagnosticsAsync(
             CancellationToken cancellationToken = default)

@@ -21,6 +21,7 @@ public sealed class McpAdapterTests
 {
     private static readonly string[] ExpectedToolNames =
     {
+        "gateway_shutdown",
         "gateway_start",
         "twincat_activate",
         "twincat_build",
@@ -124,6 +125,14 @@ public sealed class McpAdapterTests
                     == "twincat_activate");
         Assert.True(activation.Destructive);
         Assert.False(activation.ReadOnly);
+        McpServerToolAttribute shutdown =
+            Assert.Single(
+                attributes,
+                attribute =>
+                    attribute.Name
+                    == "gateway_shutdown");
+        Assert.True(shutdown.Destructive);
+        Assert.False(shutdown.ReadOnly);
         Assert.All(
             attributes,
             attribute => Assert.False(attribute.OpenWorld));
@@ -183,6 +192,46 @@ public sealed class McpAdapterTests
             properties.TryGetProperty(
                 "server",
                 out _));
+    }
+
+    [Fact]
+    public void GatewayShutdownSchemaContainsNoAgentArguments()
+    {
+        FakeGatewayClient client = new();
+        TwinCatTools target = new(
+            client,
+            new GatewayOperationPoller(client));
+        MethodInfo method =
+            typeof(TwinCatTools).GetMethod(
+                nameof(TwinCatTools.ShutdownGatewayAsync))
+            ?? throw new InvalidOperationException(
+                "Gateway shutdown tool method was not found.");
+        McpServerTool tool =
+            McpServerTool.Create(method, target);
+        JsonElement properties =
+            tool.ProtocolTool.InputSchema.GetProperty(
+                "properties");
+
+        Assert.Empty(properties.EnumerateObject());
+    }
+
+    [Fact]
+    public async Task GatewayShutdownReturnsPolicyCheckedGatewayResponse()
+    {
+        FakeGatewayClient client = new();
+        TwinCatTools tools = new(
+            client,
+            new GatewayOperationPoller(client));
+
+        string result = await tools.ShutdownGatewayAsync();
+
+        using JsonDocument json = JsonDocument.Parse(result);
+        Assert.True(json.RootElement.GetProperty("ok").GetBoolean());
+        Assert.True(
+            json.RootElement
+                .GetProperty("result")
+                .GetProperty("shutdownRequested")
+                .GetBoolean());
     }
 
     [Fact]
@@ -457,6 +506,22 @@ public sealed class McpAdapterTests
                 {
                     Ok = true,
                     Result = new GatewayStatusResult(),
+                });
+        }
+
+        public Task<GatewayResponse<GatewayShutdownResult>>
+            ShutdownAsync(
+                CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(
+                new GatewayResponse<GatewayShutdownResult>
+                {
+                    Ok = true,
+                    Result = new GatewayShutdownResult
+                    {
+                        ShutdownRequested = true,
+                    },
                 });
         }
 

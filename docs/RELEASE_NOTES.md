@@ -16,6 +16,8 @@ TwinCAT Agent Gateway 0.1.0 provides:
   Windows Explorer session;
 - project-local `twincat-gateway.json` discovery and manual/agent
   window/tray lifecycle;
+- policy-checked `gateway_shutdown` that acknowledges the request before
+  closing the desktop gateway;
 - minimal WPF operations/status UI, per-user installer, and portable ZIP
   packaging.
 - JSON responses, configuration, registry records, and structured NDJSON logs
