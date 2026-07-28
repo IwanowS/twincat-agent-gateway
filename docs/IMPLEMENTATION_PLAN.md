@@ -20,7 +20,8 @@ MVP завершён, когда Codex может выполнить следу�
 8. gateway подтвердит завершение TcUnit через фиксированный read-only ADS symbol;
 9. агент получит summary и failed tests из свежего xUnit XML;
 10. при проблеме агент запросит detailed diagnostics или конкретный raw log;
-11. reorder-only `.tsproj` изменения будут отмечены как ожидаемые без полного чтения XML.
+11. изменения project graph, записанные XAE во время gateway-owned operation,
+    будут приняты, залогированы и не потребуют полного чтения XML агентом.
 
 Весь цикл выполняется без PowerShell. ADS surface ограничен `ReadState` на фиксированном System Service port 10000 и чтением заранее настроенных TcUnit completion symbols выбранного target; произвольные reads/writes, RPC и runtime control через ADS не входят в MVP.
 
@@ -316,6 +317,10 @@ docs/
 - Error List snapshot collector;
 - Output pane delta collector;
 - `.tsproj` same-content rewrite guard через `IVsFileChangeEx`;
+- `FileSystemWatcher` operation window с 500 ms quiet debounce и обязательным
+  итоговым fingerprint scan;
+- принятие и structured logging любых project-graph changes между началом и
+  terminal outcome Build/Clean/Rebuild;
 - `LastBuildInfo` validation;
 - diagnostic normalization;
 - compact response limits;
@@ -339,9 +344,16 @@ docs/
   agent edit;
 - XSD-invalid PLC object отклоняется до typed reload/build;
 - same-content `.tsproj` rewrite самой XAE не вызывает modal dialog;
-- содержательное `.tsproj` изменение не скрывается watcher guard и
-  возвращается как `unknown`;
-- добавленный/удалённый source file завершается явной unsupported error;
+- содержательное `.tsproj` изменение до operation window не скрывается и
+  возвращается согласно `externalChangePolicy`;
+- любое `.tsproj`/`.plcproj`/PLC source/`.tmc` изменение внутри
+  gateway-owned operation window принимается и логируется;
+- watcher overflow логируется и не отменяет обязательный итоговый fingerprint
+  scan;
+- timeout/cancellation/COM loss/unknown dialog оставляет baseline в
+  `syncRequired`;
+- добавленный/удалённый source file до operation window завершается явной
+  unsupported error при default `reloadModified`;
 - full output не попадает в compact response;
 - CLI exit code соответствует результату;
 - existing PowerShell helper больше не требуется для нормального workflow.
@@ -355,6 +367,7 @@ docs/
 ### Задачи
 
 - pre/post operation changed-file detection;
+- 500 ms quiet debounce после terminal XAE outcome;
 - XSD reorder classification после завершённых Build/Rebuild, но не Clean;
 - versioned schema manifest и закрытый XSD resolver;
 - `TcSmProject.xsd` вместе с полным dependency closure;
@@ -389,7 +402,8 @@ docs/
 - только same-parent permutation полных неизменённых subtrees даёт
   `expected-reorder-only`;
 - завершённая компиляция считается источником истины итогового порядка;
-- после Clean content hash change остаётся `unknown`;
+- после Clean content hash change может остаться `unknown` в отчёте, но
+  принимается как XAE-owned change;
 - содержательное изменение не классифицируется как reorder-only;
 - XSD-invalid и недоказуемый case возвращают `unknown`;
 - compact build result не содержит полный `.tsproj` diff;
@@ -462,6 +476,8 @@ docs/
   warnings;
 - общий UI Automation supervisor для modal dialogs точного XAE process id на
   всём lifecycle любых gateway-owned XAE operations;
+- XAE-owned project-graph operation window вокруг
+  `TwinCAT.ActivateConfiguration` с 500 ms quiet/fingerprint rebaseline;
 - объединение Error List, `GetLastErrorMessages()` и ADS runtime evidence в
   compact activation error;
 - события activation/dialog/postcondition в общей event stream;
@@ -522,6 +538,9 @@ docs/
   `GetLastErrorMessages()`, а TcUnit summary строки не считаются runtime fault
   только из-за XAE severity `Error`;
 - warnings читаются и возвращаются отдельно от fatal activation errors;
+- project-graph changes после успешного или известного terminal activation
+  outcome принимаются и логируются; неизвестный/незавершённый outcome
+  оставляет `syncRequired`;
 - диалог принадлежит точному XAE process id, его текст записан в diagnostics,
   а неизвестная кнопка никогда не нажимается автоматически;
 - exception recovery требует подтверждённого ADS-состояния `Config`, иначе
@@ -812,6 +831,7 @@ twincat-diff://<operation-id>/project-noise
 | Agent-owned external edit sync | Да | Да | Да |
 | `.tsproj` reorder-only | Да | Да | Да |
 | PLC `.tmc` generated artifact | Да | Да | Да |
+| XAE-owned arbitrary graph rewrite | Да | Нет | Да |
 | Activation allowed/denied | Да | Да | Да |
 | Recovery after exception | Нет | Да | Да |
 | Public recover-to-Config tool | Да | Да | Да |

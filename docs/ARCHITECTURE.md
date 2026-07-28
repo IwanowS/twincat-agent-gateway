@@ -512,10 +512,20 @@ baseline после полного проверенного открытия. Fo
 | `error` | error | error | error |
 
 Одинаковый SHA не является изменением. Schema-valid whitespace/reorder
-классифицируется как доказанный generated noise только если изменение
-произошло между снимками отслеживаемой успешно завершённой XAE operation.
-Предсуществующий reorder и изменение `ProgramVersion` в `.plcproj` не обходят
-policy.
+по-прежнему может классифицироваться для компактного отчёта, но classifier не
+является safety gate для изменений, записанных самой XAE. После pre-action
+синхронизации gateway открывает ограниченное operation window вокруг
+Build/Clean/Rebuild или `TwinCAT.ActivateConfiguration`. Любое изменение
+файла выбранного project graph между начальным и стабильным конечным
+fingerprint принимается как XAE-owned и становится новым baseline.
+Предсуществующий reorder, изменение `ProgramVersion` в `.plcproj` и другие
+правки до открытия operation window policy не обходят.
+
+Operation window не различает запись XAE и параллельную запись пользователя
+на уровне filesystem identity. Поэтому пользователь отвечает за отсутствие
+ручных/внешних edits во время изменяющей gateway operation. Gateway сообщает
+в local structured log каждый принятый path, kind и graph role, но не
+записывает содержимое файла.
 
 ### 10.2 Последовательность
 
@@ -546,15 +556,27 @@ policy.
 14. Запуск Build/Clean через `SolutionBuild`; Rebuild через
     `DTE.ExecuteCommand("Build.RebuildSolution")`.
 15. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
-16. Проверка `.tsproj` hashes, синхронизация file watcher и обязательное
-    восстановление notifications.
-17. Повторный project-graph fingerprint scan после build. Любое изменение во
-    время build даёт retryable error, кроме доказанного tracked generated
-    noise.
-18. Чтение `LastBuildInfo`, Error List snapshot и Output delta.
-19. Нормализация diagnostics и классификация `.tsproj` changes.
-20. Сохранение полного Output delta как отдельного build-log resource.
-21. Возврат compact result.
+16. Проверка `.tsproj` hashes, синхронизация XAE file notifications и
+    обязательное восстановление notifications.
+17. После terminal build event ожидание 500 ms тишины по
+    `FileSystemWatcher`. Новое событие перезапускает quiet period.
+18. Повторный авторитетный project-graph fingerprint scan. Watcher служит
+    только сигналом стабилизации; coalesced/missed events и buffer overflow не
+    заменяют scan. При overflow результат scan принимается, а overflow
+    записывается как warning.
+19. Все graph changes в operation window принимаются как XAE-owned,
+    логируются и становятся confirmed baseline.
+20. Чтение `LastBuildInfo`, Error List snapshot и Output delta.
+21. Нормализация diagnostics и классификация `.tsproj` changes для отчёта.
+22. Сохранение полного Output delta как отдельного build-log resource.
+23. Возврат compact result.
+
+Если terminal outcome не установлен из-за timeout, cancellation, COM loss или
+неизвестного modal dialog, gateway не подтверждает новый baseline и переводит
+workspace в `syncRequired`. Известный обработанный terminal failure, например
+отменённый platform-mismatch dialog или подтверждённый fatal-error dialog,
+завершает operation window тем же quiet/fingerprint шагом, после чего исходная
+ошибка операции возвращается вызывающему коду.
 
 `DTE.ExecuteCommand(...)` допустим для стабильной встроенной команды XAE/VS,
 если нет надёжного отдельного typed automation method. Он всегда вызывается
@@ -917,22 +939,23 @@ Dirty XAE buffers всегда имеют приоритет как конфли
   destructive действие.
 
 Перед build gateway проверяет dirty state, временно открывает каждый изменённый
-закрытый document, выполняет typed reload и снова закрывает editor. После
-reload и после build выполняется повторный graph fingerprint scan: изменение
-файлов в любом из этих интервалов возвращает retryable error, кроме
-reorder/whitespace `.tsproj` noise, доказанного снимками tracked XAE
-operation, и `.tmc` artifacts подключённых PLC projects.
+закрытый document, выполняет typed reload и снова закрывает editor. Изменения,
+обнаруженные до gateway-owned operation window, по-прежнему проходят
+`externalChangePolicy`. После запуска Build/Clean/Rebuild или activation сама
+XAE считается автором записей выбранного project graph: gateway ждёт 500 ms
+тишины, выполняет итоговый fingerprint scan, логирует и принимает любые
+`.tsproj`, `.plcproj`, PLC source и `.tmc` changes.
 
 ## 14. `.tsproj` reorder-only noise
 
-### 14.0 XAE file watcher guard
+### 14.0 XAE file watcher guard и operation settle
 
 TwinCAT 3.1.4024.17 может во время обычной Build/Clean/Rebuild перезаписать
 `.tsproj` теми же байтами, изменив только filesystem timestamp. XAE file
 watcher способен увидеть эту собственную запись и показать modal
 `File Modification Detected`; Silent Mode этого не предотвращает.
 
-Поэтому gateway перед запуском операции вычисляет SHA-256 всех `.tsproj`,
+Поэтому gateway перед запуском build operation вычисляет SHA-256 всех `.tsproj`,
 фактически включённых в выбранный solution, в том числе расположенных вне
 solution root, и временно вызывает
 `IVsFileChangeEx.IgnoreFile(0, path, 1)`. После `OnBuildDone`:
@@ -940,16 +963,21 @@ solution root, и временно вызывает
 - если файл существует и hash совпадает, gateway вызывает `SyncFile(path)`
   при ещё подавленных notifications, затем возвращает
   `IgnoreFile(0, path, 0)`;
-- если hash изменился, gateway запускает classifier до восстановления
-  notifications; подтверждённые `whitespace-only` и `reorder-only` changes
-  синхронизируются при ещё подавленных notifications;
-- `content-changed`, `unknown`, добавление или удаление `.tsproj` завершают
-  операцию явной `EXTERNAL_EDIT_UNSUPPORTED` со ссылкой на classifier
-  artifact; перед ошибкой notifications обязательно восстанавливаются;
+- если hash изменился, gateway запускает classifier для отчёта и вызывает
+  `SyncFile(path)` при ещё подавленных notifications независимо от
+  classification: запись находится внутри XAE-owned operation window;
 - восстановление notifications выполняется также при исключении и Dispose.
 
-Guard и classifier не перезаписывают файл и не скрывают содержательные
-изменения. Проверенный
+Параллельно до запуска действия создаётся `FileSystemWatcher` для корней
+выбранного project graph. Он наблюдает все filesystem events, но используется
+только для 500 ms debounce. После quiet period gateway заново вычисляет
+authoritative SHA-256 graph snapshot; если событие пришло во время scan,
+quiet/scan повторяется. `InternalBufferOverflowException` не делает watcher
+источником истины: overflow логируется, затем выполняется тот же полный scan.
+
+Guard, watcher и classifier не перезаписывают файл и не скрывают факт
+содержательного изменения: path/kind/role остаются в structured log, а Git
+working tree не объявляется чистым. Проверенный
 `IVsRunningDocumentTable5.HandsOffDocument/HandsOnDocument` для этой задачи
 не используется: XAE Shell на базе Visual Studio 2019 в тестовой конфигурации
 не зарегистрировал COM proxy этого интерфейса.
@@ -958,10 +986,11 @@ Guard и classifier не перезаписывают файл и не скры�
 
 - ничего не перезаписывать;
 - не вызывать reload ради cleanup;
-- не скрывать содержательные изменения;
+- не скрывать и логировать содержательные изменения;
 - не заставлять агента читать большой XML diff;
 - не считать рабочее дерево чистым, если Git показывает изменение;
-- явно помечать изменение как ожидаемый generated noise.
+- принимать любые изменения project graph внутри XAE-owned operation window;
+- не подтверждать baseline после неизвестного/незавершённого outcome.
 
 ### 14.2 Классификатор
 
