@@ -122,6 +122,19 @@ try {
                 throw "Command '$commandName' did not resolve through the installed shim."
             }
         }
+
+        $mcpHelp = & (Join-Path `
+                $commandDirectory `
+                'twincat-gateway-mcp.cmd') `
+            '--help' |
+            Out-String
+        if ($LASTEXITCODE -ne 0 `
+            -or -not $mcpHelp.Contains(
+                '--gateway-command <command>') `
+            -or -not $mcpHelp.Contains(
+                '[default: twincat-gateway]')) {
+            throw 'Installed MCP command help is incomplete.'
+        }
     }
     finally {
         $env:Path = $originalProcessPath

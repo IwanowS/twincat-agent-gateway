@@ -661,6 +661,8 @@ twincat-diff://<operation-id>/project-noise
 - MCP stdio wrapper не пишет setup/diagnostic text в stdout;
 - global Codex registration и project-local alternative документированы как
   взаимоисключающие варианты;
+- MCP root options, `--help`/`-h` и `--version` определены одной
+  `System.CommandLine` model; help/version не запускают stdio host;
 - чистая установка обнаруживает совместимую XAE среду;
 - ошибка отсутствующей зависимости понятна;
 - gateway корректно восстанавливается после собственного restart;

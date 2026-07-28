@@ -92,6 +92,13 @@ Per-user установка содержит два независимых пр�
 Оба доступны через стабильный user-PATH каталог. `dotnet tool` и
 универсальный .NET 8 command host не используются.
 
+`twincat-gateway-mcp` использует `System.CommandLine` как единственный источник
+root option definitions, defaults, parsing и generated `--help`/`-h`/
+`--version`. Help/version завершаются до создания Generic Host. В обычном
+server mode stdout остаётся только MCP transport; логи идут в stderr. У MVP
+нет console subcommands, а все будущие `Command` автоматически получают
+`<subcommand> --help` из той же command model.
+
 Configured gateway имеет один per-user singleton. После захвата mutex desktop
 host атомарно публикует в
 `%LOCALAPPDATA%\TwinCatAgentGateway\gateway-instance.json` PID, process start

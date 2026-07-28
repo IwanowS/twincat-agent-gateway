@@ -82,6 +82,23 @@ the user TOML directly. An alternative project-local configuration is
 [provided here](../examples/codex/config.toml). Do not enable global and local
 registrations of the same server simultaneously.
 
+## MCP console help
+
+The stdio adapter provides generated console help without starting the MCP
+server:
+
+```powershell
+twincat-gateway-mcp --help
+twincat-gateway-mcp -h
+twincat-gateway-mcp --version
+```
+
+Help, defaults, parsing, and future subcommand help are generated from the same
+`System.CommandLine` command and option definitions. The current MVP has no
+console subcommands; its root options are `--config`, `--pipe`, and
+`--gateway-command`. In normal no-argument server mode, stdout remains reserved
+for the MCP protocol.
+
 ## Install skills separately
 
 ```powershell
