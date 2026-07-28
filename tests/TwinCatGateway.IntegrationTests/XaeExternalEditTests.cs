@@ -301,7 +301,7 @@ public sealed class XaeExternalEditTests
     }
 
     [XaeLaunchFact]
-    public async Task AgentOwnershipDiscardsAndClosesDirtyDocument()
+    public async Task AttachReportsButDoesNotDiscardDirtyDocument()
     {
         string sourceSolution = Path.GetFullPath(
             Environment.GetEnvironmentVariable(
@@ -349,10 +349,14 @@ public sealed class XaeExternalEditTests
                     CancellationToken.None);
 
             Assert.True(dirty);
-            Assert.True(attached.AgentWorkspaceOwned);
-            Assert.Equal(1, attached.ClosedDocumentCount);
-            Assert.Equal(1, attached.DiscardedDocumentCount);
-            Assert.False(
+            Assert.False(attached.AgentWorkspaceOwned);
+            Assert.Equal(0, attached.ClosedDocumentCount);
+            Assert.Equal(0, attached.DiscardedDocumentCount);
+            Assert.Equal(1, attached.DirtyDocumentCount);
+            Assert.Equal(
+                SynchronizationState.SyncRequired,
+                attached.SynchronizationState);
+            Assert.True(
                 await IsDocumentOpenAsync(
                     dispatcher,
                     processId,

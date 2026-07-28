@@ -96,6 +96,10 @@ public sealed class GatewayStatusSnapshotStore
                     source.Xae.AgentWorkspaceOwned,
                 DiscardedDocumentCount =
                     source.Xae.DiscardedDocumentCount,
+                SynchronizationState =
+                    source.Xae.SynchronizationState,
+                DirtyDocumentCount =
+                    source.Xae.DirtyDocumentCount,
             },
             TwinCat = new TwinCatStatus
             {

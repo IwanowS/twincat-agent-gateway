@@ -68,6 +68,11 @@ public sealed class XaeEnvironmentTests
             snapshot.SelectedInstance?.Solution,
             ignoreCase: true);
         Assert.True(snapshot.SelectedInstance?.Selected);
+        Assert.Equal(
+            snapshot.LaunchedByGateway
+                ? SynchronizationState.Confirmed
+                : SynchronizationState.SyncRequired,
+            snapshot.SynchronizationState);
         Assert.True(
             snapshot.LaunchedByGateway
             || discovery.DiscoveredInstances.Any(instance => string.Equals(
@@ -236,7 +241,7 @@ public sealed class XaeEnvironmentTests
     }
 
     [XaeLaunchFact]
-    public async Task GatewayCanLaunchAndOwnNewXae()
+    public async Task GatewayLaunchConfirmsNewXaeBaseline()
     {
         string solution = Path.GetFullPath(
             Environment.GetEnvironmentVariable(
@@ -253,6 +258,9 @@ public sealed class XaeEnvironmentTests
 
             Assert.True(snapshot.Connected);
             Assert.True(snapshot.LaunchedByGateway);
+            Assert.Equal(
+                SynchronizationState.Confirmed,
+                snapshot.SynchronizationState);
             Assert.True(await session.ReadSilentModeAsync(
                 TimeSpan.FromSeconds(10),
                 CancellationToken.None));
@@ -263,6 +271,49 @@ public sealed class XaeEnvironmentTests
                 solution,
                 snapshot.SelectedInstance?.Solution,
                 ignoreCase: true);
+            Assert.True(await session.CloseGatewayLaunchedAsync(
+                TimeSpan.FromSeconds(15),
+                CancellationToken.None));
+        }
+        finally
+        {
+            session.Dispose();
+        }
+    }
+
+    [XaeLaunchFact]
+    public async Task ReconnectToSameXaeRetainsConfirmedBaseline()
+    {
+        string solution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        XaeSession session = new();
+        try
+        {
+            XaeSessionSnapshot launched = await session.LaunchAsync(
+                solution,
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_XAE_PROGID"),
+                TimeSpan.FromSeconds(60),
+                CancellationToken.None);
+            int? processId = launched.SelectedInstance?.ProcessId;
+            await session.DisconnectAsync(
+                TimeSpan.FromSeconds(10),
+                CancellationToken.None);
+
+            XaeSessionSnapshot reconnected =
+                await session.AttachAsync(
+                    solution,
+                    TimeSpan.FromSeconds(10),
+                    CancellationToken.None);
+
+            Assert.Equal(
+                processId,
+                reconnected.SelectedInstance?.ProcessId);
+            Assert.Equal(
+                SynchronizationState.Confirmed,
+                reconnected.SynchronizationState);
+            Assert.True(reconnected.LaunchedByGateway);
             Assert.True(await session.CloseGatewayLaunchedAsync(
                 TimeSpan.FromSeconds(15),
                 CancellationToken.None));

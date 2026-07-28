@@ -18,11 +18,13 @@ public sealed class ExternalChangeSynchronizationResult
     internal ExternalChangeSynchronizationResult(
         IEnumerable<ProjectFileChange> detectedChanges,
         IEnumerable<string> synchronizedDocuments,
-        IEnumerable<string> discardedDocuments)
+        IEnumerable<string> discardedDocuments,
+        SynchronizationScope scope = SynchronizationScope.None)
     {
         DetectedChanges = detectedChanges.ToArray();
         SynchronizedDocuments = synchronizedDocuments.ToArray();
         DiscardedDocuments = discardedDocuments.ToArray();
+        Scope = scope;
     }
 
     public IReadOnlyList<ProjectFileChange> DetectedChanges { get; }
@@ -30,6 +32,8 @@ public sealed class ExternalChangeSynchronizationResult
     public IReadOnlyList<string> SynchronizedDocuments { get; }
 
     public IReadOnlyList<string> DiscardedDocuments { get; }
+
+    public SynchronizationScope Scope { get; }
 }
 
 internal sealed class XaeDocumentSynchronizationResult
@@ -51,9 +55,9 @@ internal static class ExternalChangeSynchronizer
 {
     public static XaeDocumentSynchronizationResult Synchronize(
         DTE2 dte,
-        string solutionPath,
         IEnumerable<string> changedPaths,
-        IEnumerable<string>? workspaceRoots = null)
+        IEnumerable<string> projectGraphPaths,
+        bool discardDirtyDocuments)
     {
         if (dte is null)
         {
@@ -65,10 +69,10 @@ internal static class ExternalChangeSynchronizer
             .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         AgentWorkspaceOwnershipResult ownership =
-            AgentWorkspaceOwnership.Acquire(
+            AgentWorkspaceOwnership.EnsureClean(
                 dte,
-                solutionPath,
-                workspaceRoots);
+                projectGraphPaths,
+                discardDirtyDocuments);
         if (paths.Length == 0)
         {
             return new XaeDocumentSynchronizationResult(
@@ -86,6 +90,7 @@ internal static class ExternalChangeSynchronizer
             foreach (string path in paths)
             {
                 Document? document = null;
+                bool wasOpen = IsOpen(documents, path);
                 try
                 {
                     document = documents.Open(path);
@@ -106,7 +111,10 @@ internal static class ExternalChangeSynchronizer
                     ComObject.Release(document);
                 }
 
-                CloseIfStillOpen(documents, path);
+                if (!wasOpen)
+                {
+                    CloseIfStillOpen(documents, path);
+                }
                 synchronized.Add(path);
             }
 
@@ -264,6 +272,34 @@ internal static class ExternalChangeSynchronizer
                 ComObject.Release(document);
             }
         }
+    }
+
+    private static bool IsOpen(
+        Documents documents,
+        string path)
+    {
+        int count = documents.Count;
+        for (int index = 1; index <= count; index++)
+        {
+            Document? document = null;
+            try
+            {
+                document = documents.Item(index);
+                if (string.Equals(
+                    NormalizeOptionalPath(document.FullName),
+                    path,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            finally
+            {
+                ComObject.Release(document);
+            }
+        }
+
+        return false;
     }
 
     private static string? NormalizeOptionalPath(string? path)

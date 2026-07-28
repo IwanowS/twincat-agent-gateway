@@ -142,7 +142,8 @@ public sealed class TwinCatTools
         OpenWorld = false)]
     [Description(
         "Build, rebuild, or clean the configured solution and "
-        + "wait for completion. Synchronizes changedPaths first. "
+        + "wait for completion. Scans and policy-checks the selected "
+        + "TwinCAT project graph; changedPaths is only a hint. "
         + "Never activates TwinCAT.")]
     public async Task<string> BuildAsync(
         [Description(
@@ -161,6 +162,10 @@ public sealed class TwinCatTools
             "Externally edited project paths to synchronize "
             + "before the operation.")]
         string[]? changedPaths = null,
+        [Description(
+            "Discard unsaved XAE buffers only when the profile "
+            + "explicitly permits it.")]
+        bool discardDirtyDocuments = false,
         [Description(
             "compact or detailed result.")]
         string detail = "compact",
@@ -186,6 +191,8 @@ public sealed class TwinCatTools
                 changedPaths is null
                     ? new()
                     : new(changedPaths),
+            DiscardDirtyDocuments =
+                discardDirtyDocuments,
             Detail = McpGatewayJson.ParseEnum<DetailLevel>(
                 detail,
                 nameof(detail)),
@@ -209,6 +216,69 @@ public sealed class TwinCatTools
 
         GatewayResponse<OperationDetails<BuildResult>> completed =
             await session.Poller.WaitAsync<BuildResult>(
+                    accepted.Result.OperationId,
+                    GetClientWaitTimeout(timeoutSeconds),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        return McpGatewayJson.Serialize(completed);
+    }
+
+    [McpServerTool(
+        Name = "twincat_sync",
+        ReadOnly = false,
+        Destructive = true,
+        Idempotent = false,
+        OpenWorld = false)]
+    [Description(
+        "Force XAE to synchronize the selected TwinCAT project graph "
+        + "with disk. Requires profile permission for agent use.")]
+    public async Task<string> SynchronizeAsync(
+        [Description("Operator-controlled gateway profile name.")]
+        string profile,
+        [Description(
+            "Optional changed-path hints; the gateway always scans "
+            + "the authoritative project graph.")]
+        string[]? changedPaths = null,
+        [Description(
+            "Discard unsaved XAE buffers only when the profile "
+            + "explicitly permits it.")]
+        bool discardDirtyDocuments = false,
+        [Description("Gateway operation timeout in seconds.")]
+        int timeoutSeconds =
+            DefaultOperationTimeoutSeconds,
+        McpServer? server = null,
+        CancellationToken cancellationToken = default)
+    {
+        McpGatewayJson.RequirePositive(
+            timeoutSeconds,
+            nameof(timeoutSeconds));
+        SynchronizeParameters parameters = new()
+        {
+            Profile = RequireText(profile, nameof(profile)),
+            ChangedPaths = changedPaths is null
+                ? new()
+                : new(changedPaths),
+            DiscardDirtyDocuments =
+                discardDirtyDocuments,
+            TimeoutSeconds = timeoutSeconds,
+        };
+        GatewayToolSession session =
+            await ResolveSessionAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        GatewayResponse<OperationAccepted> accepted =
+            await session.Client.StartSynchronizationAsync(
+                    parameters,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (!accepted.Ok || accepted.Result is null)
+        {
+            return McpGatewayJson.Serialize(accepted);
+        }
+
+        GatewayResponse<OperationDetails<SynchronizeResult>> completed =
+            await session.Poller.WaitAsync<SynchronizeResult>(
                     accepted.Result.OperationId,
                     GetClientWaitTimeout(timeoutSeconds),
                     cancellationToken)

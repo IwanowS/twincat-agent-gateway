@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Collections.Generic;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using TwinCatGateway.Xae;
@@ -20,13 +21,12 @@ public sealed class XaeChangedPathTests
             twinCatProject,
             XaeSession.NormalizeChangedPath(
                 workspace.SolutionPath,
-                workspace.Roots,
-                twinCatProject,
+                new[] { twinCatProject },
                 twinCatProject));
     }
 
     [Fact]
-    public void PlcProjectMetadataRemainsUnsupported()
+    public void PlcProjectMetadataInsideGraphIsAccepted()
     {
         using TemporaryWorkspace workspace = new();
         string twinCatProject = workspace.WriteProject(
@@ -34,17 +34,12 @@ public sealed class XaeChangedPathTests
         string plcProject = workspace.WriteProject(
             "Plc\\Machine.plcproj");
 
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => XaeSession.NormalizeChangedPath(
-                    workspace.SolutionPath,
-                    workspace.Roots,
-                    twinCatProject,
-                    plcProject));
-
         Assert.Equal(
-            ErrorCodes.ExternalEditUnsupported,
-            exception.Code);
+            plcProject,
+            XaeSession.NormalizeChangedPath(
+                workspace.SolutionPath,
+                new[] { twinCatProject, plcProject },
+                plcProject));
     }
 
     [Fact]
@@ -60,13 +55,113 @@ public sealed class XaeChangedPathTests
             Assert.Throws<GatewayOperationException>(
                 () => XaeSession.NormalizeChangedPath(
                     workspace.SolutionPath,
-                    workspace.Roots,
-                    Path.Combine(
-                        workspace.ProjectRoot,
-                        "Machine.tsproj"),
+                    new[]
+                    {
+                        Path.Combine(
+                            workspace.ProjectRoot,
+                            "Machine.tsproj"),
+                    },
                     unrelated));
 
         Assert.Equal(ErrorCodes.RequestInvalid, exception.Code);
+    }
+
+    public static IEnumerable<object[]> PolicyCases()
+    {
+        yield return new object[]
+        {
+            ExternalChangePolicy.ReloadModified,
+            ProjectGraphFileRole.PlcSource,
+            ProjectFileChangeKind.Modified,
+            SynchronizationScope.ModifiedSources,
+        };
+        yield return new object[]
+        {
+            ExternalChangePolicy.ReloadAll,
+            ProjectGraphFileRole.PlcProject,
+            ProjectFileChangeKind.Modified,
+            SynchronizationScope.PlcProject,
+        };
+        yield return new object[]
+        {
+            ExternalChangePolicy.ReloadAll,
+            ProjectGraphFileRole.TwinCatProject,
+            ProjectFileChangeKind.Modified,
+            SynchronizationScope.TwinCatProject,
+        };
+    }
+
+    [Theory]
+    [MemberData(nameof(PolicyCases))]
+    public void PolicySelectsExpectedSmartReloadScope(
+        ExternalChangePolicy policy,
+        ProjectGraphFileRole role,
+        ProjectFileChangeKind kind,
+        SynchronizationScope expected)
+    {
+        SynchronizationScope actual =
+            XaeSession.SelectSynchronizationScope(
+                new[]
+                {
+                    new ProjectFileChange(
+                        @"C:\fixture\changed.xml",
+                        kind,
+                        role),
+                },
+                policy,
+                force: false,
+                baselineMissing: false);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Theory]
+    [InlineData(ExternalChangePolicy.Error)]
+    [InlineData(ExternalChangePolicy.ReloadModified)]
+    public void RestrictivePoliciesRejectMetadataChanges(
+        ExternalChangePolicy policy)
+    {
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => XaeSession.SelectSynchronizationScope(
+                    new[]
+                    {
+                        new ProjectFileChange(
+                            @"C:\fixture\Machine.plcproj",
+                            ProjectFileChangeKind.Modified,
+                            ProjectGraphFileRole.PlcProject),
+                    },
+                    policy,
+                    force: false,
+                    baselineMissing: false));
+
+        Assert.Equal(
+            ErrorCodes.ExternalChangeDetected,
+            exception.Code);
+    }
+
+    [Fact]
+    public void ForceWithoutBaselineRequiresFullTwinCatReload()
+    {
+        Assert.Equal(
+            SynchronizationScope.TwinCatProject,
+            XaeSession.SelectSynchronizationScope(
+                Array.Empty<ProjectFileChange>(),
+                ExternalChangePolicy.Error,
+                force: true,
+                baselineMissing: true));
+    }
+
+    [Fact]
+    public void ForceWithMatchingFingerprintStillReloadsTwinCatProject()
+    {
+        Assert.Equal(
+            SynchronizationScope.TwinCatProject,
+            XaeSession.SelectSynchronizationScope(
+                Array.Empty<ProjectFileChange>(),
+                ExternalChangePolicy.ReloadModified,
+                force: true,
+                baselineMissing: false));
     }
 
     private sealed class TemporaryWorkspace : IDisposable

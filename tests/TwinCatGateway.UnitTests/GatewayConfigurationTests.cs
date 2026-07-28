@@ -111,6 +111,9 @@ public sealed class GatewayConfigurationTests
                       "allowXaeLaunch": true,
                       "xaeProgId": "VisualStudio.DTE.16.0",
                       "allowActivation": true,
+                      "externalChangePolicy": "reloadAll",
+                      "allowAgentForceSynchronization": true,
+                      "allowDirtyDocumentDiscard": true,
                       "expectedTarget": {
                         "name": "WIN-T077ADA",
                         "amsNetId": "192.168.3.31.1.1"
@@ -132,6 +135,12 @@ public sealed class GatewayConfigurationTests
             Assert.True(profile.AllowXaeLaunch);
             Assert.Equal("VisualStudio.DTE.16.0", profile.XaeProgId);
             Assert.True(profile.AllowActivation);
+            Assert.Equal(
+                ExternalChangePolicy.ReloadAll,
+                profile.ExternalChangePolicy);
+            Assert.True(
+                profile.AllowAgentForceSynchronization);
+            Assert.True(profile.AllowDirtyDocumentDiscard);
             Assert.Equal("192.168.3.31.1.1", profile.ExpectedTarget?.AmsNetId);
             Assert.Equal(ZeroTestsPolicy.Warn, profile.TcUnit?.ZeroTests);
         }

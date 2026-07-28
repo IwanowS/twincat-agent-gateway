@@ -19,6 +19,11 @@ public sealed class XaeSessionSnapshot
 
     public int DiscardedDocumentCount { get; set; }
 
+    public SynchronizationState SynchronizationState { get; set; } =
+        SynchronizationState.Uninitialized;
+
+    public int DirtyDocumentCount { get; set; }
+
     public string? ActiveConfiguration { get; set; }
 
     public string? ActivePlatform { get; set; }

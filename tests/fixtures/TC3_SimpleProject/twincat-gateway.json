@@ -15,6 +15,9 @@
       "name": "fixture",
       "solution": "TC3_SimpleProject.sln",
       "allowXaeLaunch": true,
+      "externalChangePolicy": "reloadModified",
+      "allowAgentForceSynchronization": false,
+      "allowDirtyDocumentDiscard": false,
       "allowActivation": false,
       "requireRecentSuccessfulBuild": true,
       "recentBuildMaxAgeSeconds": 600

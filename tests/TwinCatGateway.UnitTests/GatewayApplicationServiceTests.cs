@@ -349,6 +349,75 @@ public sealed class GatewayApplicationServiceTests
     }
 
     [Fact]
+    public void AgentSynchronizationRequiresProfilePermission()
+    {
+        using ServiceFixture fixture = new(
+            activeProfile: new ProjectProfile
+            {
+                Name = "fixture",
+                AllowAgentForceSynchronization = false,
+            },
+            synchronizeExecutor: (
+                operationId,
+                parameters,
+                cancellationToken) =>
+                Task.FromResult(new SynchronizeResult
+                {
+                    Ok = true,
+                }));
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.StartSynchronization(
+                    new SynchronizeParameters
+                    {
+                        Profile = "fixture",
+                    },
+                    agentRequest: true));
+
+        Assert.Equal(
+            ErrorCodes.ForceSynchronizationNotAllowed,
+            exception.Code);
+    }
+
+    [Fact]
+    public async Task UiSynchronizationCanConfirmBaseline()
+    {
+        using ServiceFixture fixture = new(
+            activeProfile: new ProjectProfile
+            {
+                Name = "fixture",
+            },
+            synchronizeExecutor: (
+                operationId,
+                parameters,
+                cancellationToken) =>
+                Task.FromResult(new SynchronizeResult
+                {
+                    Ok = true,
+                    Scope = SynchronizationScope.TwinCatProject,
+                }));
+
+        OperationAccepted accepted =
+            fixture.Service.StartSynchronization(
+                new SynchronizeParameters
+                {
+                    Profile = "fixture",
+                },
+                agentRequest: false);
+        StoredOperation completed = await WaitForStateAsync(
+            fixture.Operations,
+            accepted.OperationId,
+            OperationState.Succeeded);
+
+        Assert.IsType<SynchronizeResult>(completed.Result);
+        Assert.Equal(
+            SynchronizationState.Confirmed,
+            fixture.Service.GetStatus()
+                .Xae.SynchronizationState);
+    }
+
+    [Fact]
     public void ActivationFailsClosedWhenProfileDisablesIt()
     {
         ProjectProfile profile = CreateActivationProfile();
@@ -756,7 +825,8 @@ public sealed class GatewayApplicationServiceTests
             IClock? clock = null,
             TcUnitPreparationExecutor?
                 tcUnitPreparationExecutor = null,
-            TcUnitOperationExecutor? tcUnitExecutor = null)
+            TcUnitOperationExecutor? tcUnitExecutor = null,
+            SynchronizeOperationExecutor? synchronizeExecutor = null)
         {
             _temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -785,7 +855,8 @@ public sealed class GatewayApplicationServiceTests
                 activeProfile,
                 clock,
                 tcUnitPreparationExecutor,
-                tcUnitExecutor);
+                tcUnitExecutor,
+                synchronizeExecutor);
         }
 
         public GatewayStatusSnapshotStore Status { get; }

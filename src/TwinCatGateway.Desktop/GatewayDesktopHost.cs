@@ -82,6 +82,10 @@ public sealed class GatewayDesktopHost : IDisposable
             _xaeCoordinator is null
                 ? null
                 : _xaeCoordinator.ExecuteActivationAsync;
+        SynchronizeOperationExecutor? synchronizeExecutor =
+            _xaeCoordinator is null
+                ? null
+                : _xaeCoordinator.ExecuteSynchronizationAsync;
         TcUnitPreparationExecutor?
             tcUnitPreparationExecutor =
                 _xaeCoordinator is null
@@ -105,7 +109,8 @@ public sealed class GatewayDesktopHost : IDisposable
             clock: null,
             tcUnitPreparationExecutor:
                 tcUnitPreparationExecutor,
-            tcUnitExecutor: tcUnitExecutor);
+            tcUnitExecutor: tcUnitExecutor,
+            synchronizeExecutor: synchronizeExecutor);
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
             Configuration.AgentProcessControl.AllowShutdown,

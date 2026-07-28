@@ -134,6 +134,107 @@ public sealed class ProjectFileFingerprintScannerTests
                 cancellation.Token));
     }
 
+    [Fact]
+    public void CaptureProjectGraphFollowsOnlyReferencedFiles()
+    {
+        using TemporaryProject solution = new();
+        using TemporaryProject external = new();
+        string source = external.Write(
+            "PLC\\POUs\\MAIN.TcPOU",
+            "pou");
+        string unrelated = external.Write(
+            "PLC\\POUs\\Unused.TcPOU",
+            "unused");
+        string plcProject = external.Write(
+            "PLC\\Machine.plcproj",
+            "<Project><ItemGroup>"
+            + "<Compile Include=\"POUs\\MAIN.TcPOU\" />"
+            + "</ItemGroup></Project>");
+        string relativePlc = Path.GetRelativePath(
+            external.Root,
+            plcProject);
+        string twinCatProject = external.Write(
+            "Machine.tsproj",
+            "<TcSmProject><Project "
+            + $"PrjFilePath=\"{relativePlc}\" />"
+            + "</TcSmProject>");
+
+        ProjectFileFingerprintSnapshot snapshot =
+            ProjectFileFingerprintScanner.CaptureProjectGraph(
+                solution.SolutionPath,
+                twinCatProject,
+                CancellationToken.None);
+
+        Assert.Equal(3, snapshot.Files.Count);
+        Assert.Contains(
+            snapshot.Files,
+            file => file.Path == Path.GetFullPath(twinCatProject)
+                && file.Role
+                    == ProjectGraphFileRole.TwinCatProject);
+        Assert.Contains(
+            snapshot.Files,
+            file => file.Path == Path.GetFullPath(plcProject)
+                && file.Role
+                    == ProjectGraphFileRole.PlcProject);
+        Assert.Contains(
+            snapshot.Files,
+            file => file.Path == Path.GetFullPath(source)
+                && file.Role
+                    == ProjectGraphFileRole.PlcSource);
+        Assert.DoesNotContain(
+            snapshot.Files,
+            file => file.Path == Path.GetFullPath(unrelated));
+    }
+
+    [Fact]
+    public void CaptureProjectGraphDetectsSourceGraphRemoval()
+    {
+        using TemporaryProject project = new();
+        project.Write("POUs\\MAIN.TcPOU", "pou");
+        string plcProject = project.Write(
+            "Machine.plcproj",
+            "<Project><ItemGroup>"
+            + "<Compile Include=\"POUs\\MAIN.TcPOU\" />"
+            + "</ItemGroup></Project>");
+        string twinCatProject = project.Write(
+            "Machine.tsproj",
+            "<TcSmProject><Project "
+            + "PrjFilePath=\"Machine.plcproj\" />"
+            + "</TcSmProject>");
+        ProjectFileFingerprintSnapshot baseline =
+            ProjectFileFingerprintScanner.CaptureProjectGraph(
+                project.SolutionPath,
+                twinCatProject,
+                CancellationToken.None);
+        File.WriteAllText(
+            plcProject,
+            "<Project><ItemGroup /></Project>");
+
+        ProjectFileFingerprintSnapshot current =
+            ProjectFileFingerprintScanner.CaptureProjectGraph(
+                project.SolutionPath,
+                twinCatProject,
+                CancellationToken.None);
+        ProjectFileChange[] changes =
+            ProjectFileFingerprintScanner.Compare(
+                baseline,
+                current)
+            .ToArray();
+
+        Assert.Contains(
+            changes,
+            change => change.Role
+                    == ProjectGraphFileRole.PlcProject
+                && change.Kind
+                    == ProjectFileChangeKind.Modified);
+        Assert.Contains(
+            changes,
+            change => change.Role
+                    == ProjectGraphFileRole.PlcSource
+                && change.Kind
+                    == ProjectFileChangeKind.Deleted);
+    }
+
     private sealed class TemporaryProject : IDisposable
     {
         public TemporaryProject()

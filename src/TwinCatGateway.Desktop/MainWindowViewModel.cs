@@ -39,6 +39,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         BuildAction.Rebuild;
     private bool _canStartOperation;
     private bool _canActivate;
+    private bool _canSynchronize;
     private bool _canReconnect;
 
     public MainWindowViewModel(GatewayDesktopHost host)
@@ -160,6 +161,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetField(ref _canActivate, value);
     }
 
+    public bool CanSynchronize
+    {
+        get => _canSynchronize;
+        private set => SetField(ref _canSynchronize, value);
+    }
+
     public bool CanReconnect
     {
         get => _canReconnect;
@@ -181,6 +188,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public static string SynchronizationConfirmation =>
+        "Reload the selected TwinCAT project from disk?\n\n"
+        + "The current disk state will become the confirmed XAE "
+        + "baseline. Unsaved XAE documents are not discarded by "
+        + "this UI action.";
+
     public void Refresh()
     {
         try
@@ -199,6 +212,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 "UI_STATUS_REFRESH_FAILED: "
                 + exception.Message;
             CanStartOperation = false;
+            CanSynchronize = false;
             CanActivate = false;
             CanReconnect = _host.CanReconnectXae;
         }
@@ -245,6 +259,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return accepted;
     }
 
+    public OperationAccepted StartSynchronization()
+    {
+        ProjectProfile profile = RequireActiveProfile();
+        EnsureNoActiveOperation();
+        OperationAccepted accepted =
+            _host.ApplicationService.StartSynchronization(
+                new SynchronizeParameters
+                {
+                    Profile = profile.Name,
+                    DiscardDirtyDocuments = false,
+                    TimeoutSeconds = 120,
+                },
+                agentRequest: false);
+        Refresh();
+        return accepted;
+    }
+
     public void RequestReconnect()
     {
         EnsureNoActiveOperation();
@@ -270,14 +301,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ? $"Connected · {status.Xae.Version ?? "unknown version"}"
             : "Disconnected";
         Solution = status.Xae.Solution ?? "No XAE solution attached";
-        WorkspaceOwnership = status.Xae.AgentWorkspaceOwned
-            ? "Agent owns project files. "
-                + "Unsaved XAE editor changes are discarded. "
-                + $"Discarded documents: "
-                + status.Xae.DiscardedDocumentCount
-                    .ToString(CultureInfo.CurrentCulture)
-                + "."
-            : "Inactive until XAE ownership is acquired.";
+        WorkspaceOwnership =
+            $"Disk synchronization: "
+            + status.Xae.SynchronizationState
+            + ". Unsaved XAE documents: "
+            + status.Xae.DirtyDocumentCount
+                .ToString(CultureInfo.CurrentCulture)
+            + ". Automatic saving is disabled.";
         ProjectProfile? profile = _host.ActiveProfile;
         Profile = profile?.Name ?? "No valid profile";
         Target = FormatTarget(profile?.ExpectedTarget);
@@ -304,7 +334,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         CanStartOperation =
             !operationActive
             && status.Xae.Connected
-            && status.Xae.AgentWorkspaceOwned
+            && status.Xae.SynchronizationState
+                == SynchronizationState.Confirmed
+            && profile is not null;
+        CanSynchronize =
+            !operationActive
+            && status.Xae.Connected
             && profile is not null;
         CanActivate =
             CanStartOperation

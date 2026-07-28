@@ -193,6 +193,15 @@ public static class GatewayConfigurationValidator
             profile.XaeProgId,
             $"{path}.xaeProgId",
             issues);
+        if (!Enum.IsDefined(
+            typeof(ExternalChangePolicy),
+            profile.ExternalChangePolicy))
+        {
+            Add(
+                issues,
+                $"{path}.externalChangePolicy",
+                "External change policy is invalid.");
+        }
 
         if (profile.RequireRecentSuccessfulBuild
             && profile.RecentBuildMaxAgeSeconds <= 0)

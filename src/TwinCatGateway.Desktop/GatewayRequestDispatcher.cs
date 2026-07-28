@@ -111,6 +111,17 @@ public sealed class GatewayRequestDispatcher
                     return _service.StartBuild(parameters);
                 }
 
+            case GatewayMethods.Synchronize:
+                {
+                    SynchronizeParameters parameters =
+                        request.DeserializeParameters<
+                            SynchronizeParameters>(
+                            _serializerOptions);
+                    return _service.StartSynchronization(
+                        parameters,
+                        agentRequest: true);
+                }
+
             case GatewayMethods.Activate:
                 {
                     ActivateParameters parameters =

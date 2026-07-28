@@ -55,6 +55,16 @@ public static class ErrorCodes
         "EXTERNAL_EDIT_UNSUPPORTED";
     public const string ExternalEditSyncFailed =
         "EXTERNAL_EDIT_SYNC_FAILED";
+    public const string ExternalChangeDetected =
+        "EXTERNAL_CHANGE_DETECTED";
+    public const string XaeSyncRequired =
+        "XAE_SYNC_REQUIRED";
+    public const string DirtyXaeDocument =
+        "DIRTY_XAE_DOCUMENT";
+    public const string ForceSynchronizationNotAllowed =
+        "FORCE_SYNCHRONIZATION_NOT_ALLOWED";
+    public const string ProjectGraphInvalid =
+        "PROJECT_GRAPH_INVALID";
     public const string PlcObjectInvalid =
         "PLC_OBJECT_INVALID";
     public const string ActivationNotAllowed = "ACTIVATION_NOT_ALLOWED";

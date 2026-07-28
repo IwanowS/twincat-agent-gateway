@@ -28,6 +28,7 @@ public sealed class McpAdapterTests
         "twincat_get_diagnostics",
         "twincat_get_test_results",
         "twincat_status",
+        "twincat_sync",
     };
 
     private static readonly string[] ExpectedResourceTemplates =
@@ -133,6 +134,13 @@ public sealed class McpAdapterTests
                     == "gateway_shutdown");
         Assert.True(shutdown.Destructive);
         Assert.False(shutdown.ReadOnly);
+        McpServerToolAttribute synchronization =
+            Assert.Single(
+                attributes,
+                attribute =>
+                    attribute.Name == "twincat_sync");
+        Assert.True(synchronization.Destructive);
+        Assert.False(synchronization.ReadOnly);
         Assert.All(
             attributes,
             attribute => Assert.False(attribute.OpenWorld));
@@ -156,9 +164,13 @@ public sealed class McpAdapterTests
             tool.ProtocolTool.InputSchema.GetProperty(
                 "properties");
 
-        Assert.Equal(7, properties.EnumerateObject().Count());
+        Assert.Equal(8, properties.EnumerateObject().Count());
         Assert.True(properties.TryGetProperty("profile", out _));
         Assert.True(properties.TryGetProperty("changedPaths", out _));
+        Assert.True(
+            properties.TryGetProperty(
+                "discardDirtyDocuments",
+                out _));
         Assert.False(
             properties.TryGetProperty(
                 "cancellationToken",
@@ -345,6 +357,40 @@ public sealed class McpAdapterTests
     }
 
     [Fact]
+    public async Task SynchronizeMapsForceSyncArguments()
+    {
+        FakeGatewayClient client = new()
+        {
+            SynchronizeAccepted = Accepted("sync-1"),
+        };
+        client.SynchronizeOperations.Enqueue(
+            Operation(
+                "sync-1",
+                OperationState.Succeeded,
+                new SynchronizeResult
+                {
+                    Ok = true,
+                    Scope = SynchronizationScope.TwinCatProject,
+                }));
+        TwinCatTools tools = new(
+            client,
+            new GatewayOperationPoller(client));
+
+        await tools.SynchronizeAsync(
+            "fixture",
+            changedPaths: ExpectedChangedPaths,
+            discardDirtyDocuments: true,
+            timeoutSeconds: 5);
+
+        Assert.Equal("fixture", client.Synchronize?.Profile);
+        Assert.True(
+            client.Synchronize?.DiscardDirtyDocuments);
+        Assert.Equal(
+            ExpectedChangedPaths,
+            client.Synchronize?.ChangedPaths);
+    }
+
+    [Fact]
     public async Task ResourcePreservesContentAndPagingMetadata()
     {
         const string operationId =
@@ -431,16 +477,16 @@ public sealed class McpAdapterTests
     }
 
     private static GatewayResponse<
-        OperationDetails<BuildResult>> Operation(
+        OperationDetails<TResult>> Operation<TResult>(
             string operationId,
             OperationState state,
-            BuildResult? result = null)
+            TResult? result = default)
     {
         return new GatewayResponse<
-            OperationDetails<BuildResult>>
+            OperationDetails<TResult>>
         {
             Ok = true,
-            Result = new OperationDetails<BuildResult>
+            Result = new OperationDetails<TResult>
             {
                 Operation = new OperationSummary
                 {
@@ -463,6 +509,14 @@ public sealed class McpAdapterTests
             OperationDetails<BuildResult>>>
             BuildOperations { get; } = new();
 
+        public GatewayResponse<OperationAccepted>
+            SynchronizeAccepted { get; set; } =
+                Accepted("sync-1");
+
+        public Queue<GatewayResponse<
+            OperationDetails<SynchronizeResult>>>
+            SynchronizeOperations { get; } = new();
+
         public GatewayResponse<GatewayDiagnosticsResult>
             DiagnosticsResponse { get; set; } =
                 new()
@@ -481,6 +535,8 @@ public sealed class McpAdapterTests
                 };
 
         public BuildParameters? Build { get; private set; }
+
+        public SynchronizeParameters? Synchronize { get; private set; }
 
         public GetDiagnosticsParameters? Diagnostics
         {
@@ -567,6 +623,16 @@ public sealed class McpAdapterTests
             throw new NotSupportedException();
         }
 
+        public Task<GatewayResponse<OperationAccepted>>
+            StartSynchronizationAsync(
+                SynchronizeParameters parameters,
+                CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Synchronize = parameters;
+            return Task.FromResult(SynchronizeAccepted);
+        }
+
         public Task<GatewayResponse<
             OperationDetails<TResult>>>
             GetOperationAsync<TResult>(
@@ -574,7 +640,10 @@ public sealed class McpAdapterTests
                 CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            object response = BuildOperations.Dequeue();
+            object response =
+                typeof(TResult) == typeof(SynchronizeResult)
+                    ? SynchronizeOperations.Dequeue()
+                    : BuildOperations.Dequeue();
             return Task.FromResult(
                 (GatewayResponse<
                     OperationDetails<TResult>>)response);

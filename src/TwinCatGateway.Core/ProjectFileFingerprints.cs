@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Threading;
+using System.Xml.Linq;
 
 namespace TwinCatGateway.Core;
 
@@ -15,21 +16,32 @@ public enum ProjectFileChangeKind
     Deleted,
 }
 
+public enum ProjectGraphFileRole
+{
+    TwinCatProject,
+    PlcProject,
+    PlcSource,
+}
+
 public sealed class ProjectFileFingerprint
 {
     internal ProjectFileFingerprint(
         string path,
+        ProjectGraphFileRole role,
         long length,
         DateTime lastWriteTimeUtc,
         string sha256)
     {
         Path = path;
+        Role = role;
         Length = length;
         LastWriteTimeUtc = lastWriteTimeUtc;
         Sha256 = sha256;
     }
 
     public string Path { get; }
+
+    public ProjectGraphFileRole Role { get; }
 
     public long Length { get; }
 
@@ -64,17 +76,21 @@ public sealed class ProjectFileFingerprintSnapshot
 
 public sealed class ProjectFileChange
 {
-    internal ProjectFileChange(
+    public ProjectFileChange(
         string path,
-        ProjectFileChangeKind kind)
+        ProjectFileChangeKind kind,
+        ProjectGraphFileRole role)
     {
         Path = path;
         Kind = kind;
+        Role = role;
     }
 
     public string Path { get; }
 
     public ProjectFileChangeKind Kind { get; }
+
+    public ProjectGraphFileRole Role { get; }
 }
 
 public static class ProjectFileFingerprintScanner
@@ -133,9 +149,107 @@ public static class ProjectFileFingerprintScanner
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 ProjectFileFingerprint fingerprint =
-                    CaptureFile(path, cancellationToken);
+                    CaptureFile(
+                        path,
+                        ProjectGraphFileRole.PlcSource,
+                        cancellationToken);
                 files.Add(fingerprint.Path, fingerprint);
             }
+        }
+
+        return new ProjectFileFingerprintSnapshot(files);
+    }
+
+    public static ProjectFileFingerprintSnapshot CaptureProjectGraph(
+        string solutionPath,
+        string twinCatProjectPath,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(solutionPath))
+        {
+            throw new ArgumentException(
+                "Solution path is required.",
+                nameof(solutionPath));
+        }
+
+        string fullSolutionPath = Path.GetFullPath(solutionPath);
+        if (!File.Exists(fullSolutionPath))
+        {
+            throw new FileNotFoundException(
+                "Solution file was not found.",
+                fullSolutionPath);
+        }
+
+        string fullTwinCatProjectPath =
+            Path.GetFullPath(twinCatProjectPath);
+        Dictionary<string, ProjectGraphFileRole> graph =
+            new(StringComparer.OrdinalIgnoreCase)
+            {
+                [fullTwinCatProjectPath] =
+                    ProjectGraphFileRole.TwinCatProject,
+            };
+        XDocument twinCatProject = LoadXml(
+            fullTwinCatProjectPath,
+            cancellationToken);
+        foreach (XElement project in twinCatProject
+            .Descendants()
+            .Where(element =>
+                string.Equals(
+                    element.Name.LocalName,
+                    "Project",
+                    StringComparison.Ordinal)))
+        {
+            string? reference =
+                (string?)project.Attribute("PrjFilePath");
+            if (string.IsNullOrWhiteSpace(reference))
+            {
+                continue;
+            }
+
+            string plcProjectPath = ResolveReference(
+                fullTwinCatProjectPath,
+                reference!);
+            graph[plcProjectPath] =
+                ProjectGraphFileRole.PlcProject;
+            XDocument plcProject = LoadXml(
+                plcProjectPath,
+                cancellationToken);
+            foreach (XElement compile in plcProject
+                .Descendants()
+                .Where(element =>
+                    string.Equals(
+                        element.Name.LocalName,
+                        "Compile",
+                        StringComparison.Ordinal)))
+            {
+                string? include =
+                    (string?)compile.Attribute("Include");
+                if (string.IsNullOrWhiteSpace(include))
+                {
+                    continue;
+                }
+
+                string sourcePath = ResolveReference(
+                    plcProjectPath,
+                    include!);
+                if (IsSupportedPath(sourcePath))
+                {
+                    graph[sourcePath] =
+                        ProjectGraphFileRole.PlcSource;
+                }
+            }
+        }
+
+        Dictionary<string, ProjectFileFingerprint> files =
+            new(StringComparer.OrdinalIgnoreCase);
+        foreach (KeyValuePair<string, ProjectGraphFileRole> entry in graph)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            ProjectFileFingerprint fingerprint = CaptureFile(
+                entry.Key,
+                entry.Value,
+                cancellationToken);
+            files.Add(fingerprint.Path, fingerprint);
         }
 
         return new ProjectFileFingerprintSnapshot(files);
@@ -165,7 +279,8 @@ public static class ProjectFileFingerprintScanner
                 changes.Add(
                     new ProjectFileChange(
                         file.Path,
-                        ProjectFileChangeKind.Added));
+                        ProjectFileChangeKind.Added,
+                        file.Role));
             }
             else if (!string.Equals(
                 previous.Sha256,
@@ -175,7 +290,8 @@ public static class ProjectFileFingerprintScanner
                 changes.Add(
                     new ProjectFileChange(
                         file.Path,
-                        ProjectFileChangeKind.Modified));
+                        ProjectFileChangeKind.Modified,
+                        file.Role));
             }
         }
 
@@ -186,7 +302,8 @@ public static class ProjectFileFingerprintScanner
                 changes.Add(
                     new ProjectFileChange(
                         file.Path,
-                        ProjectFileChangeKind.Deleted));
+                        ProjectFileChangeKind.Deleted,
+                        file.Role));
             }
         }
 
@@ -288,6 +405,7 @@ public static class ProjectFileFingerprintScanner
 
     private static ProjectFileFingerprint CaptureFile(
         string path,
+        ProjectGraphFileRole role,
         CancellationToken cancellationToken)
     {
         FileInfo info = new(path);
@@ -339,9 +457,53 @@ public static class ProjectFileFingerprintScanner
 
         return new ProjectFileFingerprint(
             Path.GetFullPath(path),
+            role,
             length,
             lastWriteTimeUtc,
             sha256);
+    }
+
+    private static XDocument LoadXml(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!File.Exists(path))
+        {
+            throw new FileNotFoundException(
+                "A file referenced by the selected TwinCAT project graph "
+                + "was not found.",
+                path);
+        }
+
+        using (FileStream stream = new(
+            path,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.Read | FileShare.Delete))
+        {
+            return XDocument.Load(
+                stream,
+                LoadOptions.PreserveWhitespace
+                    | LoadOptions.SetLineInfo);
+        }
+    }
+
+    private static string ResolveReference(
+        string ownerPath,
+        string reference)
+    {
+        string normalized = reference.Replace(
+            Path.AltDirectorySeparatorChar,
+            Path.DirectorySeparatorChar);
+        return Path.GetFullPath(
+            Path.IsPathRooted(normalized)
+                ? normalized
+                : Path.Combine(
+                    Path.GetDirectoryName(ownerPath)
+                        ?? throw new InvalidOperationException(
+                            "Project file has no parent directory."),
+                    normalized));
     }
 
     private static string ToHex(byte[] value)

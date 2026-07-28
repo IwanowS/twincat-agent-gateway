@@ -88,6 +88,21 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
     }
 
     public Task<GatewayResponse<OperationAccepted>>
+        StartSynchronizationAsync(
+            SynchronizeParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+        return _client.SendAsync<
+            SynchronizeParameters,
+            OperationAccepted>(
+            GatewayMethods.Synchronize,
+            parameters,
+            wait: false,
+            cancellationToken);
+    }
+
+    public Task<GatewayResponse<OperationAccepted>>
         StartActivationAsync(
             ActivateParameters parameters,
             CancellationToken cancellationToken = default)

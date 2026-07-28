@@ -188,14 +188,27 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
         TimeSpan timeout = TimeSpan.FromSeconds(
             parameters.TimeoutSeconds ?? 120);
-        XaeBuildExecutionResult execution =
-            await _session.ExecuteBuildAsync(
-                parameters.Action,
-                parameters.ChangedPaths,
-                configuration,
-                platform,
-                timeout,
-                cancellationToken).ConfigureAwait(false);
+        XaeBuildExecutionResult execution;
+        try
+        {
+            execution = await _session.ExecuteBuildAsync(
+                    parameters.Action,
+                    parameters.ChangedPaths,
+                    configuration,
+                    platform,
+                    _profile.ExternalChangePolicy,
+                    parameters.DiscardDirtyDocuments,
+                    _profile.AllowDirtyDocumentDiscard,
+                    timeout,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (GatewayOperationException exception) when (
+            RequiresSynchronization(exception.Code))
+        {
+            PublishSynchronizationRequired();
+            throw;
+        }
         List<BuildDiagnostic> diagnostics =
             execution.Diagnostics.ToList();
         int errors = diagnostics.Count(diagnostic =>
@@ -288,6 +301,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 0,
                 diagnostics.Count - maximumDiagnostics),
             ExpectedProjectNoise = expectedProjectNoise,
+            DiscardedDocuments =
+                execution.Synchronization
+                    .DiscardedDocuments.ToList(),
             Log = log,
         };
         _logger.Write(
@@ -318,6 +334,60 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         CultureInfo.InvariantCulture),
             });
         return result;
+    }
+
+    public async Task<SynchronizeResult> ExecuteSynchronizationAsync(
+        string operationId,
+        SynchronizeParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(parameters.Profile)
+            && !string.Equals(
+                parameters.Profile,
+                _profile.Name,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileNotFound,
+                $"Project profile '{parameters.Profile}' is not active.",
+                stage: "synchronize.validate");
+        }
+
+        DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
+        ExternalChangeSynchronizationResult execution;
+        try
+        {
+            execution =
+                await _session.SynchronizeExternalChangesAsync(
+                    parameters.ChangedPaths,
+                    _profile.ExternalChangePolicy,
+                    parameters.DiscardDirtyDocuments,
+                    _profile.AllowDirtyDocumentDiscard,
+                    force: true,
+                    TimeSpan.FromSeconds(
+                        parameters.TimeoutSeconds ?? 120),
+                    cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            PublishSynchronizationRequired();
+            throw;
+        }
+        return new SynchronizeResult
+        {
+            Ok = true,
+            OperationId = operationId,
+            Scope = execution.Scope,
+            SynchronizedFileCount =
+                execution.SynchronizedDocuments.Count,
+            DiscardedDocumentCount =
+                execution.DiscardedDocuments.Count,
+            DiscardedDocuments =
+                execution.DiscardedDocuments.ToList(),
+            DurationMs = (long)(
+                DateTimeOffset.UtcNow - startedAtUtc)
+                .TotalMilliseconds,
+        };
     }
 
     public async Task<ActivationResult> ExecuteActivationAsync(
@@ -739,6 +809,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 snapshot.AgentWorkspaceOwned;
             status.Xae.DiscardedDocumentCount =
                 snapshot.DiscardedDocumentCount;
+            status.Xae.SynchronizationState =
+                snapshot.SynchronizationState;
+            status.Xae.DirtyDocumentCount =
+                snapshot.DirtyDocumentCount;
             status.TwinCat.Started =
                 runtime.Status.Started;
             status.TwinCat.Mode =
@@ -859,6 +933,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
             status.Xae.Solution = null;
             status.Xae.AgentWorkspaceOwned = false;
             status.Xae.DiscardedDocumentCount = 0;
+            status.Xae.SynchronizationState =
+                SynchronizationState.Uninitialized;
+            status.Xae.DirtyDocumentCount = 0;
             status.TwinCat.Started = null;
             status.TwinCat.Mode = RuntimeMode.Unknown;
             return status;
@@ -1080,6 +1157,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ClosedDocumentCount = source.ClosedDocumentCount,
             DiscardedDocumentCount =
                 source.DiscardedDocumentCount,
+            SynchronizationState =
+                source.SynchronizationState,
+            DirtyDocumentCount =
+                source.DirtyDocumentCount,
             ActiveConfiguration =
                 source.ActiveConfiguration,
             ActivePlatform = source.ActivePlatform,
@@ -1263,6 +1344,25 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         return remaining;
+    }
+
+    private static bool RequiresSynchronization(string code)
+    {
+        return code == ErrorCodes.XaeSyncRequired
+            || code == ErrorCodes.ExternalChangeDetected
+            || code == ErrorCodes.ExternalEditSyncFailed
+            || code == ErrorCodes.ProjectGraphInvalid;
+    }
+
+    private void PublishSynchronizationRequired()
+    {
+        _session.MarkSynchronizationRequired();
+        _status.Update(status =>
+        {
+            status.Xae.SynchronizationState =
+                SynchronizationState.SyncRequired;
+            return status;
+        });
     }
 
     private string FormatActivationLog(

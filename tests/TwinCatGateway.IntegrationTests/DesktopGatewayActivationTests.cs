@@ -88,6 +88,7 @@ public sealed class DesktopGatewayActivationTests
             GatewayState.Ready,
             TimeSpan.FromSeconds(15));
         NamedPipeGatewayClient client = new(pipeName);
+        await SynchronizeDiskAsync(host, client);
 
         GatewayResponse<OperationAccepted> buildAccepted =
             await client.SendAsync<
@@ -189,6 +190,7 @@ public sealed class DesktopGatewayActivationTests
             GatewayState.Ready,
             TimeSpan.FromSeconds(60));
         NamedPipeGatewayClient client = new(pipeName);
+        await SynchronizeDiskAsync(host, client);
 
         GatewayResponse<OperationAccepted> buildAccepted =
             await client.SendAsync<
@@ -385,6 +387,28 @@ public sealed class DesktopGatewayActivationTests
 
         throw new TimeoutException(
             $"Operation '{operationId}' did not complete.");
+    }
+
+    private static async Task SynchronizeDiskAsync(
+        GatewayDesktopHost host,
+        NamedPipeGatewayClient client)
+    {
+        OperationAccepted accepted =
+            host.ApplicationService.StartSynchronization(
+                new SynchronizeParameters
+                {
+                    Profile = "fixture",
+                    TimeoutSeconds = 60,
+                },
+                agentRequest: false);
+        OperationDetails<SynchronizeResult> completed =
+            await WaitForOperationAsync<SynchronizeResult>(
+                client,
+                accepted.OperationId,
+                TimeSpan.FromSeconds(75));
+        Assert.Equal(
+            OperationState.Succeeded,
+            completed.Operation.State);
     }
 
     private static async Task WaitForStateAsync(

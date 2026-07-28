@@ -8,6 +8,35 @@ namespace TwinCatGateway.ContractTests;
 public sealed class MvpContractSerializationTests
 {
     [Fact]
+    public void SynchronizeContractsRoundTrip()
+    {
+        SynchronizeParameters parameters = new()
+        {
+            Profile = "fixture",
+            ChangedPaths = { @"C:\Project\MAIN.TcPOU" },
+            DiscardDirtyDocuments = true,
+            TimeoutSeconds = 45,
+        };
+        string json = JsonSerializer.Serialize(
+            parameters,
+            ContractJson.SerializerOptions);
+        SynchronizeParameters result =
+            JsonSerializer.Deserialize<SynchronizeParameters>(
+                json,
+                ContractJson.SerializerOptions)
+            ?? throw new InvalidOperationException(
+                "Synchronization parameters did not deserialize.");
+
+        Assert.Equal("fixture", result.Profile);
+        Assert.True(result.DiscardDirtyDocuments);
+        Assert.Equal(45, result.TimeoutSeconds);
+        Assert.Single(result.ChangedPaths);
+        Assert.Contains(
+            "\"discardDirtyDocuments\":true",
+            json);
+    }
+
+    [Fact]
     public void GatewayStartResultRoundTrips()
     {
         GatewayResponse<GatewayStartResult> source = new()

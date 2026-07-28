@@ -22,6 +22,13 @@ public enum GatewayLaunchSource
     Agent,
 }
 
+public enum ExternalChangePolicy
+{
+    ReloadAll,
+    ReloadModified,
+    Error,
+}
+
 public sealed class GatewayUiConfiguration
 {
     public GatewayUiMode Mode { get; set; } = GatewayUiMode.Auto;
@@ -71,6 +78,13 @@ public sealed class ProjectProfile
     public string? Configuration { get; set; }
 
     public string? Platform { get; set; }
+
+    public ExternalChangePolicy ExternalChangePolicy { get; set; } =
+        ExternalChangePolicy.ReloadModified;
+
+    public bool AllowAgentForceSynchronization { get; set; }
+
+    public bool AllowDirtyDocumentDiscard { get; set; }
 
     public bool RequireRecentSuccessfulBuild { get; set; } = true;
 

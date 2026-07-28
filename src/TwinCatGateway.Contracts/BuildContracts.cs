@@ -29,9 +29,47 @@ public sealed class BuildParameters
 
     public List<string> ChangedPaths { get; set; } = new();
 
+    public bool DiscardDirtyDocuments { get; set; }
+
     public DetailLevel Detail { get; set; } = DetailLevel.Compact;
 
     public int? TimeoutSeconds { get; set; }
+}
+
+public enum SynchronizationScope
+{
+    None,
+    ModifiedSources,
+    PlcProject,
+    TwinCatProject,
+}
+
+public sealed class SynchronizeParameters
+{
+    public string Profile { get; set; } = string.Empty;
+
+    public List<string> ChangedPaths { get; set; } = new();
+
+    public bool DiscardDirtyDocuments { get; set; }
+
+    public int? TimeoutSeconds { get; set; }
+}
+
+public sealed class SynchronizeResult
+{
+    public bool Ok { get; set; }
+
+    public string OperationId { get; set; } = string.Empty;
+
+    public SynchronizationScope Scope { get; set; }
+
+    public int SynchronizedFileCount { get; set; }
+
+    public int DiscardedDocumentCount { get; set; }
+
+    public List<string> DiscardedDocuments { get; set; } = new();
+
+    public long DurationMs { get; set; }
 }
 
 public sealed class BuildDiagnostic
@@ -90,6 +128,8 @@ public sealed class BuildResult
     public int MoreDiagnostics { get; set; }
 
     public List<ProjectChangeSummary> ExpectedProjectNoise { get; set; } = new();
+
+    public List<string> DiscardedDocuments { get; set; } = new();
 
     public ResourceReference? Log { get; set; }
 }

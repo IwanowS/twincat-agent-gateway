@@ -30,6 +30,17 @@ public interface ITwinCatGatewayClient
         CancellationToken cancellationToken = default);
 
     Task<GatewayResponse<OperationAccepted>>
+        StartSynchronizationAsync(
+            SynchronizeParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        return Task.FromException<
+            GatewayResponse<OperationAccepted>>(
+            new NotSupportedException(
+                "Synchronization is not implemented by this client."));
+    }
+
+    Task<GatewayResponse<OperationAccepted>>
         StartActivationAsync(
             ActivateParameters parameters,
             CancellationToken cancellationToken = default);

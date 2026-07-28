@@ -43,6 +43,19 @@ public sealed class XaeStatus
     public bool AgentWorkspaceOwned { get; set; }
 
     public int DiscardedDocumentCount { get; set; }
+
+    public SynchronizationState SynchronizationState { get; set; } =
+        SynchronizationState.Uninitialized;
+
+    public int DirtyDocumentCount { get; set; }
+}
+
+public enum SynchronizationState
+{
+    Uninitialized,
+    SyncRequired,
+    Synchronizing,
+    Confirmed,
 }
 
 public sealed class TwinCatStatus

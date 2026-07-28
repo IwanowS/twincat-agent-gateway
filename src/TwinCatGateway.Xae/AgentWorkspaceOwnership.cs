@@ -26,28 +26,64 @@ public sealed class AgentWorkspaceOwnershipResult
 
 internal static class AgentWorkspaceOwnership
 {
-    public static AgentWorkspaceOwnershipResult Acquire(
+    public static IReadOnlyList<string> FindDirtyDocuments(
         DTE2 dte,
-        string solutionPath,
-        IEnumerable<string>? workspaceRoots = null)
+        IEnumerable<string> projectGraphPaths)
+    {
+        HashSet<string> graph = new(
+            projectGraphPaths.Select(Path.GetFullPath),
+            StringComparer.OrdinalIgnoreCase);
+        List<string> dirty = new();
+        Documents? documents = null;
+        try
+        {
+            documents = dte.Documents;
+            for (int index = 1; index <= documents.Count; index++)
+            {
+                Document? document = null;
+                try
+                {
+                    document = documents.Item(index);
+                    string? path = NormalizeOptionalPath(
+                        document.FullName);
+                    if (path is not null
+                        && graph.Contains(path)
+                        && !document.Saved)
+                    {
+                        dirty.Add(path);
+                    }
+                }
+                finally
+                {
+                    ComObject.Release(document);
+                }
+            }
+        }
+        finally
+        {
+            ComObject.Release(documents);
+        }
+
+        return dirty
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static AgentWorkspaceOwnershipResult EnsureClean(
+        DTE2 dte,
+        IEnumerable<string> projectGraphPaths,
+        bool discardDirtyDocuments)
     {
         if (dte is null)
         {
             throw new ArgumentNullException(nameof(dte));
         }
 
-        string solutionRoot = Path.GetDirectoryName(
-            Path.GetFullPath(solutionPath))
-            ?? throw new ArgumentException(
-                "Solution path has no parent directory.",
-                nameof(solutionPath));
-        string[] roots = (workspaceRoots ?? new[] { solutionRoot })
-            .Append(solutionRoot)
-            .Select(Path.GetFullPath)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        List<string> closed = new();
-        List<string> discarded = new();
+        HashSet<string> graph = new(
+            projectGraphPaths.Select(Path.GetFullPath),
+            StringComparer.OrdinalIgnoreCase);
+        List<string> dirty = new();
         Documents? documents = null;
         try
         {
@@ -58,125 +94,72 @@ internal static class AgentWorkspaceOwnership
                 try
                 {
                     document = documents.Item(index);
-                    string? path = TryGetOwnedSourcePath(
-                        document,
-                        roots);
-                    if (path is null)
+                    string? path = NormalizeOptionalPath(
+                        document.FullName);
+                    if (path is null
+                        || !graph.Contains(path)
+                        || document.Saved)
                     {
                         continue;
                     }
 
-                    bool wasSaved = document.Saved;
-                    document.Close(vsSaveChanges.vsSaveChangesNo);
-                    closed.Add(path);
-                    if (!wasSaved)
+                    dirty.Add(path);
+                    if (discardDirtyDocuments)
                     {
-                        discarded.Add(path);
+                        document.Close(
+                            vsSaveChanges.vsSaveChangesNo);
                     }
-                }
-                catch (Exception exception)
-                {
-                    throw new GatewayOperationException(
-                        ErrorCodes.XaeWorkspaceOwnershipFailed,
-                        "XAE project editors could not be closed "
-                        + "without saving.",
-                        retryable: true,
-                        stage: "xae.workspace.acquire",
-                        innerException: exception);
                 }
                 finally
                 {
                     ComObject.Release(document);
                 }
             }
-
-            string[] stillOpen = FindOpenOwnedSources(
-                documents,
-                roots);
-            if (stillOpen.Length != 0)
-            {
-                throw new GatewayOperationException(
-                    ErrorCodes.XaeWorkspaceOwnershipFailed,
-                    "One or more XAE project editors remained open.",
-                    retryable: true,
-                    stage: "xae.workspace.acquire");
-            }
-
-            return new AgentWorkspaceOwnershipResult(
-                closed.OrderBy(
-                    path => path,
-                    StringComparer.OrdinalIgnoreCase),
-                discarded.OrderBy(
-                    path => path,
-                    StringComparer.OrdinalIgnoreCase));
+        }
+        catch (GatewayOperationException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeWorkspaceOwnershipFailed,
+                "XAE dirty-document state could not be inspected.",
+                retryable: true,
+                stage: "xae.workspace.dirty",
+                innerException: exception);
         }
         finally
         {
             ComObject.Release(documents);
         }
-    }
 
-    private static string[] FindOpenOwnedSources(
-        Documents documents,
-        IReadOnlyList<string> roots)
-    {
-        List<string> paths = new();
-        int count = documents.Count;
-        for (int index = 1; index <= count; index++)
+        string[] ordered = dirty
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (ordered.Length != 0 && !discardDirtyDocuments)
         {
-            Document? document = null;
-            try
-            {
-                document = documents.Item(index);
-                string? path = TryGetOwnedSourcePath(
-                    document,
-                    roots);
-                if (path is not null)
-                {
-                    paths.Add(path);
-                }
-            }
-            finally
-            {
-                ComObject.Release(document);
-            }
+            throw new GatewayOperationException(
+                ErrorCodes.DirtyXaeDocument,
+                ordered.Length == 1
+                    ? $"XAE document has unsaved changes: '{ordered[0]}'."
+                    : $"{ordered.Length} XAE documents have unsaved changes.",
+                retryable: false,
+                stage: "xae.workspace.dirty");
         }
 
-        return paths.ToArray();
+        return new AgentWorkspaceOwnershipResult(
+            Array.Empty<string>(),
+            discardDirtyDocuments
+                ? ordered
+                : Array.Empty<string>());
     }
 
-    private static string? TryGetOwnedSourcePath(
-        Document document,
-        IReadOnlyList<string> roots)
+    private static string? NormalizeOptionalPath(string? path)
     {
-        string? path = document.FullName;
-        if (string.IsNullOrWhiteSpace(path)
-            || !ProjectFileFingerprintScanner.IsSupportedPath(path))
-        {
-            return null;
-        }
-
-        string fullPath = Path.GetFullPath(path);
-        return roots.Any(root => IsInsideRoot(fullPath, root))
-            ? fullPath
-            : null;
-    }
-
-    private static bool IsInsideRoot(
-        string path,
-        string root)
-    {
-        string fullRoot = Path.GetFullPath(root);
-        string rootPrefix = fullRoot.TrimEnd(
-            Path.DirectorySeparatorChar,
-            Path.AltDirectorySeparatorChar)
-            + Path.DirectorySeparatorChar;
-        return string.Equals(
-                path,
-                fullRoot,
-                StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith(
-                rootPrefix,
-                StringComparison.OrdinalIgnoreCase);
+        return string.IsNullOrWhiteSpace(path)
+            ? null
+            : Path.GetFullPath(path);
     }
 }

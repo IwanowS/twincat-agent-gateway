@@ -627,6 +627,22 @@ public sealed class DesktopGatewayHostTests
             GatewayState.Ready,
             TimeSpan.FromSeconds(15));
         NamedPipeGatewayClient client = new(pipeName);
+        OperationAccepted synchronization =
+            host.ApplicationService.StartSynchronization(
+                new SynchronizeParameters
+                {
+                    Profile = "fixture",
+                    TimeoutSeconds = 60,
+                },
+                agentRequest: false);
+        OperationDetails<SynchronizeResult> synchronized =
+            await WaitForOperationAsync<SynchronizeResult>(
+                client,
+                synchronization.OperationId,
+                TimeSpan.FromSeconds(75));
+        Assert.Equal(
+            OperationState.Succeeded,
+            synchronized.Operation.State);
 
         GatewayResponse<OperationAccepted> accepted =
             await client.SendAsync<
@@ -644,7 +660,7 @@ public sealed class DesktopGatewayHostTests
         Assert.True(accepted.Ok);
         Assert.NotNull(accepted.Result);
         OperationDetails<BuildResult> completed =
-            await WaitForOperationAsync(
+            await WaitForOperationAsync<BuildResult>(
                 client,
                 accepted.Result!.OperationId,
                 TimeSpan.FromSeconds(75));
@@ -703,8 +719,8 @@ public sealed class DesktopGatewayHostTests
                 .Select(gatewayEvent => gatewayEvent.Type));
     }
 
-    private static async Task<OperationDetails<BuildResult>>
-        WaitForOperationAsync(
+    private static async Task<OperationDetails<TResult>>
+        WaitForOperationAsync<TResult>(
             NamedPipeGatewayClient client,
             string operationId,
             TimeSpan timeout)
@@ -713,10 +729,10 @@ public sealed class DesktopGatewayHostTests
             DateTimeOffset.UtcNow.Add(timeout);
         while (DateTimeOffset.UtcNow < deadline)
         {
-            GatewayResponse<OperationDetails<BuildResult>> response =
+            GatewayResponse<OperationDetails<TResult>> response =
                 await client.SendAsync<
                     GetOperationParameters,
-                    OperationDetails<BuildResult>>(
+                    OperationDetails<TResult>>(
                     GatewayMethods.GetOperation,
                     new GetOperationParameters
                     {

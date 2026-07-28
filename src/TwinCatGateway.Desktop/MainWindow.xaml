@@ -272,6 +272,12 @@
                         IsEnabled="{Binding CanStartOperation}"
                         Click="BuildButton_Click"
                         Content="Run build" />
+                <Button MinWidth="82"
+                        Margin="6,0,0,0"
+                        Padding="12,7"
+                        IsEnabled="{Binding CanSynchronize}"
+                        Click="SynchronizeButton_Click"
+                        Content="Sync disk" />
                 <Button MinWidth="92"
                         Margin="6,0,0,0"
                         Padding="12,7"

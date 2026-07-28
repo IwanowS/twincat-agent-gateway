@@ -55,6 +55,27 @@ public partial class MainWindow : Window
             "The build operation could not be queued.");
     }
 
+    private void SynchronizeButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        MessageBoxResult confirmation =
+            MessageBox.Show(
+                MainWindowViewModel.SynchronizationConfirmation,
+                "Confirm disk synchronization",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        ExecuteUiAction(
+            () => _viewModel.StartSynchronization(),
+            "Disk synchronization could not be queued.");
+    }
+
     private void ActivateButton_Click(
         object sender,
         RoutedEventArgs e)

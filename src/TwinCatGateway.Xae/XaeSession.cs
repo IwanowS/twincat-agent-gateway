@@ -9,9 +9,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using EnvDTE;
 using EnvDTE80;
+using Microsoft.VisualStudio.Shell.Interop;
 using TCatSysManagerLib;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
+using OleServiceProvider =
+    Microsoft.VisualStudio.OLE.Interop.IServiceProvider;
 
 namespace TwinCatGateway.Xae;
 
@@ -33,11 +36,17 @@ public sealed class XaeSession : IDisposable
     private DTE2? _dte;
     private XaeBuildEventLease? _activeBuild;
     private ProjectFileFingerprintSnapshot? _fingerprintBaseline;
+    private int? _fingerprintProcessId;
+    private string? _fingerprintMoniker;
+    private bool _fingerprintLaunchedByGateway;
+    private SynchronizationState _fingerprintState =
+        SynchronizationState.Uninitialized;
     private string? _fingerprintSolution;
+    private string? _fingerprintTwinCatProjectPath;
     private ITcSysManager? _sysManager;
     private TwinCatSilentModeLease? _silentModeLease;
     private string? _twinCatProjectPath;
-    private string[] _workspaceRoots = Array.Empty<string>();
+    private string[] _projectGraphPaths = Array.Empty<string>();
     private XaeSessionSnapshot _snapshot = new();
     private int _disposed;
 
@@ -73,9 +82,13 @@ public sealed class XaeSession : IDisposable
                     deadlineUtc,
                     "xae.attach"),
                 cancellationToken).ConfigureAwait(false);
-        InitializeFingerprintBaseline(
-            normalizedSolution,
-            cancellationToken);
+        if (snapshot.SynchronizationState
+            != SynchronizationState.Confirmed)
+        {
+            RequireSynchronization(
+                normalizedSolution,
+                cancellationToken);
+        }
         GetRemaining(
             deadlineUtc,
             "xae.workspace.fingerprint");
@@ -151,7 +164,7 @@ public sealed class XaeSession : IDisposable
             started.ProcessId,
             deadlineUtc,
             cancellationToken).ConfigureAwait(false);
-        InitializeFingerprintBaseline(
+        ConfirmFingerprintBaseline(
             normalizedSolution,
             cancellationToken);
         GetRemaining(
@@ -169,6 +182,18 @@ public sealed class XaeSession : IDisposable
             () => CloneSnapshot(_snapshot),
             timeout,
             cancellationToken);
+    }
+
+    public void MarkSynchronizationRequired()
+    {
+        ThrowIfDisposed();
+        lock (_fingerprintSync)
+        {
+            _snapshot.SynchronizationState =
+                SynchronizationState.SyncRequired;
+            _fingerprintState =
+                SynchronizationState.SyncRequired;
+        }
     }
 
     public Task<XaeSessionSnapshot> VerifyAttachedAsync(
@@ -263,32 +288,14 @@ public sealed class XaeSession : IDisposable
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        try
-        {
-            await _dispatcher.InvokeAsync(
-                () =>
-                {
-                    ReleaseSessionOnSta();
-                    return true;
-                },
-                timeout,
-                cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
-            ClearFingerprintBaseline();
-        }
-    }
-
-    public Task<AgentWorkspaceOwnershipResult> AcquireAgentWorkspaceAsync(
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        return _dispatcher.InvokeAsync(
-            AcquireAgentWorkspaceOnSta,
+        await _dispatcher.InvokeAsync(
+            () =>
+            {
+                ReleaseSessionOnSta();
+                return true;
+            },
             timeout,
-            cancellationToken);
+            cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<ExternalChangeSynchronizationResult>
@@ -297,49 +304,102 @@ public sealed class XaeSession : IDisposable
             TimeSpan timeout,
             CancellationToken cancellationToken)
     {
+        return await SynchronizeExternalChangesAsync(
+            changedPaths,
+            ExternalChangePolicy.ReloadModified,
+            discardDirtyDocuments: false,
+            allowDirtyDocumentDiscard: false,
+            force: false,
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ExternalChangeSynchronizationResult>
+        SynchronizeExternalChangesAsync(
+            IEnumerable<string>? changedPaths,
+            ExternalChangePolicy policy,
+            bool discardDirtyDocuments,
+            bool allowDirtyDocumentDiscard,
+            bool force,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+    {
         ThrowIfDisposed();
         DateTimeOffset deadlineUtc = CreateDeadline(timeout);
         FingerprintState state = GetFingerprintState();
         ProjectFileFingerprintSnapshot current =
-            ProjectFileFingerprintScanner.Capture(
+            CaptureProjectGraph(
                 state.SolutionPath,
-                state.WorkspaceRoots,
+                state.TwinCatProjectPath,
                 cancellationToken);
         IReadOnlyList<ProjectFileChange> detected =
-            ProjectFileFingerprintScanner.Compare(
-                state.Baseline,
-                current);
-        ProjectFileChange? structuralChange =
-            detected.FirstOrDefault(change =>
-                change.Kind != ProjectFileChangeKind.Modified);
-        if (structuralChange is not null)
+            state.Baseline is null
+                ? Array.Empty<ProjectFileChange>()
+                : ProjectFileFingerprintScanner.Compare(
+                    state.Baseline,
+                    current);
+        HashSet<string> graphPaths = new(
+            current.Files.Select(file => file.Path),
+            StringComparer.OrdinalIgnoreCase);
+        IReadOnlyList<string> dirtyDocuments =
+            await _dispatcher.InvokeAsync(
+                () => InspectDirtyDocumentsOnSta(graphPaths),
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.workspace.dirty"),
+                cancellationToken).ConfigureAwait(false);
+        if (dirtyDocuments.Count != 0
+            && !(discardDirtyDocuments
+                && allowDirtyDocumentDiscard))
         {
             throw new GatewayOperationException(
-                ErrorCodes.ExternalEditUnsupported,
-                $"External source file {structuralChange.Kind.ToString().ToLowerInvariant()}: "
-                + $"'{structuralChange.Path}'. Adding and deleting project "
-                + "sources is not supported by the MVP synchronizer.",
+                ErrorCodes.DirtyXaeDocument,
+                dirtyDocuments.Count == 1
+                    ? $"XAE document has unsaved changes: "
+                        + $"'{dirtyDocuments[0]}'."
+                    : $"{dirtyDocuments.Count} XAE documents have "
+                        + "unsaved changes.",
+                stage: "xae.workspace.dirty");
+        }
+
+        if (state.Baseline is null && !force)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeSyncRequired,
+                "The attached XAE session has no confirmed disk baseline. "
+                + "Run an explicit synchronization first.",
                 stage: "xae.workspace.fingerprint");
         }
 
-        HashSet<string> paths = new(
-            detected.Select(change => change.Path),
-            StringComparer.OrdinalIgnoreCase);
         if (changedPaths is not null)
         {
             foreach (string path in changedPaths)
             {
-                paths.Add(
-                    NormalizeChangedPath(
-                        state.SolutionPath,
-                        state.WorkspaceRoots,
-                        state.TwinCatProjectPath,
-                        path));
+                string normalized = NormalizeChangedPath(
+                    state.SolutionPath,
+                    graphPaths,
+                    path);
+                if (!graphPaths.Contains(normalized))
+                {
+                    throw new GatewayOperationException(
+                        ErrorCodes.RequestInvalid,
+                        $"Changed path is outside the selected TwinCAT "
+                        + $"project graph: '{normalized}'.",
+                        stage: "xae.workspace.validate");
+                }
             }
         }
 
-        string[] sourcePaths = paths
-            .Where(ProjectFileFingerprintScanner.IsSupportedPath)
+        SynchronizationScope scope = SelectSynchronizationScope(
+            detected,
+            policy,
+            force,
+            state.Baseline is null);
+        string[] sourcePaths = detected
+            .Where(change =>
+                change.Role == ProjectGraphFileRole.PlcSource
+                && change.Kind == ProjectFileChangeKind.Modified)
+            .Select(change => change.Path)
             .ToArray();
         ValidateChangedPlcObjects(
             sourcePaths,
@@ -347,25 +407,64 @@ public sealed class XaeSession : IDisposable
         GetRemaining(
             deadlineUtc,
             "xae.workspace.validate");
+        bool discard = discardDirtyDocuments
+            && allowDirtyDocumentDiscard;
         XaeDocumentSynchronizationResult synchronized =
             await _dispatcher.InvokeAsync(
                 () => SynchronizeExternalChangesOnSta(
                     state.SolutionPath,
-                    sourcePaths),
+                    graphPaths,
+                    scope == SynchronizationScope.ModifiedSources
+                        ? sourcePaths
+                        : Array.Empty<string>(),
+                    discard),
                 GetRemaining(
                     deadlineUtc,
                     "xae.workspace.synchronize"),
                 cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<XaeProjectFileChangeResult> trackedProjectChanges =
+            Array.Empty<XaeProjectFileChangeResult>();
+        if (scope == SynchronizationScope.PlcProject
+            || scope == SynchronizationScope.TwinCatProject)
+        {
+            trackedProjectChanges = await _dispatcher.InvokeAsync(
+                () =>
+                {
+                    return ReloadTwinCatProjectOnSta(
+                        state.SolutionPath,
+                        state.TwinCatProjectPath);
+                },
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.workspace.reloadProject"),
+                cancellationToken).ConfigureAwait(false);
+        }
+
         ProjectFileFingerprintSnapshot verified =
-            ProjectFileFingerprintScanner.Capture(
+            CaptureProjectGraph(
                 state.SolutionPath,
-                state.WorkspaceRoots,
+                state.TwinCatProjectPath,
                 cancellationToken);
         IReadOnlyList<ProjectFileChange> concurrentChanges =
             ProjectFileFingerprintScanner.Compare(
                 current,
                 verified);
-        if (concurrentChanges.Count != 0)
+        HashSet<string> provenNoisePaths = new(
+            trackedProjectChanges
+                .Where(change =>
+                    change.Classification
+                        == ProjectChangeClassification
+                            .ExpectedReorderOnly
+                    || change.Classification
+                        == ProjectChangeClassification
+                            .WhitespaceOnly)
+                .Select(change => change.Path),
+            StringComparer.OrdinalIgnoreCase);
+        bool onlyTrackedNoise = concurrentChanges.All(change =>
+            change.Role == ProjectGraphFileRole.TwinCatProject
+            && change.Kind == ProjectFileChangeKind.Modified
+            && provenNoisePaths.Contains(change.Path));
+        if (concurrentChanges.Count != 0 && !onlyTrackedNoise)
         {
             throw new GatewayOperationException(
                 ErrorCodes.ExternalEditSyncFailed,
@@ -378,13 +477,14 @@ public sealed class XaeSession : IDisposable
         GetRemaining(
             deadlineUtc,
             "xae.workspace.verify");
-        ReplaceFingerprintBaseline(
+        ConfirmFingerprintBaseline(
             state.SolutionPath,
             verified);
         return new ExternalChangeSynchronizationResult(
             detected,
             synchronized.SynchronizedDocuments,
-            synchronized.DiscardedDocuments);
+            synchronized.DiscardedDocuments,
+            scope);
     }
 
     public async Task<XaeBuildExecutionResult> ExecuteBuildAsync(
@@ -410,11 +510,38 @@ public sealed class XaeSession : IDisposable
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        return await ExecuteBuildAsync(
+            action,
+            changedPaths,
+            configuration,
+            platform,
+            ExternalChangePolicy.ReloadModified,
+            discardDirtyDocuments: false,
+            allowDirtyDocumentDiscard: false,
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<XaeBuildExecutionResult> ExecuteBuildAsync(
+        BuildAction action,
+        IEnumerable<string>? changedPaths,
+        string? configuration,
+        string? platform,
+        ExternalChangePolicy externalChangePolicy,
+        bool discardDirtyDocuments,
+        bool allowDirtyDocumentDiscard,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
         ThrowIfDisposed();
         DateTimeOffset deadlineUtc = CreateDeadline(timeout);
         ExternalChangeSynchronizationResult synchronization =
             await SynchronizeExternalChangesAsync(
                 changedPaths,
+                externalChangePolicy,
+                discardDirtyDocuments,
+                allowDirtyDocumentDiscard,
+                force: false,
                 GetRemaining(
                     deadlineUtc,
                     "xae.build.synchronize"),
@@ -436,7 +563,8 @@ public sealed class XaeSession : IDisposable
                     completion,
                     deadlineUtc,
                     cancellationToken).ConfigureAwait(false);
-            return await _dispatcher.InvokeAsync(
+            XaeBuildExecutionResult result =
+                await _dispatcher.InvokeAsync(
                 () => CompleteBuildOnSta(
                     evidence,
                     synchronization),
@@ -444,6 +572,56 @@ public sealed class XaeSession : IDisposable
                     deadlineUtc,
                     "xae.build.verify"),
                 cancellationToken).ConfigureAwait(false);
+            FingerprintState state = GetFingerprintState();
+            ProjectFileFingerprintSnapshot afterBuild =
+                CaptureProjectGraph(
+                    state.SolutionPath,
+                    state.TwinCatProjectPath,
+                    cancellationToken);
+            IReadOnlyList<ProjectFileChange> buildChanges =
+                ProjectFileFingerprintScanner.Compare(
+                    state.Baseline
+                        ?? throw new GatewayOperationException(
+                            ErrorCodes.XaeSyncRequired,
+                            "The confirmed XAE baseline was lost "
+                            + "during the build.",
+                            retryable: true,
+                            stage: "xae.build.verify"),
+                    afterBuild);
+            HashSet<string> provenBuildNoisePaths = new(
+                result.ProjectChanges
+                    .Where(change =>
+                        change.Classification
+                            == ProjectChangeClassification
+                                .ExpectedReorderOnly
+                        || change.Classification
+                            == ProjectChangeClassification
+                                .WhitespaceOnly)
+                    .Select(change => change.Path),
+                StringComparer.OrdinalIgnoreCase);
+            bool provenGeneratedNoise =
+                buildChanges.All(change =>
+                    change.Role
+                        == ProjectGraphFileRole.TwinCatProject
+                    && change.Kind
+                        == ProjectFileChangeKind.Modified)
+                && buildChanges.All(change =>
+                    provenBuildNoisePaths.Contains(change.Path));
+            if (buildChanges.Count != 0
+                && !provenGeneratedNoise)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.ExternalEditSyncFailed,
+                    "Project graph files changed while the XAE build "
+                    + "was running. Retry the operation.",
+                    retryable: true,
+                    stage: "xae.build.verify");
+            }
+
+            ConfirmFingerprintBaseline(
+                state.SolutionPath,
+                afterBuild);
+            return result;
         }
         catch
         {
@@ -797,27 +975,21 @@ public sealed class XaeSession : IDisposable
             return null;
         }
 
-        string[] workspaceRoots = CreateWorkspaceRoots(
-            normalizedSolution,
-            twinCatProjectPath);
-        AgentWorkspaceOwnershipResult ownership;
-        try
-        {
-            ownership = AgentWorkspaceOwnership.Acquire(
-                _dte!,
+        ProjectFileFingerprintSnapshot graph =
+            CaptureProjectGraph(
                 normalizedSolution,
-                workspaceRoots);
-        }
-        catch
-        {
-            ComObject.Release(sysManager);
-            throw;
-        }
-
+                twinCatProjectPath,
+                CancellationToken.None);
+        int dirtyDocumentCount =
+            AgentWorkspaceOwnership.FindDirtyDocuments(
+                _dte!,
+                graph.Files.Select(file => file.Path))
+            .Count;
+        _projectGraphPaths =
+            graph.Files.Select(file => file.Path).ToArray();
         ComObject.Release(_sysManager);
         _sysManager = sysManager;
         _twinCatProjectPath = twinCatProjectPath;
-        _workspaceRoots = workspaceRoots;
         info.Selected = true;
         info.SelectionReason =
             "Gateway-launched XAE opened the exact normalized solution path.";
@@ -827,9 +999,11 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(info),
             SysManagerAvailable = true,
             LaunchedByGateway = true,
-            AgentWorkspaceOwned = true,
-            ClosedDocumentCount = ownership.ClosedDocuments.Count,
-            DiscardedDocumentCount = ownership.DiscardedDocuments.Count,
+            AgentWorkspaceOwned = false,
+            ClosedDocumentCount = 0,
+            DiscardedDocumentCount = 0,
+            SynchronizationState = SynchronizationState.Confirmed,
+            DirtyDocumentCount = dirtyDocumentCount,
             DiscoveredInstances = new[] { CloneInfo(info)! },
         };
         using (CreateUserSilentModeLease())
@@ -865,9 +1039,9 @@ public sealed class XaeSession : IDisposable
         RunningXaeCandidate selected = scan.Candidates[selectedIndex];
         DTE2 selectedDte = selected.TakeDte();
         ITcSysManager? selectedSysManager = null;
-        AgentWorkspaceOwnershipResult? ownership = null;
         string twinCatProjectPath = string.Empty;
-        string[] workspaceRoots = Array.Empty<string>();
+        string[] projectGraphPaths = Array.Empty<string>();
+        int dirtyDocumentCount = 0;
         try
         {
             using (TwinCatSilentModeLease.Enable(
@@ -878,13 +1052,18 @@ public sealed class XaeSession : IDisposable
                     selectedDte,
                     normalizedSolution,
                     out twinCatProjectPath);
-                workspaceRoots = CreateWorkspaceRoots(
-                    normalizedSolution,
-                    twinCatProjectPath);
-                ownership = AgentWorkspaceOwnership.Acquire(
-                    selectedDte,
-                    normalizedSolution,
-                    workspaceRoots);
+                ProjectFileFingerprintSnapshot graph =
+                    CaptureProjectGraph(
+                        normalizedSolution,
+                        twinCatProjectPath,
+                        CancellationToken.None);
+                dirtyDocumentCount =
+                    AgentWorkspaceOwnership.FindDirtyDocuments(
+                        selectedDte,
+                        graph.Files.Select(file => file.Path))
+                    .Count;
+                projectGraphPaths =
+                    graph.Files.Select(file => file.Path).ToArray();
             }
         }
         catch
@@ -908,7 +1087,12 @@ public sealed class XaeSession : IDisposable
         _dte = selectedDte;
         _sysManager = selectedSysManager;
         _twinCatProjectPath = twinCatProjectPath;
-        _workspaceRoots = workspaceRoots;
+        _projectGraphPaths = projectGraphPaths;
+        bool retainBaseline = CanRetainFingerprintBaseline(
+            instances[selectedIndex].ProcessId,
+            instances[selectedIndex].Moniker,
+            normalizedSolution,
+            twinCatProjectPath);
         instances[selectedIndex].Selected = true;
         instances[selectedIndex].SelectionReason =
             "Exact normalized Solution.FullName match.";
@@ -917,12 +1101,16 @@ public sealed class XaeSession : IDisposable
             Connected = true,
             SelectedInstance = CloneInfo(instances[selectedIndex]),
             SysManagerAvailable = true,
-            LaunchedByGateway = false,
-            AgentWorkspaceOwned = true,
-            ClosedDocumentCount =
-                ownership?.ClosedDocuments.Count ?? 0,
-            DiscardedDocumentCount =
-                ownership?.DiscardedDocuments.Count ?? 0,
+            LaunchedByGateway =
+                retainBaseline
+                && _fingerprintLaunchedByGateway,
+            AgentWorkspaceOwned = false,
+            ClosedDocumentCount = 0,
+            DiscardedDocumentCount = 0,
+            SynchronizationState = retainBaseline
+                ? SynchronizationState.Confirmed
+                : SynchronizationState.SyncRequired,
+            DirtyDocumentCount = dirtyDocumentCount,
             DiscoveredInstances = instances,
         };
         using (CreateUserSilentModeLease())
@@ -966,6 +1154,11 @@ public sealed class XaeSession : IDisposable
         info.Selected = true;
         info.SelectionReason =
             _snapshot.SelectedInstance?.SelectionReason;
+        int dirtyDocumentCount =
+            AgentWorkspaceOwnership.FindDirtyDocuments(
+                _dte,
+                _projectGraphPaths)
+            .Count;
         _snapshot = new XaeSessionSnapshot
         {
             Connected = true,
@@ -975,6 +1168,10 @@ public sealed class XaeSession : IDisposable
             AgentWorkspaceOwned = _snapshot.AgentWorkspaceOwned,
             ClosedDocumentCount = _snapshot.ClosedDocumentCount,
             DiscardedDocumentCount = _snapshot.DiscardedDocumentCount,
+            SynchronizationState =
+                _snapshot.SynchronizationState,
+            DirtyDocumentCount =
+                dirtyDocumentCount,
             DiscoveredInstances = _snapshot.DiscoveredInstances
                 .Select(instance =>
                     instance.Selected
@@ -1365,40 +1562,12 @@ public sealed class XaeSession : IDisposable
         }
     }
 
-    private AgentWorkspaceOwnershipResult AcquireAgentWorkspaceOnSta()
-    {
-        DTE2 dte = _dte
-            ?? throw new GatewayOperationException(
-                ErrorCodes.XaeNotFound,
-                "No XAE session is currently attached.",
-                retryable: true,
-                stage: "xae.workspace.acquire");
-        string solutionPath = _snapshot.SelectedInstance?.Solution
-            ?? throw new GatewayOperationException(
-                ErrorCodes.SolutionMismatch,
-                "The attached XAE solution path is unavailable.",
-                retryable: true,
-                stage: "xae.workspace.acquire");
-        using (CreateUserSilentModeLease())
-        {
-            AgentWorkspaceOwnershipResult ownership =
-                AgentWorkspaceOwnership.Acquire(
-                    dte,
-                    solutionPath,
-                    _workspaceRoots);
-            _snapshot.AgentWorkspaceOwned = true;
-            _snapshot.ClosedDocumentCount =
-                ownership.ClosedDocuments.Count;
-            _snapshot.DiscardedDocumentCount =
-                ownership.DiscardedDocuments.Count;
-            return ownership;
-        }
-    }
-
     private XaeDocumentSynchronizationResult
         SynchronizeExternalChangesOnSta(
             string solutionPath,
-            IEnumerable<string> changedPaths)
+            IEnumerable<string> projectGraphPaths,
+            IEnumerable<string> changedPaths,
+            bool discardDirtyDocuments)
     {
         DTE2 dte = _dte
             ?? throw new GatewayOperationException(
@@ -1426,15 +1595,33 @@ public sealed class XaeSession : IDisposable
             XaeDocumentSynchronizationResult result =
                 ExternalChangeSynchronizer.Synchronize(
                     dte,
-                    solutionPath,
                     changedPaths,
-                    _workspaceRoots);
-            _snapshot.AgentWorkspaceOwned = true;
+                    projectGraphPaths,
+                    discardDirtyDocuments);
+            _snapshot.AgentWorkspaceOwned = false;
             _snapshot.ClosedDocumentCount = 0;
             _snapshot.DiscardedDocumentCount =
                 result.DiscardedDocuments.Count;
+            _snapshot.DirtyDocumentCount = 0;
             return result;
         }
+    }
+
+    private IReadOnlyList<string> InspectDirtyDocumentsOnSta(
+        IEnumerable<string> projectGraphPaths)
+    {
+        DTE2 dte = _dte
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: "xae.workspace.dirty");
+        IReadOnlyList<string> dirty =
+            AgentWorkspaceOwnership.FindDirtyDocuments(
+                dte,
+                projectGraphPaths);
+        _snapshot.DirtyDocumentCount = dirty.Count;
+        return dirty;
     }
 
     private Task<XaeBuildEventEvidence> StartBuildOnSta(
@@ -1767,19 +1954,94 @@ public sealed class XaeSession : IDisposable
         }
     }
 
-    private void InitializeFingerprintBaseline(
+    private void ConfirmFingerprintBaseline(
         string solutionPath,
         CancellationToken cancellationToken)
     {
         ProjectFileFingerprintSnapshot baseline =
-            ProjectFileFingerprintScanner.Capture(
+            CaptureProjectGraph(
                 solutionPath,
-                _workspaceRoots,
+                _twinCatProjectPath
+                    ?? throw new GatewayOperationException(
+                        ErrorCodes.SysManagerNotAvailable,
+                        "The selected TwinCAT project path is unavailable.",
+                        stage: "xae.workspace.fingerprint"),
                 cancellationToken);
+        ConfirmFingerprintBaseline(solutionPath, baseline);
+    }
+
+    private static ProjectFileFingerprintSnapshot
+        CaptureProjectGraph(
+            string solutionPath,
+            string twinCatProjectPath,
+            CancellationToken cancellationToken)
+    {
+        try
+        {
+            return ProjectFileFingerprintScanner
+                .CaptureProjectGraph(
+                    solutionPath,
+                    twinCatProjectPath,
+                    cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProjectGraphInvalid,
+                "The selected TwinCAT project graph could not be "
+                + "validated: "
+                + exception.Message,
+                stage: "xae.workspace.graph",
+                innerException: exception);
+        }
+    }
+
+    private void ConfirmFingerprintBaseline(
+        string solutionPath,
+        ProjectFileFingerprintSnapshot baseline)
+    {
         lock (_fingerprintSync)
         {
             _fingerprintSolution = solutionPath;
             _fingerprintBaseline = baseline;
+            _fingerprintProcessId =
+                _snapshot.SelectedInstance?.ProcessId;
+            _fingerprintMoniker =
+                _snapshot.SelectedInstance?.Moniker;
+            _fingerprintLaunchedByGateway =
+                _snapshot.LaunchedByGateway;
+            _fingerprintTwinCatProjectPath =
+                _twinCatProjectPath;
+            _projectGraphPaths =
+                baseline.Files.Select(file => file.Path).ToArray();
+            _snapshot.SynchronizationState =
+                SynchronizationState.Confirmed;
+            _fingerprintState =
+                SynchronizationState.Confirmed;
+        }
+    }
+
+    private void RequireSynchronization(
+        string solutionPath,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        lock (_fingerprintSync)
+        {
+            _fingerprintSolution = solutionPath;
+            _fingerprintBaseline = null;
+            _fingerprintProcessId = null;
+            _fingerprintMoniker = null;
+            _fingerprintLaunchedByGateway = false;
+            _fingerprintTwinCatProjectPath = null;
+            _snapshot.SynchronizationState =
+                SynchronizationState.SyncRequired;
+            _fingerprintState =
+                SynchronizationState.SyncRequired;
         }
     }
 
@@ -1787,8 +2049,7 @@ public sealed class XaeSession : IDisposable
     {
         lock (_fingerprintSync)
         {
-            if (_fingerprintSolution is null
-                || _fingerprintBaseline is null)
+            if (_fingerprintSolution is null)
             {
                 throw new GatewayOperationException(
                     ErrorCodes.GatewayNotReady,
@@ -1800,35 +2061,11 @@ public sealed class XaeSession : IDisposable
             return new FingerprintState(
                 _fingerprintSolution,
                 _fingerprintBaseline,
-                _workspaceRoots,
                 _twinCatProjectPath
                     ?? throw new GatewayOperationException(
                         ErrorCodes.SysManagerNotAvailable,
                         "The selected TwinCAT project path is unavailable.",
                         stage: "xae.workspace.fingerprint"));
-        }
-    }
-
-    private void ReplaceFingerprintBaseline(
-        string solutionPath,
-        ProjectFileFingerprintSnapshot baseline)
-    {
-        lock (_fingerprintSync)
-        {
-            if (!string.Equals(
-                _fingerprintSolution,
-                solutionPath,
-                StringComparison.OrdinalIgnoreCase))
-            {
-                throw new GatewayOperationException(
-                    ErrorCodes.SolutionMismatch,
-                    "The tracked XAE solution changed while "
-                    + "external files were synchronized.",
-                    retryable: true,
-                    stage: "xae.workspace.verify");
-            }
-
-            _fingerprintBaseline = baseline;
         }
     }
 
@@ -1838,13 +2075,47 @@ public sealed class XaeSession : IDisposable
         {
             _fingerprintSolution = null;
             _fingerprintBaseline = null;
+            _fingerprintProcessId = null;
+            _fingerprintMoniker = null;
+            _fingerprintLaunchedByGateway = false;
+            _fingerprintTwinCatProjectPath = null;
+            _projectGraphPaths = Array.Empty<string>();
+            _fingerprintState =
+                SynchronizationState.Uninitialized;
+        }
+    }
+
+    private bool CanRetainFingerprintBaseline(
+        int? processId,
+        string moniker,
+        string solutionPath,
+        string twinCatProjectPath)
+    {
+        lock (_fingerprintSync)
+        {
+            return processId.HasValue
+                && _fingerprintBaseline is not null
+                && _fingerprintState
+                    == SynchronizationState.Confirmed
+                && _fingerprintProcessId == processId
+                && string.Equals(
+                    _fingerprintMoniker,
+                    moniker,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    _fingerprintSolution,
+                    solutionPath,
+                    StringComparison.OrdinalIgnoreCase)
+                && string.Equals(
+                    _fingerprintTwinCatProjectPath,
+                    twinCatProjectPath,
+                    StringComparison.OrdinalIgnoreCase);
         }
     }
 
     internal static string NormalizeChangedPath(
         string solutionPath,
-        IReadOnlyList<string> workspaceRoots,
-        string twinCatProjectPath,
+        IReadOnlyCollection<string> projectGraphPaths,
         string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -1864,26 +2135,12 @@ public sealed class XaeSession : IDisposable
             Path.IsPathRooted(path)
                 ? path
                 : Path.Combine(root, path));
-        if (!workspaceRoots.Any(
-            workspaceRoot =>
-                IsInsideRoot(fullPath, workspaceRoot)))
+        if (!projectGraphPaths.Contains(fullPath))
         {
             throw new GatewayOperationException(
                 ErrorCodes.RequestInvalid,
                 "Changed project file must belong to the selected "
-                + "solution or its referenced TwinCAT project.",
-                stage: "xae.workspace.validate");
-        }
-
-        if (!ProjectFileFingerprintScanner.IsSupportedPath(fullPath)
-            && !string.Equals(
-                fullPath,
-                Path.GetFullPath(twinCatProjectPath),
-                StringComparison.OrdinalIgnoreCase))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ExternalEditUnsupported,
-                $"External synchronization does not support '{fullPath}'.",
+                + "TwinCAT project graph.",
                 stage: "xae.workspace.validate");
         }
 
@@ -1896,44 +2153,6 @@ public sealed class XaeSession : IDisposable
         }
 
         return fullPath;
-    }
-
-    private static string[] CreateWorkspaceRoots(
-        string solutionPath,
-        string twinCatProjectPath)
-    {
-        string solutionRoot = Path.GetDirectoryName(solutionPath)
-            ?? throw new GatewayOperationException(
-                ErrorCodes.SolutionMismatch,
-                "The selected solution path has no parent directory.",
-                stage: "xae.workspace.acquire");
-        string projectRoot = Path.GetDirectoryName(twinCatProjectPath)
-            ?? throw new GatewayOperationException(
-                ErrorCodes.SysManagerNotAvailable,
-                "The selected TwinCAT project path has no parent directory.",
-                stage: "xae.workspace.acquire");
-        return new[] { solutionRoot, projectRoot }
-            .Select(Path.GetFullPath)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
-
-    private static bool IsInsideRoot(
-        string path,
-        string root)
-    {
-        string fullRoot = Path.GetFullPath(root);
-        string rootPrefix = fullRoot.TrimEnd(
-            Path.DirectorySeparatorChar,
-            Path.AltDirectorySeparatorChar)
-            + Path.DirectorySeparatorChar;
-        return string.Equals(
-                path,
-                fullRoot,
-                StringComparison.OrdinalIgnoreCase)
-            || path.StartsWith(
-                rootPrefix,
-                StringComparison.OrdinalIgnoreCase);
     }
 
     internal static void ValidateChangedPlcObjects(
@@ -1959,6 +2178,237 @@ public sealed class XaeSession : IDisposable
                     $"PLC object '{path}' failed pinned XSD "
                     + $"validation: {validation.Error}",
                     stage: "xae.workspace.validate");
+            }
+        }
+    }
+
+    internal static SynchronizationScope SelectSynchronizationScope(
+        IReadOnlyList<ProjectFileChange> changes,
+        ExternalChangePolicy policy,
+        bool force,
+        bool baselineMissing)
+    {
+        if (baselineMissing)
+        {
+            return SynchronizationScope.TwinCatProject;
+        }
+
+        if (changes.Count == 0)
+        {
+            return force
+                ? SynchronizationScope.TwinCatProject
+                : SynchronizationScope.None;
+        }
+
+        if (!force && policy == ExternalChangePolicy.Error)
+        {
+            throw CreateExternalChangeError(changes, policy);
+        }
+
+        bool sourcesOnly = changes.All(change =>
+            change.Role == ProjectGraphFileRole.PlcSource
+            && change.Kind == ProjectFileChangeKind.Modified);
+        if (!force
+            && policy == ExternalChangePolicy.ReloadModified
+            && !sourcesOnly)
+        {
+            throw CreateExternalChangeError(changes, policy);
+        }
+
+        if (sourcesOnly)
+        {
+            return SynchronizationScope.ModifiedSources;
+        }
+
+        if (changes.Any(change =>
+            change.Role == ProjectGraphFileRole.TwinCatProject))
+        {
+            return SynchronizationScope.TwinCatProject;
+        }
+
+        return SynchronizationScope.PlcProject;
+    }
+
+    private static GatewayOperationException CreateExternalChangeError(
+        IReadOnlyList<ProjectFileChange> changes,
+        ExternalChangePolicy policy)
+    {
+        ProjectFileChange first = changes[0];
+        return new GatewayOperationException(
+            ErrorCodes.ExternalChangeDetected,
+            $"Disk state differs from the confirmed XAE baseline "
+            + $"under policy '{policy}': {first.Kind} "
+            + $"{first.Role} '{first.Path}'.",
+            stage: "xae.workspace.policy");
+    }
+
+    private IReadOnlyList<XaeProjectFileChangeResult>
+        ReloadTwinCatProjectOnSta(
+        string solutionPath,
+        string twinCatProjectPath)
+    {
+        DTE2 dte = _dte
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: "xae.workspace.reloadProject");
+        XaeProjectFileChangeLease? fileChanges = null;
+        IVsSolution? vsSolution = null;
+        IVsHierarchy? hierarchy = null;
+        Project? project = null;
+        Projects? projects = null;
+        Solution? solution = null;
+        try
+        {
+            fileChanges = XaeProjectFileChangeLease.Acquire(
+                dte,
+                solutionPath);
+            solution = dte.Solution;
+            projects = solution.Projects;
+            for (int index = 1; index <= projects.Count; index++)
+            {
+                Project candidate = projects.Item(index);
+                if (string.Equals(
+                    NormalizeOptionalPath(candidate.FullName),
+                    twinCatProjectPath,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    project = candidate;
+                    break;
+                }
+
+                ComObject.Release(candidate);
+            }
+
+            if (project is null)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.SysManagerNotAvailable,
+                    "The selected TwinCAT project is no longer present "
+                    + "in the attached solution.",
+                    retryable: true,
+                    stage: "xae.workspace.reloadProject");
+            }
+
+            vsSolution = QueryService<IVsSolution>(
+                dte,
+                typeof(SVsSolution).GUID);
+            Marshal.ThrowExceptionForHR(
+                vsSolution.GetProjectOfUniqueName(
+                    project.UniqueName,
+                    out hierarchy));
+            Marshal.ThrowExceptionForHR(
+                vsSolution.GetGuidOfProject(
+                    hierarchy,
+                    out Guid projectId));
+            ComObject.Release(_sysManager);
+            _sysManager = null;
+            Marshal.ThrowExceptionForHR(
+                ((IVsSolution4)vsSolution).ReloadProject(
+                    ref projectId));
+            ITcSysManager reloaded = AcquireSysManager(
+                dte,
+                solutionPath,
+                out string reloadedPath);
+            if (!string.Equals(
+                reloadedPath,
+                twinCatProjectPath,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                ComObject.Release(reloaded);
+                throw new GatewayOperationException(
+                    ErrorCodes.SolutionMismatch,
+                    "XAE reloaded a different TwinCAT project.",
+                    retryable: true,
+                    stage: "xae.workspace.reloadProject");
+            }
+
+            _sysManager = reloaded;
+            IReadOnlyList<XaeProjectFileChangeResult> generated =
+                fileChanges.ClassifyChangesAndRelease(
+                    BuildAction.Build);
+            fileChanges = null;
+            XaeProjectFileChangeResult? unsupported =
+                generated.FirstOrDefault(change =>
+                    change.Classification
+                        != ProjectChangeClassification
+                            .ExpectedReorderOnly
+                    && change.Classification
+                        != ProjectChangeClassification
+                            .WhitespaceOnly);
+            if (unsupported is not null)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.ExternalChangeDetected,
+                    "TwinCAT project metadata changed during the tracked "
+                    + "reload and was not proven generated noise: "
+                    + $"'{unsupported.Path}'.",
+                    retryable: true,
+                    stage: "xae.workspace.reloadProject");
+            }
+
+            return generated;
+        }
+        finally
+        {
+            fileChanges?.Dispose();
+            ComObject.Release(project);
+            ComObject.Release(hierarchy);
+            ComObject.Release(vsSolution);
+            ComObject.Release(projects);
+            ComObject.Release(solution);
+        }
+    }
+
+    private static T QueryService<T>(
+        DTE2 dte,
+        Guid service)
+        where T : class
+    {
+        IntPtr unknownPointer = IntPtr.Zero;
+        IntPtr providerPointer = IntPtr.Zero;
+        OleServiceProvider? serviceProvider = null;
+        IntPtr servicePointer = IntPtr.Zero;
+        try
+        {
+            unknownPointer = Marshal.GetIUnknownForObject(dte);
+            Guid providerIid = typeof(OleServiceProvider).GUID;
+            Marshal.ThrowExceptionForHR(
+                Marshal.QueryInterface(
+                    unknownPointer,
+                    ref providerIid,
+                    out providerPointer));
+            serviceProvider = (OleServiceProvider)
+                Marshal.GetTypedObjectForIUnknown(
+                    providerPointer,
+                    typeof(OleServiceProvider));
+            Guid iid = typeof(T).GUID;
+            Marshal.ThrowExceptionForHR(
+                serviceProvider.QueryService(
+                    ref service,
+                    ref iid,
+                    out servicePointer));
+            return (T)Marshal.GetTypedObjectForIUnknown(
+                servicePointer,
+                typeof(T));
+        }
+        finally
+        {
+            ComObject.Release(serviceProvider);
+            if (servicePointer != IntPtr.Zero)
+            {
+                Marshal.Release(servicePointer);
+            }
+
+            if (providerPointer != IntPtr.Zero)
+            {
+                Marshal.Release(providerPointer);
+            }
+
+            if (unknownPointer != IntPtr.Zero)
+            {
+                Marshal.Release(unknownPointer);
             }
         }
     }
@@ -2052,7 +2502,6 @@ public sealed class XaeSession : IDisposable
             _sysManager = null;
             _dte = null;
             _twinCatProjectPath = null;
-            _workspaceRoots = Array.Empty<string>();
             _snapshot = new XaeSessionSnapshot();
         }
 
@@ -2207,6 +2656,10 @@ public sealed class XaeSession : IDisposable
             AgentWorkspaceOwned = source.AgentWorkspaceOwned,
             ClosedDocumentCount = source.ClosedDocumentCount,
             DiscardedDocumentCount = source.DiscardedDocumentCount,
+            SynchronizationState =
+                source.SynchronizationState,
+            DirtyDocumentCount =
+                source.DirtyDocumentCount,
             ActiveConfiguration = source.ActiveConfiguration,
             ActivePlatform = source.ActivePlatform,
             TargetAmsNetId = source.TargetAmsNetId,
@@ -2243,21 +2696,17 @@ public sealed class XaeSession : IDisposable
     {
         public FingerprintState(
             string solutionPath,
-            ProjectFileFingerprintSnapshot baseline,
-            IReadOnlyList<string> workspaceRoots,
+            ProjectFileFingerprintSnapshot? baseline,
             string twinCatProjectPath)
         {
             SolutionPath = solutionPath;
             Baseline = baseline;
-            WorkspaceRoots = workspaceRoots.ToArray();
             TwinCatProjectPath = twinCatProjectPath;
         }
 
         public string SolutionPath { get; }
 
-        public ProjectFileFingerprintSnapshot Baseline { get; }
-
-        public IReadOnlyList<string> WorkspaceRoots { get; }
+        public ProjectFileFingerprintSnapshot? Baseline { get; }
 
         public string TwinCatProjectPath { get; }
     }

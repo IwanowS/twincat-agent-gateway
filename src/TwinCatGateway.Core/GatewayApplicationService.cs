@@ -18,6 +18,11 @@ public delegate Task<ActivationResult> ActivationOperationExecutor(
     ActivateParameters parameters,
     CancellationToken cancellationToken);
 
+public delegate Task<SynchronizeResult> SynchronizeOperationExecutor(
+    string operationId,
+    SynchronizeParameters parameters,
+    CancellationToken cancellationToken);
+
 public sealed class GatewayApplicationService
 {
     private readonly string _version;
@@ -28,6 +33,7 @@ public sealed class GatewayApplicationService
     private readonly Func<GatewayDiagnosticsResult>? _diagnosticsProvider;
     private readonly BuildOperationExecutor? _buildExecutor;
     private readonly ActivationOperationExecutor? _activationExecutor;
+    private readonly SynchronizeOperationExecutor? _synchronizeExecutor;
     private readonly TcUnitPreparationExecutor?
         _tcUnitPreparationExecutor;
     private readonly TcUnitOperationExecutor?
@@ -50,7 +56,8 @@ public sealed class GatewayApplicationService
         IClock? clock = null,
         TcUnitPreparationExecutor?
             tcUnitPreparationExecutor = null,
-        TcUnitOperationExecutor? tcUnitExecutor = null)
+        TcUnitOperationExecutor? tcUnitExecutor = null,
+        SynchronizeOperationExecutor? synchronizeExecutor = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -65,6 +72,7 @@ public sealed class GatewayApplicationService
         _diagnosticsProvider = diagnosticsProvider;
         _buildExecutor = buildExecutor;
         _activationExecutor = activationExecutor;
+        _synchronizeExecutor = synchronizeExecutor;
         _tcUnitPreparationExecutor =
             tcUnitPreparationExecutor;
         _tcUnitExecutor = tcUnitExecutor;
@@ -323,6 +331,56 @@ public sealed class GatewayApplicationService
             timeout);
     }
 
+    public OperationAccepted StartSynchronization(
+        SynchronizeParameters parameters,
+        bool agentRequest)
+    {
+        if (parameters is null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (_synchronizeExecutor is null || _activeProfile is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "The XAE synchronization executor is unavailable.",
+                retryable: true,
+                stage: "synchronize.enqueue");
+        }
+
+        if (agentRequest
+            && !_activeProfile.AllowAgentForceSynchronization)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ForceSynchronizationNotAllowed,
+                "Agent-initiated synchronization is disabled for "
+                + $"profile '{_activeProfile.Name}'.",
+                stage: "synchronize.policy");
+        }
+
+        if (parameters.TimeoutSeconds.HasValue
+            && parameters.TimeoutSeconds.Value <= 0)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Synchronization timeout must be positive.",
+                stage: "synchronize.validate");
+        }
+
+        SynchronizeParameters captured =
+            CloneSynchronizeParameters(parameters);
+        return _queue.Enqueue(
+            OperationKind.Synchronize,
+            (operationId, cancellationToken) =>
+                ExecuteSynchronizationAsync(
+                    operationId,
+                    captured,
+                    cancellationToken),
+            TimeSpan.FromSeconds(
+                captured.TimeoutSeconds ?? 120));
+    }
+
     public OperationDetails<object> GetOperation(string operationId)
     {
         if (string.IsNullOrWhiteSpace(operationId))
@@ -523,6 +581,62 @@ public sealed class GatewayApplicationService
                 status.Gateway.State = status.Xae.Connected
                     ? GatewayState.Ready
                     : GatewayState.Disconnected;
+                return status;
+            });
+        }
+    }
+
+    private async Task<OperationExecutionResult>
+        ExecuteSynchronizationAsync(
+            string operationId,
+            SynchronizeParameters parameters,
+            CancellationToken cancellationToken)
+    {
+        DateTimeOffset startedAtUtc = _clock.UtcNow;
+        _status.Update(status =>
+        {
+            status.CurrentOperation = new OperationSummary
+            {
+                OperationId = operationId,
+                Kind = OperationKind.Synchronize,
+                State = OperationState.Running,
+                QueuedAtUtc = startedAtUtc,
+                StartedAtUtc = startedAtUtc,
+            };
+            status.Xae.SynchronizationState =
+                SynchronizationState.Synchronizing;
+            return status;
+        });
+        try
+        {
+            SynchronizeResult result =
+                await _synchronizeExecutor!(
+                    operationId,
+                    parameters,
+                    cancellationToken).ConfigureAwait(false);
+            result.OperationId = operationId;
+            _status.Update(status =>
+            {
+                status.Xae.SynchronizationState =
+                    SynchronizationState.Confirmed;
+                status.Xae.DiscardedDocumentCount =
+                    result.DiscardedDocumentCount;
+                return status;
+            });
+            return OperationExecutionResult.Success(result);
+        }
+        finally
+        {
+            _status.Update(status =>
+            {
+                status.CurrentOperation = null;
+                if (status.Xae.SynchronizationState
+                    == SynchronizationState.Synchronizing)
+                {
+                    status.Xae.SynchronizationState =
+                        SynchronizationState.SyncRequired;
+                }
+
                 return status;
             });
         }
@@ -757,7 +871,25 @@ public sealed class GatewayApplicationService
             ChangedPaths = source.ChangedPaths?
                 .ToList()
                 ?? new List<string>(),
+            DiscardDirtyDocuments =
+                source.DiscardDirtyDocuments,
             Detail = source.Detail,
+            TimeoutSeconds = source.TimeoutSeconds,
+        };
+    }
+
+    private static SynchronizeParameters
+        CloneSynchronizeParameters(
+            SynchronizeParameters source)
+    {
+        return new SynchronizeParameters
+        {
+            Profile = source.Profile,
+            ChangedPaths = source.ChangedPaths?
+                .ToList()
+                ?? new List<string>(),
+            DiscardDirtyDocuments =
+                source.DiscardDirtyDocuments,
             TimeoutSeconds = source.TimeoutSeconds,
         };
     }

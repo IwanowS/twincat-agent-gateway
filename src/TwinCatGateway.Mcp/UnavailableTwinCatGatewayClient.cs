@@ -103,6 +103,15 @@ internal sealed class UnavailableTwinCatGatewayClient
             cancellationToken);
     }
 
+    public Task<GatewayResponse<OperationAccepted>>
+        StartSynchronizationAsync(
+            SynchronizeParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        return Response<OperationAccepted>(
+            cancellationToken);
+    }
+
     public Task<GatewayResponse<OperationDetails<TResult>>>
         GetOperationAsync<TResult>(
             string operationId,
