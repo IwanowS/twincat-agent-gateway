@@ -23,7 +23,11 @@ MVP завершён, когда Codex может выполнить следу�
 11. изменения project graph, записанные XAE во время gateway-owned operation,
     будут приняты, залогированы и не потребуют полного чтения XML агентом.
 
-Весь цикл выполняется без PowerShell. ADS surface ограничен `ReadState` на фиксированном System Service port 10000 и чтением заранее настроенных TcUnit completion symbols выбранного target; произвольные reads/writes, RPC и runtime control через ADS не входят в MVP.
+Весь цикл выполняется без PowerShell. ADS surface ограничен `ReadState` на
+фиксированном System Service port 10000 и PLC runtime ports из точного
+выбранного `.tsproj`, а также чтением заранее настроенных TcUnit completion
+symbols выбранного target; произвольные reads/writes, caller-selected ports,
+RPC и runtime control через ADS не входят в MVP.
 
 ## 3. Milestone 0 — технические spikes
 
@@ -109,13 +113,21 @@ Acceptance:
 - end-to-end сценарий из реального PLC exception остаётся обязательной
   стендовой проверкой Milestone 7.
 
-#### 0.6 Read-only runtime status
+#### 0.6 Read-only continuous runtime status
 
-Проверить состояния через `AdsClient.TryReadState` на фиксированном System Service port 10000. NetId брать только из target, выбранного и проверенного через XAE/profile; не принимать NetId или port от MCP/CLI.
+Проверять состояния через общий background polling: System Service port 10000
+и PLC ADS ports, обнаруженные из точного выбранного `.tsproj`. NetId брать
+только из target, выбранного и проверенного через XAE/profile; не принимать
+NetId или port от MCP/CLI.
 
 Acceptance:
 
 - `Run`, `Config/Reconfig`, `Stop/Stopping/Shutdown` и `Error/Exception` проверены на закреплённом ADS client;
+- polling продолжается во время XAE build/activation и после временного XAE
+  disconnect, используя последний проверенный target;
+- неизменившиеся observations не создают повторных domain events;
+- PLC `Exception`, ADS disconnect и recovery отражаются в compact status,
+  каждом IPC/MCP response и cursor-based diagnostics;
 - неподдержанные состояния и ADS failures возвращаются как `unknown`;
 - raw ADS/device state и error evidence доступны в detailed diagnostics;
 - runtime status read не вызывает XAE dialogs и не меняет runtime state.
@@ -791,6 +803,7 @@ twincat-diff://<operation-id>/project-noise
 - `.tsproj` reorder detector;
 - CLI;
 - MCP core tools.
+- continuous System/PLC runtime polling с compact runtime alerts.
 
 ### P1
 
@@ -816,6 +829,11 @@ twincat-diff://<operation-id>/project-noise
 - TwinCAT 4026/VS2022 specialization.
 - Claude-specific global MCP registration; до отдельного решения поддерживать
   только документируемый manual stdio command, без installer integration.
+- MCP `2026-07-28` `subscriptions/listen` для optional runtime resource
+  notifications после подтверждения поддержки со стороны Codex host и
+  официального C# SDK. Subscription остаётся transport optimization: gateway
+  не полагается на него как на гарантию нового agent turn и сохраняет
+  cursor-based event replay.
 
 ## 15. Test matrix
 
@@ -839,7 +857,7 @@ twincat-diff://<operation-id>/project-noise
 | Auto Boot PLC readiness | Да | Да | Да |
 | Activation Error List classification | Парсер | Да | Да |
 | XAE fatal dialog capture | Нет | Да | Да |
-| ADS System Service runtime status | Да | Да | Да |
+| ADS System/PLC continuous runtime status | Да | Да | Да |
 | TcUnit ADS completion | Да (fake ADS) | Да | Да |
 | ADS target/profile mismatch | Да | Да | Да |
 | TcUnit fresh report | Да | Да | Да |
@@ -888,7 +906,9 @@ twincat-diff://<operation-id>/project-noise
 - TcUnit report связан с текущим запуском и не берётся из старого файла.
 - `.tsproj` reorder-only noise определяется без изменения файла.
 - Нет PowerShell runtime dependency.
-- ADS client ограничен System Service `ReadState` и фиксированными TcUnit completion reads выбранного target; general-purpose ADS access отсутствует.
+- ADS client ограничен System Service/selected-project PLC `ReadState` и
+  фиксированными TcUnit completion reads выбранного target; general-purpose
+  ADS access отсутствует.
 - MCP можно перезапустить без потери gateway/XAE session.
 - Agent может явно запустить отсутствующий gateway один раз, но обычные MCP
   tools никогда не auto-start process.
