@@ -68,6 +68,21 @@ public sealed class DesktopGatewayHostTests
     }
 
     [Fact]
+    public void DesktopOutputContainsCanonicalSetupInstructions()
+    {
+        string instructions =
+            SetupInstructionsProvider.Read(
+                AppContext.BaseDirectory);
+
+        Assert.Contains(
+            "twincat-gateway.json",
+            instructions);
+        Assert.Contains(
+            "gateway_start once",
+            instructions);
+    }
+
+    [Fact]
     public void DesktopViewModelFailsClosedWithoutConnectedXae()
     {
         using TemporaryDirectory temporary = new();

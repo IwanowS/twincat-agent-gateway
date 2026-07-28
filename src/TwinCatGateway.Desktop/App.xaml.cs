@@ -95,9 +95,33 @@ public partial class App : Application
             if (options?.LaunchSource
                 != GatewayLaunchSource.Agent)
             {
-                MessageBox.Show(
+                string message =
                     "TwinCAT Agent Gateway could not start.\n\n"
-                    + exception.Message,
+                    + exception.Message;
+                if (exception
+                        is GatewayOperationException
+                        configurationError
+                    && configurationError.Code
+                        == ErrorCodes
+                            .GatewayConfigNotFound)
+                {
+                    if (SetupInstructionsProvider.TryRead(
+                            out string instructions,
+                            out string? setupError))
+                    {
+                        message += "\n\n" + instructions;
+                    }
+                    else
+                    {
+                        message +=
+                            "\n\nSetup instructions are "
+                            + "unavailable: "
+                            + setupError;
+                    }
+                }
+
+                MessageBox.Show(
+                    message,
                     "TwinCAT Agent Gateway",
                     MessageBoxButton.OK,
                     MessageBoxImage.Error);

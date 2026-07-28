@@ -228,6 +228,7 @@
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBlock VerticalAlignment="Center"
                        Foreground="#6A7681"
@@ -246,7 +247,13 @@
                     Padding="12,7"
                     Click="RefreshButton_Click"
                     Content="Refresh" />
-            <StackPanel Grid.Column="3"
+            <Button Grid.Column="3"
+                    MinWidth="124"
+                    Margin="8,0,0,0"
+                    Padding="12,7"
+                    Click="SetupInstructionsButton_Click"
+                    Content="Setup instructions" />
+            <StackPanel Grid.Column="4"
                         Margin="8,0,0,0"
                         Orientation="Horizontal">
                 <ComboBox Width="92"

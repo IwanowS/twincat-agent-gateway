@@ -1,0 +1,14 @@
+TwinCAT Agent Gateway setup
+
+1. Put twincat-gateway.json in the project or repository root.
+2. Start the desktop gateway manually from that project:
+   twincat-gateway
+3. Register the MCP adapter globally for Codex from the repository:
+   .\scripts\Install-CodexMcp.ps1
+4. Install agent skills separately when needed:
+   .\scripts\Install-Skills.ps1 -Scope User
+   .\scripts\Install-Skills.ps1 -Scope Project -ProjectPath <project>
+
+The agent uses MCP only. If a normal TwinCAT tool returns
+GATEWAY_NOT_RUNNING, call gateway_start once, wait for Ready, and retry the
+original operation once. Do not close the gateway at the end of an agent task.

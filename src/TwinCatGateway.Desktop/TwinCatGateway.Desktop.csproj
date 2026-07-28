@@ -17,4 +17,10 @@
     <ProjectReference Include="..\TwinCatGateway.Ipc\TwinCatGateway.Ipc.csproj" />
     <ProjectReference Include="..\TwinCatGateway.Xae\TwinCatGateway.Xae.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\setup\SETUP_INSTRUCTIONS.txt"
+          Link="SETUP_INSTRUCTIONS.txt"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

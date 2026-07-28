@@ -100,6 +100,47 @@ public partial class MainWindow : Window
         }
     }
 
+    private void SetupInstructionsButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        try
+        {
+            TextBox content = new()
+            {
+                FontFamily =
+                    new System.Windows.Media.FontFamily(
+                        "Consolas"),
+                FontSize = 13,
+                IsReadOnly = true,
+                Text = SetupInstructionsProvider.Read(),
+                TextWrapping = TextWrapping.Wrap,
+                VerticalScrollBarVisibility =
+                    ScrollBarVisibility.Auto,
+            };
+            Window viewer = new()
+            {
+                Owner = this,
+                Title = "TwinCAT Agent Gateway setup",
+                Width = 760,
+                Height = 520,
+                Content = content,
+                WindowStartupLocation =
+                    WindowStartupLocation.CenterOwner,
+            };
+            viewer.ShowDialog();
+        }
+        catch (Exception exception)
+        {
+            MessageBox.Show(
+                "Setup instructions could not be opened.\n\n"
+                + exception.Message,
+                "TwinCAT Agent Gateway",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
+    }
+
     private void OpenOperationLogButton_Click(object sender, RoutedEventArgs e)
     {
         if (!(RecentOperationsList.SelectedItem is OperationRow operation))
