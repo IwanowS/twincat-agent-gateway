@@ -5,6 +5,8 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using TwinCatGateway.Contracts;
+using TwinCatGateway.Core;
 using TwinCatGateway.Xae;
 using Xunit;
 
@@ -160,6 +162,77 @@ public sealed class XaeEnvironmentTests
             TimeSpan.FromSeconds(10),
             CancellationToken.None);
         Assert.Equal(before, after);
+    }
+
+    [XaeLaunchFact]
+    public async Task BuildConfigurationIsSelectedAndVerified()
+    {
+        string solution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        XaeSession session = new();
+        try
+        {
+            XaeSessionSnapshot snapshot = await session.LaunchAsync(
+                solution,
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_XAE_PROGID"),
+                TimeSpan.FromSeconds(60),
+                CancellationToken.None);
+            string configuration = Assert.IsType<string>(
+                snapshot.ActiveConfiguration);
+            string platform = Assert.IsType<string>(
+                snapshot.ActivePlatform);
+            string requestedConfiguration = string.Equals(
+                    configuration,
+                    "Debug",
+                    StringComparison.OrdinalIgnoreCase)
+                ? "Release"
+                : "Debug";
+
+            XaeBuildExecutionResult build =
+                await session.ExecuteBuildAsync(
+                    BuildAction.Build,
+                    changedPaths: null,
+                    requestedConfiguration,
+                    platform,
+                    TimeSpan.FromSeconds(60),
+                    CancellationToken.None);
+
+            Assert.Equal(0, build.FailedProjects);
+            XaeSessionSnapshot selected =
+                await session.VerifyAttachedAsync(
+                    solution,
+                    TimeSpan.FromSeconds(10),
+                    CancellationToken.None);
+            Assert.Equal(
+                requestedConfiguration,
+                selected.ActiveConfiguration,
+                ignoreCase: true);
+            Assert.Equal(
+                platform,
+                selected.ActivePlatform,
+                ignoreCase: true);
+            GatewayOperationException exception =
+                await Assert.ThrowsAsync<GatewayOperationException>(
+                    () => session.ExecuteBuildAsync(
+                        BuildAction.Build,
+                        changedPaths: null,
+                        configuration: "Missing configuration",
+                        platform,
+                        TimeSpan.FromSeconds(60),
+                        CancellationToken.None));
+            Assert.Equal(
+                ErrorCodes.BuildConfigurationNotFound,
+                exception.Code);
+        }
+        finally
+        {
+            await session.CloseGatewayLaunchedAsync(
+                TimeSpan.FromSeconds(15),
+                CancellationToken.None);
+            session.Dispose();
+        }
     }
 
     [XaeLaunchFact]

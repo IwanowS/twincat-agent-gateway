@@ -384,6 +384,23 @@ public sealed class XaeSession : IDisposable
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        return await ExecuteBuildAsync(
+            action,
+            changedPaths,
+            configuration: null,
+            platform: null,
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<XaeBuildExecutionResult> ExecuteBuildAsync(
+        BuildAction action,
+        IEnumerable<string>? changedPaths,
+        string? configuration,
+        string? platform,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
         ThrowIfDisposed();
         DateTimeOffset deadlineUtc = CreateDeadline(timeout);
         ExternalChangeSynchronizationResult synchronization =
@@ -395,7 +412,10 @@ public sealed class XaeSession : IDisposable
                 cancellationToken).ConfigureAwait(false);
         Task<XaeBuildEventEvidence> completion =
             await _dispatcher.InvokeAsync(
-                () => StartBuildOnSta(action),
+                () => StartBuildOnSta(
+                    action,
+                    configuration,
+                    platform),
                 GetRemaining(
                     deadlineUtc,
                     "xae.build.start"),
@@ -1122,8 +1142,6 @@ public sealed class XaeSession : IDisposable
         Solution? solution = null;
         SolutionBuild? solutionBuild = null;
         SolutionConfiguration? configuration = null;
-        SolutionContexts? contexts = null;
-        List<string> platforms = new();
         activeConfiguration = null;
         activePlatform = null;
         try
@@ -1134,6 +1152,29 @@ public sealed class XaeSession : IDisposable
                 solutionBuild.ActiveConfiguration;
             activeConfiguration = EmptyToNull(
                 configuration.Name);
+            string[] uniquePlatforms =
+                ReadSolutionConfigurationPlatforms(
+                    configuration);
+            activePlatform = uniquePlatforms.Length == 1
+                ? uniquePlatforms[0]
+                : null;
+        }
+        finally
+        {
+            ComObject.Release(configuration);
+            ComObject.Release(solutionBuild);
+            ComObject.Release(solution);
+        }
+    }
+
+    private static string[]
+        ReadSolutionConfigurationPlatforms(
+            SolutionConfiguration configuration)
+    {
+        SolutionContexts? contexts = null;
+        List<string> platforms = new();
+        try
+        {
             contexts = configuration.SolutionContexts;
             int count = contexts.Count;
             for (int index = 1; index <= count; index++)
@@ -1156,19 +1197,16 @@ public sealed class XaeSession : IDisposable
                 }
             }
 
-            string[] uniquePlatforms = platforms
+            return platforms
                 .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(
+                    value => value,
+                    StringComparer.OrdinalIgnoreCase)
                 .ToArray();
-            activePlatform = uniquePlatforms.Length == 1
-                ? uniquePlatforms[0]
-                : null;
         }
         finally
         {
             ComObject.Release(contexts);
-            ComObject.Release(configuration);
-            ComObject.Release(solutionBuild);
-            ComObject.Release(solution);
         }
     }
 
@@ -1367,7 +1405,9 @@ public sealed class XaeSession : IDisposable
     }
 
     private Task<XaeBuildEventEvidence> StartBuildOnSta(
-        BuildAction action)
+        BuildAction action,
+        string? configuration,
+        string? platform)
     {
         if (_activeBuild is not null)
         {
@@ -1378,6 +1418,9 @@ public sealed class XaeSession : IDisposable
                 stage: "xae.build.start");
         }
 
+        ApplyBuildConfigurationOnSta(
+            configuration,
+            platform);
         DTE2 dte = _dte
             ?? throw new GatewayOperationException(
                 ErrorCodes.XaeNotFound,
@@ -1388,6 +1431,244 @@ public sealed class XaeSession : IDisposable
             dte,
             action);
         return _activeBuild.Completion;
+    }
+
+    private void ApplyBuildConfigurationOnSta(
+        string? requestedConfiguration,
+        string? requestedPlatform)
+    {
+        if (string.IsNullOrWhiteSpace(requestedConfiguration)
+            && string.IsNullOrWhiteSpace(requestedPlatform))
+        {
+            return;
+        }
+
+        const string stage = "xae.build.configuration";
+        DTE2 dte = _dte
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: stage);
+        Solution? solution = null;
+        SolutionBuild? solutionBuild = null;
+        SolutionConfiguration? active = null;
+        try
+        {
+            solution = dte.Solution;
+            solutionBuild = solution.SolutionBuild;
+            active = solutionBuild.ActiveConfiguration;
+            string? activeName = EmptyToNull(active.Name);
+            string[] activePlatforms =
+                ReadSolutionConfigurationPlatforms(active);
+            string? effectiveConfiguration =
+                string.IsNullOrWhiteSpace(requestedConfiguration)
+                    ? activeName
+                    : requestedConfiguration;
+            bool configurationMatches =
+                string.IsNullOrWhiteSpace(requestedConfiguration)
+                || string.Equals(
+                    activeName,
+                    requestedConfiguration,
+                    StringComparison.OrdinalIgnoreCase);
+            bool platformMatches =
+                string.IsNullOrWhiteSpace(requestedPlatform)
+                || (activePlatforms.Length == 1
+                    && string.Equals(
+                        activePlatforms[0],
+                        requestedPlatform,
+                        StringComparison.OrdinalIgnoreCase));
+            if (!configurationMatches || !platformMatches)
+            {
+                if (string.IsNullOrWhiteSpace(
+                        effectiveConfiguration))
+                {
+                    throw new GatewayOperationException(
+                        ErrorCodes.BuildConfigurationNotFound,
+                        "The active XAE solution configuration "
+                        + "could not be identified.",
+                        stage: stage);
+                }
+
+                ComObject.Release(active);
+                active = null;
+                ActivateSolutionConfiguration(
+                    solutionBuild,
+                    effectiveConfiguration!,
+                    requestedPlatform);
+                active = solutionBuild.ActiveConfiguration;
+                activeName = EmptyToNull(active.Name);
+                activePlatforms =
+                    ReadSolutionConfigurationPlatforms(active);
+            }
+
+            ValidateBuildConfiguration(
+                activeName,
+                activePlatforms,
+                requestedConfiguration,
+                requestedPlatform);
+            _snapshot.ActiveConfiguration = activeName;
+            _snapshot.ActivePlatform =
+                activePlatforms.Length == 1
+                    ? activePlatforms[0]
+                    : null;
+        }
+        catch (GatewayOperationException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.BuildConfigurationFailed,
+                "The requested XAE build configuration "
+                + "could not be selected or verified.",
+                stage: stage,
+                innerException: exception);
+        }
+        finally
+        {
+            ComObject.Release(active);
+            ComObject.Release(solutionBuild);
+            ComObject.Release(solution);
+        }
+    }
+
+    private static void ActivateSolutionConfiguration(
+        SolutionBuild solutionBuild,
+        string requestedConfiguration,
+        string? requestedPlatform)
+    {
+        const string stage = "xae.build.configuration";
+        SolutionConfigurations? configurations = null;
+        SolutionConfiguration? selected = null;
+        try
+        {
+            configurations =
+                solutionBuild.SolutionConfigurations;
+            int count = configurations.Count;
+            for (int index = 1; index <= count; index++)
+            {
+                SolutionConfiguration? candidate = null;
+                try
+                {
+                    object itemIndex = index;
+                    candidate =
+                        configurations.Item(itemIndex);
+                    if (!string.Equals(
+                            EmptyToNull(candidate.Name),
+                            requestedConfiguration,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    string[] candidatePlatforms =
+                        ReadSolutionConfigurationPlatforms(
+                            candidate);
+                    if (!string.IsNullOrWhiteSpace(
+                            requestedPlatform)
+                        && (candidatePlatforms.Length != 1
+                            || !string.Equals(
+                                candidatePlatforms[0],
+                                requestedPlatform,
+                                StringComparison.OrdinalIgnoreCase)))
+                    {
+                        continue;
+                    }
+
+                    if (selected is not null)
+                    {
+                        throw new GatewayOperationException(
+                            ErrorCodes
+                                .BuildConfigurationAmbiguous,
+                            "Multiple XAE solution "
+                            + $"configurations match "
+                            + $"'{requestedConfiguration}'.",
+                            stage: stage);
+                    }
+
+                    selected = candidate;
+                    candidate = null;
+                }
+                finally
+                {
+                    ComObject.Release(candidate);
+                }
+            }
+
+            if (selected is null)
+            {
+                string selection = string.IsNullOrWhiteSpace(
+                        requestedPlatform)
+                    ? $"configuration '{requestedConfiguration}'"
+                    : "configuration/platform "
+                        + $"'{requestedConfiguration}/"
+                        + $"{requestedPlatform}'";
+                throw new GatewayOperationException(
+                    ErrorCodes.BuildConfigurationNotFound,
+                    $"XAE solution {selection} was not found.",
+                    stage: stage);
+            }
+
+            selected.Activate();
+        }
+        finally
+        {
+            ComObject.Release(selected);
+            ComObject.Release(configurations);
+        }
+    }
+
+    private static void ValidateBuildConfiguration(
+        string? activeConfiguration,
+        IReadOnlyList<string> activePlatforms,
+        string? requestedConfiguration,
+        string? requestedPlatform)
+    {
+        const string stage = "xae.build.configuration";
+        if (!string.IsNullOrWhiteSpace(requestedConfiguration)
+            && !string.Equals(
+                activeConfiguration,
+                requestedConfiguration,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.BuildConfigurationNotFound,
+                "XAE did not activate solution configuration "
+                + $"'{requestedConfiguration}'.",
+                stage: stage);
+        }
+
+        if (string.IsNullOrWhiteSpace(requestedPlatform))
+        {
+            return;
+        }
+
+        if (activePlatforms.Count != 1)
+        {
+            string available = activePlatforms.Count == 0
+                ? "none"
+                : string.Join(", ", activePlatforms);
+            throw new GatewayOperationException(
+                ErrorCodes.BuildConfigurationAmbiguous,
+                "The active XAE solution configuration does not "
+                + "have one unambiguous project platform; "
+                + $"observed: {available}.",
+                stage: stage);
+        }
+
+        if (!string.Equals(
+                activePlatforms[0],
+                requestedPlatform,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.BuildConfigurationNotFound,
+                $"XAE platform '{requestedPlatform}' is not active; "
+                + $"active platform is '{activePlatforms[0]}'.",
+                stage: stage);
+        }
     }
 
     private XaeBuildExecutionResult CompleteBuildOnSta(

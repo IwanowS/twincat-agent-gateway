@@ -177,15 +177,14 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 stage: "build.validate");
         }
 
-        if (!string.IsNullOrWhiteSpace(parameters.Configuration)
-            || !string.IsNullOrWhiteSpace(parameters.Platform))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.RequestInvalid,
-                "Explicit build configuration and platform selection "
-                + "are not implemented yet.",
-                stage: "build.validate");
-        }
+        string? configuration = ResolveBuildSetting(
+            parameters.Configuration,
+            _profile.Configuration,
+            "configuration");
+        string? platform = ResolveBuildSetting(
+            parameters.Platform,
+            _profile.Platform,
+            "platform");
 
         TimeSpan timeout = TimeSpan.FromSeconds(
             parameters.TimeoutSeconds ?? 120);
@@ -193,6 +192,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             await _session.ExecuteBuildAsync(
                 parameters.Action,
                 parameters.ChangedPaths,
+                configuration,
+                platform,
                 timeout,
                 cancellationToken).ConfigureAwait(false);
         List<BuildDiagnostic> diagnostics =
@@ -616,6 +617,29 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         return text.ToString();
+    }
+
+    private static string? ResolveBuildSetting(
+        string? requested,
+        string? configured,
+        string name)
+    {
+        if (requested is not null)
+        {
+            if (string.IsNullOrWhiteSpace(requested))
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.RequestInvalid,
+                    $"Build {name} cannot be empty.",
+                    stage: "build.validate");
+            }
+
+            return requested.Trim();
+        }
+
+        return string.IsNullOrWhiteSpace(configured)
+            ? null
+            : configured!.Trim();
     }
 
     private static string FormatProjectChanges(

@@ -26,6 +26,12 @@ public static class ErrorCodes
     public const string ComCallRejected = "COM_CALL_REJECTED";
     public const string ComCallTimeout = "COM_CALL_TIMEOUT";
     public const string BuildFailed = "BUILD_FAILED";
+    public const string BuildConfigurationNotFound =
+        "BUILD_CONFIGURATION_NOT_FOUND";
+    public const string BuildConfigurationAmbiguous =
+        "BUILD_CONFIGURATION_AMBIGUOUS";
+    public const string BuildConfigurationFailed =
+        "BUILD_CONFIGURATION_FAILED";
     public const string BuildResultInconsistent = "BUILD_RESULT_INCONSISTENT";
     public const string ExternalEditConflict = "EXTERNAL_EDIT_CONFLICT";
     public const string ExternalEditUnsupported =
