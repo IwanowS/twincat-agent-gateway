@@ -1,0 +1,5 @@
+# Project-local alternative to global registration by Install-CodexMcp.ps1.
+# Do not enable both registrations for the same server at the same time.
+
+[mcp_servers.twincat-gateway-mcp]
+command = "twincat-gateway-mcp"

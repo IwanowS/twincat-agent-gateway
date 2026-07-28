@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "pipeName": "TwinCatAgentGateway",
+  "defaultProfile": "fixture",
+  "logRetentionDays": 14,
+  "ui": {
+    "mode": "auto"
+  },
+  "agentProcessControl": {
+    "allowStart": true,
+    "allowShutdown": false
+  },
+  "profiles": [
+    {
+      "name": "fixture",
+      "solution": "TC3_SimpleProject.sln",
+      "allowXaeLaunch": true,
+      "allowActivation": false,
+      "requireRecentSuccessfulBuild": true,
+      "recentBuildMaxAgeSeconds": 600
+    }
+  ]
+}
