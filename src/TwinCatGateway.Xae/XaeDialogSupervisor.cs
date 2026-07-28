@@ -179,6 +179,41 @@ public sealed class XaeDialogOperationScope : IDisposable
         return _context.CreateActivationResult();
     }
 
+    public async Task WaitForActivationDialogOutcomeAsync(
+        TimeSpan settleTimeout,
+        CancellationToken cancellationToken)
+    {
+        if (settleTimeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(settleTimeout));
+        }
+
+        ThrowIfDisposed();
+        Task timeout = Task.Delay(
+            settleTimeout,
+            cancellationToken);
+        Task completed = await Task.WhenAny(
+            _context.ActivationDialogSequenceCompleted,
+            _context.FailureDetected,
+            timeout).ConfigureAwait(false);
+        if (completed == _context.FailureDetected)
+        {
+            throw await _context.FailureDetected
+                .ConfigureAwait(false);
+        }
+
+        if (completed
+            == _context.ActivationDialogSequenceCompleted)
+        {
+            ThrowIfFailed();
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        ThrowIfFailed();
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -216,6 +251,9 @@ internal sealed class XaeDialogOperationContext
 {
     private readonly TaskCompletionSource<GatewayOperationException> _failure =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<bool>
+        _activationDialogSequenceCompleted =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
     private readonly List<XaeDialogObservation> _observations = new();
     private readonly object _sync = new();
     private string _stage;
@@ -245,6 +283,9 @@ internal sealed class XaeDialogOperationContext
 
     public Task<GatewayOperationException> FailureDetected =>
         _failure.Task;
+
+    public Task ActivationDialogSequenceCompleted =>
+        _activationDialogSequenceCompleted.Task;
 
     public string ReadStage()
     {
@@ -307,6 +348,8 @@ internal sealed class XaeDialogOperationContext
         {
             _runDecisionHandled = true;
         }
+
+        _activationDialogSequenceCompleted.TrySetResult(true);
     }
 
     public void Fail(GatewayOperationException exception)
@@ -1014,11 +1057,7 @@ internal sealed class XaeDialogSupervisor : IDisposable
                         : ButtonAutomationIdCancel,
                     run ? "ok-run" : "cancel-run",
                     observation);
-                if (observation.ActionCompleted)
-                {
-                    operation.ConfirmRunDecision();
-                }
-                else
+                if (!observation.ActionCompleted)
                 {
                     observation.Failure = true;
                 }
@@ -1029,7 +1068,11 @@ internal sealed class XaeDialogSupervisor : IDisposable
                         ? null
                         : dialog.NativeWindowHandle);
                 Publish(observation);
-                if (!observation.ActionCompleted)
+                if (observation.ActionCompleted)
+                {
+                    operation.ConfirmRunDecision();
+                }
+                else
                 {
                     operation.Fail(CreateActionFailure(
                         operation,

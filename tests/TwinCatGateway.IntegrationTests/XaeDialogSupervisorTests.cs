@@ -69,19 +69,8 @@ public sealed class XaeDialogSupervisorTests
             + "[System.Windows.Forms.MessageBoxIcon]::Question) "
             + "| Out-Null; "
             + "$owner.Close()";
-        string encodedScript = Convert.ToBase64String(
-            Encoding.Unicode.GetBytes(dialogScript));
-        using Process dialogProcess = Process.Start(
-            new ProcessStartInfo
-            {
-                FileName = "powershell.exe",
-                Arguments = "-NoProfile -Sta -EncodedCommand "
-                    + encodedScript,
-                CreateNoWindow = true,
-                UseShellExecute = false,
-            })
-            ?? throw new InvalidOperationException(
-                "Could not start the modal dialog test process.");
+        using Process dialogProcess =
+            StartDialogProcess(dialogScript);
         using XaeDialogSupervisor supervisor = new(
             dialogProcess.Id);
         List<XaeDialogObservation> observed = new();
@@ -134,5 +123,96 @@ public sealed class XaeDialogSupervisorTests
         Assert.Contains(
             observation.Buttons,
             button => button.AutomationId == "2");
+    }
+
+    [Fact]
+    public async Task PlatformMismatchFailureWinsCommandCompletionRace()
+    {
+        if (!Environment.UserInteractive)
+        {
+            return;
+        }
+
+        const string dialogScript =
+            "Start-Sleep -Milliseconds 500; "
+            + "Add-Type -AssemblyName System.Windows.Forms; "
+            + "$owner = New-Object System.Windows.Forms.Form; "
+            + "$owner.ShowInTaskbar = $false; "
+            + "$owner.Opacity = 0; "
+            + "$owner.Show(); "
+            + "[System.Windows.Forms.MessageBox]::Show("
+            + "$owner, "
+            + "\"Active solution platform 'TwinCAT CE7 (ARMV7)' "
+            + "differs from current target platform "
+            + "'TwinCAT RT (x64)'!\", "
+            + "'TcXaeShell', "
+            + "[System.Windows.Forms.MessageBoxButtons]::YesNoCancel, "
+            + "[System.Windows.Forms.MessageBoxIcon]::Question) "
+            + "| Out-Null; "
+            + "$owner.Close()";
+        using Process dialogProcess =
+            StartDialogProcess(dialogScript);
+        using XaeDialogSupervisor supervisor = new(
+            dialogProcess.Id);
+        using XaeDialogOperationScope operation =
+            supervisor.BeginOperation(
+                "activation-race-test",
+                "activate",
+                "activation.activateConfiguration",
+                runAfterActivation: false);
+
+        await operation.ObserveAsync(
+            Task.Delay(TimeSpan.FromMilliseconds(100)));
+        GatewayOperationException exception;
+        try
+        {
+            exception =
+                await Assert.ThrowsAsync<GatewayOperationException>(
+                    () => operation
+                        .WaitForActivationDialogOutcomeAsync(
+                            TimeSpan.FromSeconds(5),
+                            default));
+        }
+        finally
+        {
+            if (!dialogProcess.HasExited)
+            {
+                dialogProcess.Kill();
+            }
+        }
+
+        Assert.Equal(
+            ErrorCodes.ActivationDialogDetected,
+            exception.Code);
+        Assert.True(
+            dialogProcess.WaitForExit(
+                milliseconds: (int)TimeSpan.FromSeconds(5)
+                    .TotalMilliseconds));
+        XaeActivationCommandResult result =
+            operation.GetActivationResult();
+        XaeDialogObservation observation =
+            Assert.Single(result.Dialogs);
+        Assert.Equal("PlatformMismatch", observation.Kind);
+        Assert.Equal(
+            "cancel-platform-mismatch",
+            observation.Action);
+        Assert.True(observation.ActionCompleted);
+    }
+
+    private static Process StartDialogProcess(string script)
+    {
+        string encodedScript = Convert.ToBase64String(
+            Encoding.Unicode.GetBytes(script));
+        return Process.Start(
+            new ProcessStartInfo
+            {
+                FileName = "powershell.exe",
+                Arguments = "-NoProfile -Sta -EncodedCommand "
+                    + encodedScript,
+                CreateNoWindow = true,
+                UseShellExecute = false,
+            })
+            ?? throw new InvalidOperationException(
+                "Could not start the modal dialog test process.");
     }
 }

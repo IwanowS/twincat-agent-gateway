@@ -20,6 +20,8 @@ namespace TwinCatGateway.Xae;
 
 public sealed class XaeSession : IDisposable
 {
+    private static readonly TimeSpan ActivationDialogSettleTimeout =
+        TimeSpan.FromSeconds(5);
     private static readonly TimeSpan PollInterval =
         TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan PollCallLimit =
@@ -318,6 +320,18 @@ public sealed class XaeSession : IDisposable
             cancellationToken);
         await dialogScope.ObserveAsync(activation)
             .ConfigureAwait(false);
+        TimeSpan dialogSettleTimeout = GetRemaining(
+            deadlineUtc,
+            "activation.dialog");
+        if (dialogSettleTimeout > ActivationDialogSettleTimeout)
+        {
+            dialogSettleTimeout =
+                ActivationDialogSettleTimeout;
+        }
+
+        await dialogScope.WaitForActivationDialogOutcomeAsync(
+            dialogSettleTimeout,
+            cancellationToken).ConfigureAwait(false);
         XaeActivationCommandResult result =
             dialogScope.GetActivationResult();
         if (!result.ActivationConfirmed
@@ -1226,6 +1240,7 @@ public sealed class XaeSession : IDisposable
         {
             RefreshDiagnosticsOnSta();
         }
+
         return CloneSnapshot(_snapshot);
     }
 

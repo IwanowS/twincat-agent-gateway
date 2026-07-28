@@ -304,7 +304,8 @@ public sealed class TwinCatTools
         string waitForTcUnit = "auto",
         [Description(
             "Confirm the XAE Run prompt after activation. "
-            + "False keeps the target in Config Mode.")]
+            + "False cancels that prompt without forcing a runtime "
+            + "mode transition.")]
         bool runAfterActivation = true,
         [Description(
             "Gateway operation timeout in seconds.")]
