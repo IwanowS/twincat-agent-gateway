@@ -313,18 +313,63 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             !operationActive
             && _host.CanReconnectXae;
 
-        RecentOperations.Clear();
-        foreach (StoredOperation operation in
-            _host.ApplicationService.GetRecentOperations(20))
+        SynchronizeRecentOperations(
+            RecentOperations,
+            _host.ApplicationService.GetRecentOperations(20));
+    }
+
+    internal static void SynchronizeRecentOperations(
+        ObservableCollection<OperationRow> rows,
+        IReadOnlyList<StoredOperation> operations)
+    {
+        HashSet<string> currentOperationIds =
+            new(StringComparer.Ordinal);
+        for (int index = 0; index < operations.Count; index++)
         {
-            RecentOperations.Add(
-                new OperationRow(
-                    operation.Summary.OperationId,
+            StoredOperation operation = operations[index];
+            string operationId =
+                operation.Summary.OperationId;
+            currentOperationIds.Add(operationId);
+
+            OperationRow? row = rows.FirstOrDefault(
+                candidate =>
+                    string.Equals(
+                        candidate.OperationId,
+                        operationId,
+                        StringComparison.Ordinal));
+            if (row is null)
+            {
+                row = new OperationRow(
+                    operationId,
                     operation.Summary.Kind.ToString(),
                     operation.Summary.State.ToString(),
                     operation.Summary.QueuedAtUtc.LocalDateTime.ToString(
                         "G",
-                        CultureInfo.CurrentCulture)));
+                        CultureInfo.CurrentCulture));
+                rows.Insert(index, row);
+                continue;
+            }
+
+            row.Update(
+                operation.Summary.Kind.ToString(),
+                operation.Summary.State.ToString(),
+                operation.Summary.QueuedAtUtc.LocalDateTime.ToString(
+                    "G",
+                    CultureInfo.CurrentCulture));
+            int currentIndex = rows.IndexOf(row);
+            if (currentIndex != index)
+            {
+                rows.Move(currentIndex, index);
+            }
+        }
+
+        for (int index = rows.Count - 1; index >= 0; index--)
+        {
+            if (!currentOperationIds.Contains(
+                    rows[index].OperationId))
+            {
+                rows.RemoveAt(index);
+            }
         }
     }
 
@@ -490,8 +535,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 }
 
-public sealed class OperationRow
+public sealed class OperationRow : INotifyPropertyChanged
 {
+    private string _kind;
+    private string _state;
+    private string _queuedAt;
+
     public OperationRow(
         string operationId,
         string kind,
@@ -499,16 +548,47 @@ public sealed class OperationRow
         string queuedAt)
     {
         OperationId = operationId;
-        Kind = kind;
-        State = state;
-        QueuedAt = queuedAt;
+        _kind = kind;
+        _state = state;
+        _queuedAt = queuedAt;
     }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
 
     public string OperationId { get; }
 
-    public string Kind { get; }
+    public string Kind => _kind;
 
-    public string State { get; }
+    public string State => _state;
 
-    public string QueuedAt { get; }
+    public string QueuedAt => _queuedAt;
+
+    internal void Update(
+        string kind,
+        string state,
+        string queuedAt)
+    {
+        SetField(ref _kind, kind, nameof(Kind));
+        SetField(ref _state, state, nameof(State));
+        SetField(ref _queuedAt, queuedAt, nameof(QueuedAt));
+    }
+
+    private void SetField(
+        ref string field,
+        string value,
+        string propertyName)
+    {
+        if (string.Equals(
+                field,
+                value,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        field = value;
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(propertyName));
+    }
 }

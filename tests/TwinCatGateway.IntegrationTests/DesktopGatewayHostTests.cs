@@ -1,4 +1,5 @@
 using System;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -218,6 +219,41 @@ public sealed class DesktopGatewayHostTests
         Assert.Equal("Not run", viewModel.LastTest);
         Assert.Throws<InvalidOperationException>(
             () => viewModel.StartActivation());
+    }
+
+    [Fact]
+    public void RecentOperationRefreshPreservesExistingRows()
+    {
+        OperationStore store = new();
+        DateTimeOffset queuedAt =
+            new(2026, 7, 28, 10, 0, 0, TimeSpan.Zero);
+        store.AddQueued(
+            "operation-1",
+            OperationKind.Build,
+            queuedAt);
+        ObservableCollection<OperationRow> rows = new();
+
+        MainWindowViewModel.SynchronizeRecentOperations(
+            rows,
+            store.GetRecent(20));
+        OperationRow selectedRow = Assert.Single(rows);
+
+        Assert.True(
+            store.TryMarkRunning(
+                "operation-1",
+                queuedAt.AddSeconds(1)));
+        store.AddQueued(
+            "operation-2",
+            OperationKind.Activate,
+            queuedAt.AddSeconds(2));
+        MainWindowViewModel.SynchronizeRecentOperations(
+            rows,
+            store.GetRecent(20));
+
+        Assert.Equal(2, rows.Count);
+        Assert.Equal("operation-2", rows[0].OperationId);
+        Assert.Same(selectedRow, rows[1]);
+        Assert.Equal("Running", selectedRow.State);
     }
 
     [Fact]
