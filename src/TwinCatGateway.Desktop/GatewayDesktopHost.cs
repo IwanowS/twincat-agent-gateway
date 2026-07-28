@@ -42,9 +42,11 @@ public sealed class GatewayDesktopHost : IDisposable
             ? null
             : Path.GetFullPath(options.ConfigurationPath!);
         LaunchSource = options.LaunchSource;
-        EffectiveUiMode = options.UiModeOverride
-            ?? Configuration.Ui?.Mode
-            ?? GatewayUiMode.Auto;
+        EffectiveUiMode = GatewayUiModeResolver.Resolve(
+            options.UiModeOverride
+                ?? Configuration.Ui?.Mode
+                ?? GatewayUiMode.Auto,
+            LaunchSource);
         LogDirectory = ResolveLogDirectory(Configuration);
         _logger = new StructuredFileLogger(LogDirectory);
         LocalLogStore logs = new(

@@ -24,25 +24,54 @@ public sealed class GatewayHostOptions
         }
 
         string? configuredPath = null;
+        GatewayLaunchSource launchSource =
+            GatewayLaunchSource.Manual;
+        GatewayUiMode? uiModeOverride = null;
         for (int index = 0; index < arguments.Count; index++)
         {
-            if (!string.Equals(
-                arguments[index],
+            string argument = arguments[index];
+            if (string.Equals(
+                argument,
                 "--config",
                 StringComparison.OrdinalIgnoreCase))
             {
+                configuredPath = ReadValue(
+                    arguments,
+                    ref index,
+                    "--config");
                 continue;
             }
 
-            if (index + 1 >= arguments.Count
-                || string.IsNullOrWhiteSpace(arguments[index + 1]))
+            if (string.Equals(
+                argument,
+                "--launch-source",
+                StringComparison.OrdinalIgnoreCase))
             {
-                throw new ArgumentException(
-                    "The --config option requires a file path.",
-                    nameof(arguments));
+                launchSource = ParseEnum<GatewayLaunchSource>(
+                    ReadValue(
+                        arguments,
+                        ref index,
+                        "--launch-source"),
+                    "--launch-source");
+                continue;
             }
 
-            configuredPath = arguments[++index];
+            if (string.Equals(
+                argument,
+                "--ui-mode",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                uiModeOverride = ParseEnum<GatewayUiMode>(
+                    ReadValue(
+                        arguments,
+                        ref index,
+                        "--ui-mode"),
+                    "--ui-mode");
+                continue;
+            }
+
+            throw InvalidArgument(
+                $"Unknown gateway argument '{argument}'.");
         }
 
         GatewayConfigurationLocation location =
@@ -54,6 +83,50 @@ public sealed class GatewayHostOptions
         return new GatewayHostOptions
         {
             ConfigurationPath = location.Path,
+            LaunchSource = launchSource,
+            UiModeOverride = uiModeOverride,
         };
+    }
+
+    private static string ReadValue(
+        IReadOnlyList<string> arguments,
+        ref int index,
+        string option)
+    {
+        if (index + 1 >= arguments.Count
+            || string.IsNullOrWhiteSpace(arguments[index + 1]))
+        {
+            throw InvalidArgument(
+                $"{option} requires a value.");
+        }
+
+        return arguments[++index];
+    }
+
+    private static T ParseEnum<T>(
+        string value,
+        string option)
+        where T : struct
+    {
+        if (Enum.TryParse(
+                value,
+                ignoreCase: true,
+                out T result)
+            && Enum.IsDefined(typeof(T), result))
+        {
+            return result;
+        }
+
+        throw InvalidArgument(
+            $"{option} has unsupported value '{value}'.");
+    }
+
+    private static GatewayOperationException InvalidArgument(
+        string message)
+    {
+        return new GatewayOperationException(
+            ErrorCodes.RequestInvalid,
+            message,
+            stage: "gateway.arguments");
     }
 }

@@ -1,6 +1,8 @@
 using System;
+using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Windows;
+using TwinCatGateway.Contracts;
 
 namespace TwinCatGateway.Desktop;
 
@@ -12,48 +14,131 @@ public partial class App : Application
 {
     private SingleInstanceGuard? _singleInstance;
     private GatewayDesktopHost? _host;
+    private MainWindow? _window;
+    private TrayIconController? _trayIcon;
+    private bool _exitRequested;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        if (!SingleInstanceGuard.TryAcquire(
-            "TwinCatAgentGateway",
-            out _singleInstance))
-        {
-            MessageBox.Show(
-                "TwinCAT Agent Gateway is already running for this user.",
-                "TwinCAT Agent Gateway",
-                MessageBoxButton.OK,
-                MessageBoxImage.Information);
-            Shutdown();
-            return;
-        }
-
+        GatewayHostOptions? options = null;
         try
         {
-            GatewayHostOptions options = GatewayHostOptions.FromArguments(e.Args);
+            options = GatewayHostOptions.FromArguments(e.Args);
+            if (!SingleInstanceGuard.TryAcquire(
+                    "TwinCatAgentGateway",
+                    out _singleInstance))
+            {
+                if (options.LaunchSource
+                    == GatewayLaunchSource.Manual)
+                {
+                    MessageBox.Show(
+                        "TwinCAT Agent Gateway is already running "
+                        + "for this user.",
+                        "TwinCAT Agent Gateway",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Information);
+                }
+
+                Shutdown();
+                return;
+            }
+
             _host = new GatewayDesktopHost(options);
             _host.Start();
-            MainWindow window = new(_host);
-            MainWindow = window;
-            window.Show();
+            _window = new MainWindow(_host);
+            _window.Closing += MainWindow_Closing;
+            _window.Closed += MainWindow_Closed;
+            MainWindow = _window;
+
+            if (_host.EffectiveUiMode == GatewayUiMode.Tray)
+            {
+                _trayIcon = new TrayIconController();
+                _trayIcon.ShowRequested += TrayIcon_ShowRequested;
+                _trayIcon.ExitRequested += TrayIcon_ExitRequested;
+            }
+            else
+            {
+                ShowMainWindow();
+            }
         }
         catch (Exception exception)
         {
-            MessageBox.Show(
-                "TwinCAT Agent Gateway could not start.\n\n" + exception.Message,
-                "TwinCAT Agent Gateway",
-                MessageBoxButton.OK,
-                MessageBoxImage.Error);
+            if (options?.LaunchSource
+                != GatewayLaunchSource.Agent)
+            {
+                MessageBox.Show(
+                    "TwinCAT Agent Gateway could not start.\n\n"
+                    + exception.Message,
+                    "TwinCAT Agent Gateway",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+            }
+
             Shutdown(-1);
         }
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _trayIcon?.Dispose();
         _host?.Dispose();
         _singleInstance?.Dispose();
         base.OnExit(e);
+    }
+
+    private void MainWindow_Closing(
+        object? sender,
+        CancelEventArgs e)
+    {
+        if (!_exitRequested
+            && _host?.EffectiveUiMode == GatewayUiMode.Tray)
+        {
+            e.Cancel = true;
+            _window?.Hide();
+        }
+    }
+
+    private void MainWindow_Closed(
+        object? sender,
+        EventArgs e)
+    {
+        if (_host?.EffectiveUiMode == GatewayUiMode.Window)
+        {
+            Shutdown();
+        }
+    }
+
+    private void TrayIcon_ShowRequested(
+        object? sender,
+        EventArgs e)
+    {
+        ShowMainWindow();
+    }
+
+    private void TrayIcon_ExitRequested(
+        object? sender,
+        EventArgs e)
+    {
+        _exitRequested = true;
+        _window?.Close();
+        Shutdown();
+    }
+
+    private void ShowMainWindow()
+    {
+        if (_window is null)
+        {
+            return;
+        }
+
+        _window.Show();
+        if (_window.WindowState == WindowState.Minimized)
+        {
+            _window.WindowState = WindowState.Normal;
+        }
+
+        _window.Activate();
     }
 }

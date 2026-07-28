@@ -14,6 +14,59 @@ namespace TwinCatGateway.IntegrationTests;
 
 public sealed class DesktopGatewayHostTests
 {
+    private static readonly string[] UnknownArguments =
+        { "--unknown" };
+
+    [Fact]
+    public void HostOptionsParseLaunchIdentityAndUiOverride()
+    {
+        using TemporaryDirectory temporary = new();
+        string configurationPath = Path.Combine(
+            temporary.Path,
+            GatewayConfigurationDiscovery.FileName);
+        File.WriteAllText(configurationPath, "{}");
+
+        GatewayHostOptions options =
+            GatewayHostOptions.FromArguments(
+                new[]
+                {
+                    "--config",
+                    configurationPath,
+                    "--launch-source",
+                    "agent",
+                    "--ui-mode",
+                    "tray",
+                },
+                temporary.Path);
+
+        Assert.Equal(
+            Path.GetFullPath(configurationPath),
+            options.ConfigurationPath);
+        Assert.Equal(
+            GatewayLaunchSource.Agent,
+            options.LaunchSource);
+        Assert.Equal(
+            GatewayUiMode.Tray,
+            options.UiModeOverride);
+    }
+
+    [Fact]
+    public void HostOptionsRejectUnknownArguments()
+    {
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => GatewayHostOptions.FromArguments(
+                    UnknownArguments,
+                    Environment.CurrentDirectory));
+
+        Assert.Equal(
+            ErrorCodes.RequestInvalid,
+            exception.Code);
+        Assert.Equal(
+            "gateway.arguments",
+            exception.Stage);
+    }
+
     [Fact]
     public void DesktopViewModelFailsClosedWithoutConnectedXae()
     {
