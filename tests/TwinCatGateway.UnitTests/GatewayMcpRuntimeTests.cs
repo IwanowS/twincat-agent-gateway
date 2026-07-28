@@ -69,6 +69,98 @@ public sealed class GatewayMcpRuntimeTests
     }
 
     [Fact]
+    public async Task StartReportsUnavailableInteractiveLauncher()
+    {
+        using TestContext context = new(allowStart: true);
+        context.Launcher.Failure =
+            new InteractiveGatewayLaunchException(
+                "Explorer is unavailable.");
+
+        GatewayResponse<GatewayStartResult> response =
+            await context.Runtime.StartAsync(
+                server: null,
+                TimeSpan.FromMilliseconds(40),
+                CancellationToken.None);
+
+        Assert.False(response.Ok);
+        Assert.Equal(
+            ErrorCodes
+                .GatewayInteractiveLaunchUnavailable,
+            response.Error?.Code);
+        Assert.Equal(
+            "gateway.start.interactiveShell",
+            response.Error?.Stage);
+        Assert.Equal(1, context.Launcher.LaunchCount);
+    }
+
+    [Fact]
+    public void ProcessLauncherDelegatesToExplorerSession()
+    {
+        using TemporaryDirectory temporary = new();
+        string executable = Path.Combine(
+            temporary.Path,
+            "twincat-gateway.exe");
+        string configuration = Path.Combine(
+            temporary.Path,
+            GatewayConfigurationDiscovery.FileName);
+        File.WriteAllBytes(executable, Array.Empty<byte>());
+        File.WriteAllText(configuration, "{}");
+        RecordingExplorerShellExecutor executor = new();
+        GatewayProcessLauncher launcher = new(executor);
+
+        launcher.Launch(
+            executable,
+            configuration);
+
+        Assert.Equal(1, executor.ExecuteCount);
+        Assert.Equal(
+            Path.GetFullPath(executable),
+            executor.Executable);
+        Assert.Equal(
+            Path.GetDirectoryName(executable),
+            executor.WorkingDirectory);
+        Assert.Equal(
+            "--config \""
+                + Path.GetFullPath(configuration)
+                + "\" --launch-source agent",
+            executor.Arguments);
+    }
+
+    [Fact]
+    public void ProcessLauncherDoesNotFallBackWhenExplorerFails()
+    {
+        using TemporaryDirectory temporary = new();
+        string executable = Path.Combine(
+            temporary.Path,
+            "twincat-gateway.exe");
+        string configuration = Path.Combine(
+            temporary.Path,
+            GatewayConfigurationDiscovery.FileName);
+        File.WriteAllBytes(executable, Array.Empty<byte>());
+        File.WriteAllText(configuration, "{}");
+        RecordingExplorerShellExecutor executor = new()
+        {
+            Failure =
+                new InvalidOperationException(
+                    "No Explorer desktop."),
+        };
+        GatewayProcessLauncher launcher = new(executor);
+
+        InteractiveGatewayLaunchException exception =
+            Assert.Throws<
+                InteractiveGatewayLaunchException>(
+                () => launcher.Launch(
+                    executable,
+                    configuration));
+
+        Assert.Equal(1, executor.ExecuteCount);
+        Assert.Contains(
+            "interactive Windows Explorer session",
+            exception.Message,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task StartRejectsGatewayForAnotherProject()
     {
         using TestContext context = new(allowStart: true);
@@ -242,11 +334,50 @@ public sealed class GatewayMcpRuntimeTests
     {
         public int LaunchCount { get; private set; }
 
+        public Exception? Failure { get; set; }
+
         public void Launch(
             string command,
             string configurationPath)
         {
             LaunchCount++;
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
+        }
+    }
+
+    private sealed class RecordingExplorerShellExecutor
+        : IExplorerShellExecutor
+    {
+        public int ExecuteCount { get; private set; }
+
+        public string? Executable { get; private set; }
+
+        public string? Arguments { get; private set; }
+
+        public string? WorkingDirectory
+        {
+            get;
+            private set;
+        }
+
+        public Exception? Failure { get; set; }
+
+        public void Execute(
+            string executable,
+            string arguments,
+            string workingDirectory)
+        {
+            ExecuteCount++;
+            Executable = executable;
+            Arguments = arguments;
+            WorkingDirectory = workingDirectory;
+            if (Failure is not null)
+            {
+                throw Failure;
+            }
         }
     }
 

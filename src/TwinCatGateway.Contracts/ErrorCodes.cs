@@ -14,6 +14,8 @@ public static class ErrorCodes
         "GATEWAY_START_DISABLED";
     public const string GatewayStartFailed =
         "GATEWAY_START_FAILED";
+    public const string GatewayInteractiveLaunchUnavailable =
+        "GATEWAY_INTERACTIVE_LAUNCH_UNAVAILABLE";
     public const string GatewayStartTimeout =
         "GATEWAY_START_TIMEOUT";
     public const string GatewayRunningDifferentProject =

@@ -62,7 +62,7 @@ internal static class McpCommandLine
                 DefaultValueFactory =
                     _ => Environment.GetEnvironmentVariable(
                             "TWINCAT_GATEWAY_COMMAND")
-                        ?? DefaultGatewayCommand,
+                        ?? GetDefaultGatewayCommand(),
                 HelpName = "command",
             };
 
@@ -102,6 +102,41 @@ internal static class McpCommandLine
                     .ConfigureAwait(false);
             });
         return root;
+    }
+
+    private static string GetDefaultGatewayCommand()
+    {
+        string? processPath = Environment.ProcessPath;
+        string? mcpDirectory =
+            processPath is null
+                ? null
+                : System.IO.Path.GetDirectoryName(
+                    processPath);
+        string? applicationDirectory =
+            mcpDirectory is null
+                ? null
+                : System.IO.Path.GetDirectoryName(
+                    mcpDirectory);
+        if (processPath is not null
+            && string.Equals(
+                System.IO.Path.GetFileNameWithoutExtension(
+                    processPath),
+                "twincat-gateway-mcp",
+                StringComparison.OrdinalIgnoreCase)
+            && applicationDirectory is not null)
+        {
+            string installedGateway =
+                System.IO.Path.Combine(
+                    applicationDirectory,
+                    "gateway",
+                    "twincat-gateway.exe");
+            if (System.IO.File.Exists(installedGateway))
+            {
+                return installedGateway;
+            }
+        }
+
+        return DefaultGatewayCommand;
     }
 
     private static async Task RunServerAsync(

@@ -43,50 +43,6 @@ public sealed class GatewayClientFactory : IGatewayClientFactory
     }
 }
 
-public interface IGatewayProcessLauncher
-{
-    void Launch(
-        string command,
-        string configurationPath);
-}
-
-public sealed class GatewayProcessLauncher
-    : IGatewayProcessLauncher
-{
-    public void Launch(
-        string command,
-        string configurationPath)
-    {
-        if (string.IsNullOrWhiteSpace(command))
-        {
-            throw new ArgumentException(
-                "Gateway command is required.",
-                nameof(command));
-        }
-
-        ProcessStartInfo startInfo = new()
-        {
-            FileName = command,
-            UseShellExecute = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
-            Arguments =
-                "--config "
-                + QuoteArgument(configurationPath)
-                + " --launch-source agent",
-        };
-        _ = Process.Start(startInfo)
-            ?? throw new InvalidOperationException(
-                "The gateway process could not be created.");
-    }
-
-    private static string QuoteArgument(string value)
-    {
-        return "\""
-            + value.Replace("\"", "\\\"")
-            + "\"";
-    }
-}
-
 public sealed class GatewayMcpRuntime
 {
     private static readonly TimeSpan DefaultPollInterval =
@@ -280,6 +236,15 @@ public sealed class GatewayMcpRuntime
             _processLauncher.Launch(
                 _options.GatewayCommand,
                 context.Location.Path);
+        }
+        catch (InteractiveGatewayLaunchException exception)
+        {
+            return Failure<GatewayStartResult>(
+                ErrorCodes
+                    .GatewayInteractiveLaunchUnavailable,
+                exception.Message,
+                retryable: false,
+                stage: "gateway.start.interactiveShell");
         }
         catch (Exception exception)
         {

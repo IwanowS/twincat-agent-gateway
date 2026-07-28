@@ -617,7 +617,10 @@ twincat-diff://<operation-id>/project-noise
 - schemas tools короткие;
 - обычные tools не запускают gateway и возвращают `GATEWAY_NOT_RUNNING`;
 - `gateway_start` проверяет workspace config, `allowStart`, singleton identity
-  и Ready, делает не более одной попытки и идемпотентен для того же проекта;
+  и Ready, делает не более одной попытки через desktop view интерактивного
+  Explorer и идемпотентен для того же проекта;
+- Desktop gateway не наследует agent-added environment; отсутствие
+  интерактивного Explorer завершается fail-closed без прямого process fallback;
 - gateway другого проекта не закрывается и не переключается;
 - обычная compile-fix итерация не требует чтения raw Build Output;
 - MCP process можно перезапустить без потери XAE session;
@@ -639,6 +642,8 @@ twincat-diff://<operation-id>/project-noise
 - project-local `twincat-gateway.json` и одинаковый manual/MCP discovery;
 - WPF `auto|window|tray`, manual/agent launch identity, product version и
   configurationless setup-only UI без gateway singleton/IPC;
+- Explorer-mediated agent launch отделяет Desktop/XAE environment и integrity
+  context от MCP process;
 - first-run environment diagnostics;
 - config migration;
 - log retention settings;
@@ -782,6 +787,9 @@ twincat-diff://<operation-id>/project-noise
 - MCP можно перезапустить без потери gateway/XAE session.
 - Agent может явно запустить отсутствующий gateway один раз, но обычные MCP
   tools никогда не auto-start process.
+- Agent launch проходит через интерактивный Explorer; Desktop и XAE не
+  наследуют agent-added environment, а отсутствие Explorer не вызывает
+  прямой fallback.
 - Per-user installer предоставляет WPF и MCP commands без `dotnet tool` и
   без дополнительного command host.
 - CLI и MCP используют общий IPC/domain contract.

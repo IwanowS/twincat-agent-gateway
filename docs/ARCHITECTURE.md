@@ -49,7 +49,8 @@ AI-агент должен иметь возможность редактиро�
                      │ thin adapter      │
                      └─────────┬─────────┘
                                │
-                               │ versioned local IPC
+                               │ Explorer-mediated start
+                               │ + versioned local IPC
                                │
 ┌──────────────────────────────▼────────────────────────────────┐
 │ TwinCatGateway.Desktop                                        │
@@ -128,9 +129,18 @@ Agent launch возможен только через MCP tool `gateway_start`. 
 3. возвращает успех для уже готового gateway с тем же config/solution;
 4. возвращает `GATEWAY_RUNNING_DIFFERENT_PROJECT` для другого singleton, не
    закрывая и не переключая его;
-5. делает не более одной попытки
-   `twincat-gateway --config <absolute> --launch-source agent`;
+5. передаёт не более одного запуска
+   `twincat-gateway --config <absolute> --launch-source agent` в desktop view
+   интерактивного Windows Explorer;
 6. bounded-wait ожидает IPC и сверяет status identity/ready.
+
+MCP не создаёт desktop gateway как собственный дочерний процесс. Explorer
+выполняет `ShellExecute` из своего процесса, поэтому gateway получает обычный
+environment block и integrity context интерактивного пользователя, а не
+добавленные агентом переменные. Обычный `Process.Start` и прямой fallback
+запрещены. Если desktop view Explorer недоступен, `gateway_start` возвращает
+`GATEWAY_INTERACTIVE_LAUNCH_UNAVAILABLE`; пользователь может запустить
+gateway вручную.
 
 Обычные tools при отсутствии процесса возвращают `GATEWAY_NOT_RUNNING`.
 Завершение MCP не закрывает desktop gateway. `allowShutdown` зарезервирован
@@ -169,6 +179,13 @@ Gateway должен работать в интерактивной пользо
 - пользователь должен видеть выбранный solution и target;
 - Windows Service усложняет COM, desktop interaction и session isolation;
 - gateway может показывать блокирующие состояния, logs и safety prompts.
+
+Для agent launch интерактивный контекст является проверяемой process boundary:
+Desktop gateway запускается через Explorer того же пользователя и session,
+после чего сам напрямую запускает XAE. XAE наследует environment gateway, а
+gateway сохраняет точный XAE PID для ROT/ProgID selection. Очистка только
+`PATH` перед запуском XAE не заменяет эту boundary, потому что не исправляет
+session или integrity mismatch.
 
 Gateway не обязан всегда отображать главное окно. В `auto` ручной запуск
 показывает окно, agent launch начинает в tray. Явный `window`/`tray` имеет
@@ -1027,6 +1044,7 @@ GATEWAY_CONFIG_NOT_FOUND
 GATEWAY_CONFIG_AMBIGUOUS
 GATEWAY_START_DISABLED
 GATEWAY_START_FAILED
+GATEWAY_INTERACTIVE_LAUNCH_UNAVAILABLE
 GATEWAY_START_TIMEOUT
 GATEWAY_RUNNING_DIFFERENT_PROJECT
 XAE_NOT_FOUND

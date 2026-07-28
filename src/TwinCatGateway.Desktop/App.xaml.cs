@@ -100,6 +100,9 @@ public partial class App : Application
         }
         catch (Exception exception)
         {
+            _host?.RecordUiFailure(
+                "startup",
+                exception);
             if (options?.LaunchSource
                 != GatewayLaunchSource.Agent)
             {

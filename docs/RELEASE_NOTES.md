@@ -12,7 +12,8 @@ TwinCAT Agent Gateway 0.1.0 provides:
 - explicit allow-listed remote activation/restart with verified postconditions;
 - one-PLC linked TcUnit completion and fresh xUnit result collection;
 - versioned Named Pipe contracts, .NET 8 development CLI, and stdio MCP
-  adapter with explicit policy-checked `gateway_start`;
+  adapter with policy-checked `gateway_start` mediated by the interactive
+  Windows Explorer session;
 - project-local `twincat-gateway.json` discovery and manual/agent
   window/tray lifecycle;
 - minimal WPF operations/status UI, per-user installer, and portable ZIP

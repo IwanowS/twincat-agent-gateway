@@ -18,6 +18,10 @@ the WPF host, not the repository development CLI.
   process automatically; ask the user to resolve the project ownership.
 - `GATEWAY_START_DISABLED`: project policy has `allowStart: false`; manual
   launch is required.
+- `GATEWAY_INTERACTIVE_LAUNCH_UNAVAILABLE`: MCP could not hand the configured
+  desktop gateway launch to the interactive Windows Explorer session. Start
+  `twincat-gateway --config <absolute-path>` manually; the agent does not fall
+  back to a child process with the MCP environment.
 - `GATEWAY_START_TIMEOUT`: one start attempt was made but IPC did not become
   ready. Inspect the WPF/tray process and instance log; do not loop restarts.
 - `Configuration could not be loaded`: fix the reported JSON/property error.
