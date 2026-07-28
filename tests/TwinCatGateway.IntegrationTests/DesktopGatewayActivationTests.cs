@@ -162,6 +162,156 @@ public sealed class DesktopGatewayActivationTests
             XaeWindowProbe.FindModalDialogs(processId));
     }
 
+    [RemoteTcUnitFact]
+    public async Task ActivationRunsLinkedTcUnitThroughIpc()
+    {
+        using TemporaryDirectory temporary = new();
+        string solutionPath = GetSolutionPath();
+        string expectedAmsNetId =
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_REMOTE_AMS_NET_ID")!;
+        string reportPath =
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_TCUNIT_REPORT_PATH")!;
+        string pipeName = CreatePipeName();
+        string configurationPath = WriteConfiguration(
+            temporary.Path,
+            pipeName,
+            solutionPath,
+            expectedAmsNetId,
+            requireRecentBuild: true,
+            tcUnitReportPath: reportPath,
+            allowXaeLaunch: true);
+        using GatewayDesktopHost host = StartHost(
+            configurationPath);
+        await WaitForStateAsync(
+            host,
+            GatewayState.Ready,
+            TimeSpan.FromSeconds(60));
+        NamedPipeGatewayClient client = new(pipeName);
+
+        GatewayResponse<OperationAccepted> buildAccepted =
+            await client.SendAsync<
+                BuildParameters,
+                OperationAccepted>(
+                GatewayMethods.Build,
+                new BuildParameters
+                {
+                    Profile = "fixture",
+                    Action = BuildAction.Build,
+                    TimeoutSeconds = 90,
+                },
+                wait: false,
+                CancellationToken.None);
+        Assert.True(buildAccepted.Ok);
+        OperationDetails<BuildResult> build =
+            await WaitForOperationAsync<BuildResult>(
+                client,
+                Assert.IsType<OperationAccepted>(
+                    buildAccepted.Result).OperationId,
+                TimeSpan.FromSeconds(105));
+        Assert.Equal(
+            OperationState.Succeeded,
+            build.Operation.State);
+
+        OperationAccepted activationAccepted =
+            await StartActivationAsync(
+                client,
+                TimeSpan.FromSeconds(180),
+                waitForTcUnit: true);
+        OperationDetails<ActivationResult> activation =
+            await WaitForOperationAsync<ActivationResult>(
+                client,
+                activationAccepted.OperationId,
+                TimeSpan.FromSeconds(195));
+        Assert.Equal(
+            OperationState.Succeeded,
+            activation.Operation.State);
+        string testOperationId = Assert.IsType<string>(
+            activation.Result?.TestOperationId);
+
+        OperationDetails<TestResult> test =
+            await WaitForOperationAsync<TestResult>(
+                client,
+                testOperationId,
+                TimeSpan.FromSeconds(135));
+        GatewayResponse<OperationDetails<TestResult>>
+            queried =
+                await client.SendAsync<
+                    GetTestResultsParameters,
+                    OperationDetails<TestResult>>(
+                    GatewayMethods.GetTestResults,
+                    new GetTestResultsParameters
+                    {
+                        OperationId = testOperationId,
+                    },
+                    wait: true,
+                    CancellationToken.None);
+        GatewayResponse<OperationAccepted>
+            postTestBuildAccepted =
+                await client.SendAsync<
+                    BuildParameters,
+                    OperationAccepted>(
+                    GatewayMethods.Build,
+                    new BuildParameters
+                    {
+                        Profile = "fixture",
+                        Action = BuildAction.Build,
+                        TimeoutSeconds = 90,
+                    },
+                    wait: false,
+                    CancellationToken.None);
+        Assert.True(postTestBuildAccepted.Ok);
+        OperationDetails<BuildResult> postTestBuild =
+            await WaitForOperationAsync<BuildResult>(
+                client,
+                Assert.IsType<OperationAccepted>(
+                    postTestBuildAccepted.Result)
+                    .OperationId,
+                TimeSpan.FromSeconds(105));
+        GatewayDiagnosticsResult diagnostics =
+            host.ApplicationService.GetDiagnostics();
+        int processId = GetSelectedProcessId(diagnostics);
+
+        await host.StopAsync();
+
+        Assert.Equal(
+            OperationState.Succeeded,
+            test.Operation.State);
+        Assert.True(test.Result?.Ok);
+        Assert.Equal(1, test.Result?.Counts.Suites);
+        Assert.Equal(1, test.Result?.Counts.Tests);
+        Assert.Equal(1, test.Result?.Counts.Passed);
+        Assert.Equal(0, test.Result?.Counts.Failed);
+        Assert.Equal(1, test.Result?.InitializedSuites);
+        Assert.Equal(
+            ResourceKind.TestReport,
+            test.Result?.Report?.Kind);
+        Assert.True(queried.Ok);
+        Assert.True(queried.Result?.Result?.Ok);
+        Assert.Equal(
+            OperationState.Succeeded,
+            postTestBuild.Operation.State);
+        Assert.True(postTestBuild.Result?.Ok);
+        Assert.Equal(
+            0,
+            postTestBuild.Result?.Counts.Errors);
+        Assert.Equal(
+            new[]
+            {
+                GatewayEventTypes.TcUnitQueued,
+                GatewayEventTypes.TcUnitStarted,
+                GatewayEventTypes.TcUnitCompletionObserved,
+                GatewayEventTypes.TcUnitReportProduced,
+                GatewayEventTypes.TcUnitSucceeded,
+            },
+            GetOperationEventTypes(
+                diagnostics,
+                testOperationId));
+        Assert.Empty(
+            XaeWindowProbe.FindModalDialogs(processId));
+    }
+
     private static GatewayDesktopHost StartHost(
         string configurationPath)
     {
@@ -177,7 +327,8 @@ public sealed class DesktopGatewayActivationTests
     private static async Task<OperationAccepted>
         StartActivationAsync(
             NamedPipeGatewayClient client,
-            TimeSpan timeout)
+            TimeSpan timeout,
+            bool waitForTcUnit = false)
     {
         GatewayResponse<OperationAccepted> response =
             await client.SendAsync<
@@ -187,7 +338,7 @@ public sealed class DesktopGatewayActivationTests
                 new ActivateParameters
                 {
                     Profile = "fixture",
-                    WaitForTcUnit = false,
+                    WaitForTcUnit = waitForTcUnit,
                     TimeoutSeconds =
                         checked((int)timeout.TotalSeconds),
                 },
@@ -290,11 +441,25 @@ public sealed class DesktopGatewayActivationTests
         string pipeName,
         string solutionPath,
         string expectedAmsNetId,
-        bool requireRecentBuild)
+        bool requireRecentBuild,
+        string? tcUnitReportPath = null,
+        bool allowXaeLaunch = false)
     {
         string path = Path.Combine(
             directory,
             "gateway.json");
+        string tcUnitJson = tcUnitReportPath is null
+            ? string.Empty
+            : $$"""
+            ,
+                  "tcUnit": {
+                    "adsPort": 851,
+                    "finishedSymbol": "GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished",
+                    "suiteCountSymbol": "GVL_TcUnit.NumberOfInitializedTestSuites",
+                    "reportPath": "{{EscapeJson(tcUnitReportPath)}}",
+                    "completionTimeoutSeconds": 120
+                  }
+            """;
         File.WriteAllText(
             path,
             $$"""
@@ -307,13 +472,13 @@ public sealed class DesktopGatewayActivationTests
                 {
                   "name": "fixture",
                   "solution": "{{EscapeJson(solutionPath)}}",
-                  "allowXaeLaunch": false,
+                  "allowXaeLaunch": {{allowXaeLaunch.ToString().ToLowerInvariant()}},
                   "allowActivation": true,
                   "expectedTarget": {
                     "amsNetId": "{{expectedAmsNetId}}"
                   },
                   "requireRecentSuccessfulBuild": {{requireRecentBuild.ToString().ToLowerInvariant()}},
-                  "autoWaitForTcUnit": false
+                  "autoWaitForTcUnit": false{{tcUnitJson}}
                 }
               ]
             }
