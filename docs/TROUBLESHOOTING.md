@@ -128,8 +128,7 @@ The fresh linked xUnit report determines test pass/fail.
 ## Uninstall
 
 Exit the MCP adapter and desktop gateway. For a per-user install, remove only
-`bin` and the selected directories below `versions` under
-`%LOCALAPPDATA%\TwinCatAgentGateway`, then remove the user PATH entry if
-needed. This does not remove project-local `twincat-gateway.json`, TwinCAT
-projects, XAE state, or logs. Delete configuration and logs separately only
-after confirmation.
+`app` and `bin` under `%LOCALAPPDATA%\TwinCatAgentGateway`, then remove the
+user PATH entry if needed. This does not remove project-local
+`twincat-gateway.json`, TwinCAT projects, XAE state, or logs. Delete
+configuration and logs separately only after confirmation.

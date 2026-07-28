@@ -4,8 +4,8 @@ Installs TwinCAT Agent Gateway commands for the current Windows user.
 
 .DESCRIPTION
 Builds the repository in Release configuration unless -SkipBuild is specified,
-copies the desktop gateway and MCP adapter into a deterministic version
-directory, and creates quiet command shims named twincat-gateway and
+replaces the desktop gateway and MCP adapter at one stable per-user application
+path, and creates quiet command shims named twincat-gateway and
 twincat-gateway-mcp.
 
 By default, the script offers to add the command directory to the current
@@ -13,8 +13,8 @@ user's PATH. It does not require elevation and does not start the gateway,
 TwinCAT XAE, or a TwinCAT runtime.
 
 .PARAMETER InstallRoot
-Destination root for versioned application files and command shims. The
-default is %LOCALAPPDATA%\TwinCatAgentGateway.
+Destination root for application files and command shims. The default is
+%LOCALAPPDATA%\TwinCatAgentGateway.
 
 .PARAMETER NonInteractive
 Suppresses the PATH confirmation prompt and accepts its default answer. Unless
@@ -28,6 +28,10 @@ available directly from the InstallRoot\bin directory.
 Skips the Release build. Use this only when the required Release artifacts
 already exist in the repository output directories.
 
+.PARAMETER Force
+Replaces an existing installation without prompting. An existing installation
+cannot be replaced non-interactively unless this switch is specified.
+
 .PARAMETER Help
 Displays the full help for this script and exits without building, copying
 files, or changing PATH.
@@ -38,10 +42,10 @@ files, or changing PATH.
 Builds and installs the gateway interactively for the current user.
 
 .EXAMPLE
-.\scripts\Install-Gateway.ps1 -NonInteractive -Verbose
+.\scripts\Install-Gateway.ps1 -NonInteractive -Force -Verbose
 
-Builds and installs the gateway, accepts the default PATH update, and shows
-detailed installation progress.
+Builds and replaces an existing installation, accepts the default PATH update,
+and shows detailed installation progress.
 
 .EXAMPLE
 .\scripts\Install-Gateway.ps1 -InstallRoot C:\Tools\TwinCatGateway -NoPathUpdate
@@ -56,8 +60,9 @@ Displays full help and performs no installation actions.
 .NOTES
 Run this script from a normal, non-elevated PowerShell. It installs applications
 only; Codex MCP registration and agent skills are separate explicit steps.
-Reinstalling identical artifacts is idempotent. -SkipBuild is intended for
-verified local artifacts and installer smoke tests.
+Project configurations and logs outside the app directory are preserved.
+Running installed gateway or MCP processes must be closed before replacement.
+-SkipBuild is intended for verified local artifacts and installer smoke tests.
 #>
 [CmdletBinding()]
 param(
@@ -68,6 +73,8 @@ param(
     [switch]$NoPathUpdate,
 
     [switch]$SkipBuild,
+
+    [switch]$Force,
 
     [switch]$Help
 )
@@ -110,6 +117,104 @@ $mcpExecutable = Join-Path `
 $setupSource = Join-Path `
     $repositoryRoot `
     'setup\SETUP_INSTRUCTIONS.txt'
+$applicationRoot = Join-Path $resolvedInstallRoot 'app'
+$legacyVersionsRoot = Join-Path $resolvedInstallRoot 'versions'
+$installedDesktop = Join-Path $applicationRoot 'gateway'
+$installedMcp = Join-Path $applicationRoot 'mcp'
+$commandDirectory = Join-Path $resolvedInstallRoot 'bin'
+
+function Get-InstalledGatewayProcesses {
+    $installationRoots = @(
+        $applicationRoot,
+        $legacyVersionsRoot
+    ) | ForEach-Object {
+        [IO.Path]::GetFullPath($_).TrimEnd(
+            [IO.Path]::DirectorySeparatorChar,
+            [IO.Path]::AltDirectorySeparatorChar
+        ) + [IO.Path]::DirectorySeparatorChar
+    }
+
+    foreach ($processName in @(
+            'twincat-gateway',
+            'twincat-gateway-mcp')) {
+        foreach ($process in @(
+                Get-Process `
+                    -Name $processName `
+                    -ErrorAction SilentlyContinue)) {
+            try {
+                $processPath = $process.MainModule.FileName
+                if ($installationRoots.Where({
+                            $processPath.StartsWith(
+                                $_,
+                                [StringComparison]::OrdinalIgnoreCase)
+                        }).Count -gt 0) {
+                    [PSCustomObject]@{
+                        Id = $process.Id
+                        Path = $processPath
+                    }
+                }
+            }
+            catch {
+                Write-Verbose (
+                    "Could not inspect process $($process.Id): " +
+                    $_.Exception.Message)
+            }
+            finally {
+                $process.Dispose()
+            }
+        }
+    }
+}
+
+function Assert-NoInstalledGatewayProcesses {
+    $runningProcesses = @(Get-InstalledGatewayProcesses)
+    if ($runningProcesses.Count -eq 0) {
+        return
+    }
+
+    $processDescription = $runningProcesses |
+        ForEach-Object {
+            "PID $($_.Id) '$($_.Path)'"
+        }
+    throw (
+        "Close the installed TwinCAT Agent Gateway and MCP adapter " +
+        "before replacement. Running: " +
+        ($processDescription -join ', '))
+}
+
+$installationExists =
+    (Test-Path -LiteralPath $applicationRoot) `
+    -or (Test-Path -LiteralPath $legacyVersionsRoot)
+if ($installationExists -and -not $Force) {
+    if ($NonInteractive) {
+        throw (
+            "An existing TwinCAT Agent Gateway installation was found " +
+            "at '$resolvedInstallRoot'. Rerun with -Force to replace it.")
+    }
+
+    Write-Verbose 'Requesting confirmation before replacing the installation.'
+    $replaceAnswer = Read-Host (
+        "Replace the existing TwinCAT Agent Gateway installation " +
+        "at '$resolvedInstallRoot'? [y/N]")
+    $replaceConfirmed =
+        $replaceAnswer.Equals(
+            'y',
+            [StringComparison]::OrdinalIgnoreCase) `
+        -or $replaceAnswer.Equals(
+            'yes',
+            [StringComparison]::OrdinalIgnoreCase)
+    if (-not $replaceConfirmed) {
+        Write-Output 'Installation cancelled. No files were changed.'
+        return
+    }
+}
+elseif ($installationExists) {
+    Write-Verbose 'Replacing the existing installation by request.'
+}
+
+if ($installationExists) {
+    Assert-NoInstalledGatewayProcesses
+}
 
 if (-not $SkipBuild) {
     Write-Verbose "Building '$solutionPath' in Release configuration."
@@ -136,44 +241,90 @@ Write-Verbose 'Required Release artifacts are available.'
 
 $assemblyVersion = [Reflection.AssemblyName]::GetAssemblyName(
     $desktopExecutable).Version.ToString(3)
-$desktopHash = (Get-FileHash `
-    -LiteralPath $desktopExecutable `
-    -Algorithm SHA256).Hash.Substring(0, 8).ToLowerInvariant()
-$mcpHash = (Get-FileHash `
-    -LiteralPath $mcpExecutable `
-    -Algorithm SHA256).Hash.Substring(0, 8).ToLowerInvariant()
-$versionName = "$assemblyVersion-$desktopHash-$mcpHash"
-$versionRoot = Join-Path `
-    (Join-Path $resolvedInstallRoot 'versions') `
-    $versionName
-$installedDesktop = Join-Path $versionRoot 'gateway'
-$installedMcp = Join-Path $versionRoot 'mcp'
-$commandDirectory = Join-Path $resolvedInstallRoot 'bin'
-Write-Verbose "Installing deterministic version '$versionName'."
+$stagingRoot = Join-Path `
+    $resolvedInstallRoot `
+    ('.install-staging-' + [Guid]::NewGuid().ToString('N'))
+$stagedDesktop = Join-Path $stagingRoot 'gateway'
+$stagedMcp = Join-Path $stagingRoot 'mcp'
+$installRootPrefix =
+    $resolvedInstallRoot.TrimEnd(
+        [IO.Path]::DirectorySeparatorChar,
+        [IO.Path]::AltDirectorySeparatorChar
+    ) + [IO.Path]::DirectorySeparatorChar
+Write-Verbose "Preparing application version '$assemblyVersion'."
 
-foreach ($directory in @(
-        $installedDesktop,
-        $installedMcp,
-        $commandDirectory)) {
-    New-Item `
-        -ItemType Directory `
-        -Path $directory `
-        -Force |
-        Out-Null
+try {
+    foreach ($directory in @(
+            $stagedDesktop,
+            $stagedMcp)) {
+        New-Item `
+            -ItemType Directory `
+            -Path $directory `
+            -Force |
+            Out-Null
+    }
+
+    Write-Verbose "Staging desktop gateway files in '$stagedDesktop'."
+    Copy-Item `
+        -Path (Join-Path $desktopOutput '*') `
+        -Destination $stagedDesktop `
+        -Recurse `
+        -Force
+    Write-Verbose "Staging MCP adapter files in '$stagedMcp'."
+    Copy-Item `
+        -Path (Join-Path $mcpOutput '*') `
+        -Destination $stagedMcp `
+        -Recurse `
+        -Force
+
+    if ($installationExists) {
+        Assert-NoInstalledGatewayProcesses
+    }
+
+    foreach ($obsoleteDirectory in @(
+            $applicationRoot,
+            $legacyVersionsRoot)) {
+        if (-not (Test-Path -LiteralPath $obsoleteDirectory)) {
+            continue
+        }
+
+        $resolvedObsoleteDirectory =
+            [IO.Path]::GetFullPath($obsoleteDirectory)
+        if (-not $resolvedObsoleteDirectory.StartsWith(
+                $installRootPrefix,
+                [StringComparison]::OrdinalIgnoreCase)) {
+            throw (
+                "Refusing to remove install path " +
+                "'$resolvedObsoleteDirectory'.")
+        }
+
+        Write-Verbose "Removing '$resolvedObsoleteDirectory'."
+        Remove-Item `
+            -LiteralPath $resolvedObsoleteDirectory `
+            -Recurse `
+            -Force
+    }
+
+    Write-Verbose "Installing application files to '$applicationRoot'."
+    Move-Item `
+        -LiteralPath $stagingRoot `
+        -Destination $applicationRoot
 }
+finally {
+    if (Test-Path -LiteralPath $stagingRoot) {
+        $resolvedStagingRoot = [IO.Path]::GetFullPath($stagingRoot)
+        if (-not $resolvedStagingRoot.StartsWith(
+                $installRootPrefix,
+                [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove staging path '$resolvedStagingRoot'."
+        }
 
-Write-Verbose "Copying desktop gateway files to '$installedDesktop'."
-Copy-Item `
-    -Path (Join-Path $desktopOutput '*') `
-    -Destination $installedDesktop `
-    -Recurse `
-    -Force
-Write-Verbose "Copying MCP adapter files to '$installedMcp'."
-Copy-Item `
-    -Path (Join-Path $mcpOutput '*') `
-    -Destination $installedMcp `
-    -Recurse `
-    -Force
+        Remove-Item `
+            -LiteralPath $resolvedStagingRoot `
+            -Recurse `
+            -Force
+    }
+}
 
 function Write-CommandShim {
     param(
@@ -206,6 +357,11 @@ function Write-CommandShim {
     }
 }
 
+New-Item `
+    -ItemType Directory `
+    -Path $commandDirectory `
+    -Force |
+    Out-Null
 Write-Verbose "Updating command shims in '$commandDirectory'."
 Write-CommandShim `
     -Path (Join-Path $commandDirectory 'twincat-gateway.cmd') `
@@ -267,7 +423,8 @@ else {
 Write-Output ""
 Write-Output "TwinCAT Agent Gateway installed."
 Write-Output "Install root: $resolvedInstallRoot"
-Write-Output "Installed version: $versionName"
+Write-Output "Application directory: $applicationRoot"
+Write-Output "Installed version: $assemblyVersion"
 Write-Output "Command directory: $commandDirectory"
 Write-Output "User PATH: $pathStatus"
 Write-Output "A new PowerShell may be required to see PATH changes."

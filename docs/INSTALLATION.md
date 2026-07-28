@@ -20,9 +20,9 @@ Get-Help .\scripts\Install-Gateway.ps1 -Examples
 .\scripts\Install-Gateway.ps1 -Verbose
 ```
 
-The installer builds the solution in `Release`, creates a deterministic
-version directory below `%LOCALAPPDATA%\TwinCatAgentGateway\versions`, and
-updates quiet command shims in `%LOCALAPPDATA%\TwinCatAgentGateway\bin`.
+The installer builds the solution in `Release`, installs the applications at
+the stable `%LOCALAPPDATA%\TwinCatAgentGateway\app` path, and updates quiet
+command shims in `%LOCALAPPDATA%\TwinCatAgentGateway\bin`.
 It installs only:
 
 - `twincat-gateway`: the existing .NET Framework 4.8 x86 WPF host;
@@ -35,7 +35,13 @@ created or started by installation.
 The PATH prompt defaults to `Y` and modifies only the user PATH. Use
 `-NonInteractive` to accept that default without a prompt, or
 `-NoPathUpdate` to keep PATH unchanged. `-InstallRoot` supports isolated test
-or custom installations. Reinstalling identical artifacts is idempotent.
+or custom installations.
+
+When an application or legacy `versions` directory already exists, interactive
+installation asks before replacing it. Non-interactive replacement requires
+`-Force`; without it the installer fails before changing files. Exit the
+installed desktop gateway and MCP adapter before replacement. Configuration
+files and logs stored outside `app` are preserved.
 
 ## Configure a project
 
@@ -84,8 +90,7 @@ The short text printed by the installer and shown by the WPF
 
 ## Uninstall
 
-Exit the gateway and remove only the selected version directories and command
-shims under `%LOCALAPPDATA%\TwinCatAgentGateway\versions` and `bin`. Remove the
-user PATH entry if it is no longer needed. Do not delete `Logs`, project-local
-`twincat-gateway.json`, TwinCAT projects, or runtime state as part of
-application removal.
+Exit the gateway and remove only the `app` directory and command shims under
+`%LOCALAPPDATA%\TwinCatAgentGateway`. Remove the user PATH entry if it is no
+longer needed. Do not delete `Logs`, project-local `twincat-gateway.json`,
+TwinCAT projects, or runtime state as part of application removal.

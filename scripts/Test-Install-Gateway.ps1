@@ -34,28 +34,66 @@ try {
         }
     }
 
-    $versionsAfterFirst = @(
-        Get-ChildItem `
-            -LiteralPath (Join-Path $testRoot 'versions') `
-            -Directory
-    )
+    $applicationRoot = Join-Path $testRoot 'app'
+    $preservedConfiguration =
+        Join-Path $testRoot 'twincat-gateway.json'
+    $preservedLog = Join-Path $testRoot 'Logs\preserved.log'
+    New-Item `
+        -ItemType Directory `
+        -Path (Split-Path -Parent $preservedLog) `
+        -Force |
+        Out-Null
+    [IO.File]::WriteAllText(
+        $preservedConfiguration,
+        '{"schemaVersion":1}')
+    [IO.File]::WriteAllText(
+        $preservedLog,
+        'preserve')
+
+    $replacementFailedClosed = $false
+    try {
+        & $installer `
+            -InstallRoot $testRoot `
+            -NonInteractive `
+            -NoPathUpdate `
+            -SkipBuild |
+            Out-Null
+    }
+    catch {
+        $replacementFailedClosed =
+            $_.Exception.Message.Contains(
+                'Rerun with -Force')
+    }
+
+    if (-not $replacementFailedClosed) {
+        throw 'Non-interactive replacement did not require -Force.'
+    }
+
+    $legacyVersion = Join-Path $testRoot 'versions\legacy'
+    New-Item `
+        -ItemType Directory `
+        -Path $legacyVersion `
+        -Force |
+        Out-Null
+    [IO.File]::WriteAllText(
+        (Join-Path $legacyVersion 'marker.txt'),
+        'legacy')
+
     & $installer `
         -InstallRoot $testRoot `
         -NonInteractive `
         -NoPathUpdate `
-        -SkipBuild |
+        -SkipBuild `
+        -Force |
         Out-Null
-    $versionsAfterSecond = @(
-        Get-ChildItem `
-            -LiteralPath (Join-Path $testRoot 'versions') `
-            -Directory
-    )
 
-    if ($versionsAfterFirst.Count -ne 1 `
-        -or $versionsAfterSecond.Count -ne 1 `
-        -or $versionsAfterFirst[0].Name `
-            -ne $versionsAfterSecond[0].Name) {
-        throw 'Repeated installation was not idempotent.'
+    if (-not (Test-Path -LiteralPath $preservedConfiguration) `
+        -or -not (Test-Path -LiteralPath $preservedLog)) {
+        throw 'Replacement removed configuration or logs.'
+    }
+
+    if (Test-Path -LiteralPath (Join-Path $testRoot 'versions')) {
+        throw 'Replacement retained the legacy versions directory.'
     }
 
     $commandDirectory = Join-Path $testRoot 'bin'
@@ -102,10 +140,10 @@ try {
     }
 
     $desktopTarget = Join-Path `
-        $versionsAfterSecond[0].FullName `
+        $applicationRoot `
         'gateway\twincat-gateway.exe'
     $mcpTarget = Join-Path `
-        $versionsAfterSecond[0].FullName `
+        $applicationRoot `
         'mcp\twincat-gateway-mcp.exe'
     if (-not (Test-Path -LiteralPath $desktopTarget) `
         -or -not (Test-Path -LiteralPath $mcpTarget)) {

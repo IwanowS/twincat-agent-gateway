@@ -630,8 +630,9 @@ twincat-diff://<operation-id>/project-noise
 
 ### Задачи
 
-- per-user installer двух независимых приложений с versioned artifacts,
-  стабильным command directory и user PATH;
+- per-user installer двух независимых приложений с одним стабильным
+  application directory, подтверждаемой заменой, стабильным command directory
+  и user PATH;
 - отдельная глобальная Codex MCP registration через поддерживаемый CLI;
 - отдельная установка skills в user/project/explicit destination;
 - portable packaging как дополнительный формат;
@@ -652,7 +653,9 @@ twincat-diff://<operation-id>/project-noise
 ### Acceptance
 
 - `dotnet build` формирует оба устанавливаемых комплекта без VS msbuild;
-- повторная установка и PATH update идемпотентны и не удаляют configs/logs;
+- подтверждённая повторная установка заменяет application directory, удаляет
+  legacy versions и не удаляет configs/logs; non-interactive replacement
+  требует `-Force`;
 - installed `twincat-gateway` и `twincat-gateway-mcp` доступны через user PATH;
 - MCP stdio wrapper не пишет setup/diagnostic text в stdout;
 - global Codex registration и project-local alternative документированы как

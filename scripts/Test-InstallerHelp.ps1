@@ -12,6 +12,7 @@ $scripts = @(
             'NonInteractive',
             'NoPathUpdate',
             'SkipBuild',
+            'Force',
             'Help'
         )
     },
