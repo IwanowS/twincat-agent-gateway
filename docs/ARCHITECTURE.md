@@ -355,7 +355,22 @@ Operation deadline не заменяет postcondition.
 }
 ```
 
-Configuration/platform берутся из profile или активного solution, если не заданы явно и это разрешено политикой.
+Явно переданные `configuration`/`platform` имеют приоритет над profile.
+Если значение отсутствует и в запросе, и в profile, сохраняется активный выбор
+solution. Пустая строка в явном параметре считается ошибкой запроса.
+
+Перед Build/Clean/Rebuild gateway выбирает типизированный
+`EnvDTE.SolutionConfiguration` и вызывает `Activate()`, когда текущий выбор не
+совпадает с запрошенным. В EnvDTE нет отдельного типизированного solution-level
+переключателя platform, поэтому platform используется для точного выбора среди
+одноимённых solution configurations и затем проверяется по
+`SolutionContext.PlatformName`. В MVP допустим только один уникальный platform
+во всех активных project contexts. Отсутствующая пара
+configuration/platform отклоняется как `BUILD_CONFIGURATION_NOT_FOUND`, а
+несколько подходящих configurations или смешанный набор активных platforms —
+как `BUILD_CONFIGURATION_AMBIGUOUS`; gateway не выбирает один вариант
+эвристически.
+
 `changedPaths` необязателен: gateway в любом случае обнаруживает изменения по
 fingerprint baseline, а список от caller используется только как
 дополнительная явная подсказка.
@@ -375,18 +390,19 @@ fingerprint baseline, а список от caller используется то�
    ошибкой.
 8. SHA-256 snapshot всех `.tsproj` и временное подавление их file-change
    notifications через `SVsFileChangeEx` / `IVsFileChangeEx.IgnoreFile(...)`.
-9. Snapshot текущих Output позиций.
-10. Подписка/проверка `BuildEvents`.
-11. Запуск Build/Clean через `SolutionBuild`; Rebuild через
+9. Выбор и проверка configuration/platform.
+10. Snapshot текущих Output позиций.
+11. Подписка/проверка `BuildEvents`.
+12. Запуск Build/Clean через `SolutionBuild`; Rebuild через
     `DTE.ExecuteCommand("Build.RebuildSolution")`.
-12. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
-13. Проверка `.tsproj` hashes, синхронизация file watcher и обязательное
+13. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
+14. Проверка `.tsproj` hashes, синхронизация file watcher и обязательное
     восстановление notifications.
-14. Чтение `LastBuildInfo`, Error List snapshot и Output delta.
-15. Нормализация diagnostics.
-16. Классификация содержательных `.tsproj` changes.
-17. Сохранение полного Output delta как отдельного build-log resource.
-18. Возврат compact result.
+15. Чтение `LastBuildInfo`, Error List snapshot и Output delta.
+16. Нормализация diagnostics.
+17. Классификация содержательных `.tsproj` changes.
+18. Сохранение полного Output delta как отдельного build-log resource.
+19. Возврат compact result.
 
 `DTE.ExecuteCommand(...)` допустим для стабильной встроенной команды XAE/VS,
 если нет надёжного отдельного typed automation method. Он всегда вызывается
