@@ -17,6 +17,7 @@
       "solution": "tests/fixtures/TC3_SimpleProject/TC3_SimpleProject.sln",
       "allowXaeLaunch": true,
       "xaeProgId": "TcXaeShell.DTE.15.0",
+      "assumeAttachedXaeSynchronized": true,
       "externalChangePolicy": "reloadModified",
       "allowAgentForceSynchronization": false,
       "allowDirtyDocumentDiscard": false,

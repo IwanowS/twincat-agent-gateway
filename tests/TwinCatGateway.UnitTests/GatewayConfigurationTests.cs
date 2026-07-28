@@ -39,6 +39,7 @@ public sealed class GatewayConfigurationTests
             profile.Solution,
             ignoreCase: true);
         Assert.False(profile.AllowActivation);
+        Assert.True(profile.AssumeAttachedXaeSynchronized);
         Assert.Null(profile.ExpectedTarget);
         Assert.Null(profile.TcUnit);
     }
@@ -111,6 +112,7 @@ public sealed class GatewayConfigurationTests
                       "allowXaeLaunch": true,
                       "xaeProgId": "VisualStudio.DTE.16.0",
                       "allowActivation": true,
+                      "assumeAttachedXaeSynchronized": false,
                       "externalChangePolicy": "reloadAll",
                       "allowAgentForceSynchronization": true,
                       "allowDirtyDocumentDiscard": true,
@@ -135,6 +137,8 @@ public sealed class GatewayConfigurationTests
             Assert.True(profile.AllowXaeLaunch);
             Assert.Equal("VisualStudio.DTE.16.0", profile.XaeProgId);
             Assert.True(profile.AllowActivation);
+            Assert.False(
+                profile.AssumeAttachedXaeSynchronized);
             Assert.Equal(
                 ExternalChangePolicy.ReloadAll,
                 profile.ExternalChangePolicy);
@@ -343,6 +347,8 @@ public sealed class GatewayConfigurationTests
         Assert.Equal(
             ExternalChangePolicy.ReloadAll,
             second.ExternalChangePolicy);
+        Assert.False(
+            second.AssumeAttachedXaeSynchronized);
         Assert.True(second.AllowAgentForceSynchronization);
         Assert.True(second.AllowDirtyDocumentDiscard);
     }
@@ -360,6 +366,7 @@ public sealed class GatewayConfigurationTests
                     Name = "bench",
                     Solution = @"C:\Projects\Machine\Machine.sln",
                     AllowActivation = true,
+                    AssumeAttachedXaeSynchronized = false,
                     ExternalChangePolicy =
                         ExternalChangePolicy.ReloadAll,
                     AllowAgentForceSynchronization = true,

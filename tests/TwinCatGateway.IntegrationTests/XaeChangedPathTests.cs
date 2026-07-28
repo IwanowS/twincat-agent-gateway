@@ -10,6 +10,25 @@ namespace TwinCatGateway.IntegrationTests;
 
 public sealed class XaeChangedPathTests
 {
+    [Theory]
+    [InlineData(true, false, 1, SynchronizationState.Confirmed)]
+    [InlineData(false, true, 0, SynchronizationState.Confirmed)]
+    [InlineData(false, true, 1, SynchronizationState.SyncRequired)]
+    [InlineData(false, false, 0, SynchronizationState.SyncRequired)]
+    public void InitialAttachSynchronizationPolicyIsExplicit(
+        bool retainBaseline,
+        bool assumeAttachedXaeSynchronized,
+        int dirtyDocumentCount,
+        SynchronizationState expected)
+    {
+        Assert.Equal(
+            expected,
+            XaeSession.SelectInitialSynchronizationState(
+                retainBaseline,
+                assumeAttachedXaeSynchronized,
+                dirtyDocumentCount));
+    }
+
     [Fact]
     public void ReferencedTwinCatProjectOutsideSolutionIsAccepted()
     {

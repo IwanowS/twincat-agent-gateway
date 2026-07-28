@@ -79,6 +79,8 @@ public sealed class ProjectProfile
 
     public string? Platform { get; set; }
 
+    public bool AssumeAttachedXaeSynchronized { get; set; } = true;
+
     public ExternalChangePolicy ExternalChangePolicy { get; set; } =
         ExternalChangePolicy.ReloadModified;
 

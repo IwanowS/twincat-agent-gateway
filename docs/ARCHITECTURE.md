@@ -877,10 +877,16 @@ agent edits files
 ### 13.2 Confirmed disk baseline
 
 Gateway не объявляет agent ownership над XAE buffers. Он хранит подтверждённый
-SHA-256 manifest точного выбранного project graph. При attach к существующему
-XAE session состояние становится `syncRequired`; только реальная reload
-operation с проверенными postconditions может установить `confirmed`.
-`changedPaths` остаётся необязательным hint.
+SHA-256 manifest точного выбранного project graph. По умолчанию
+`assumeAttachedXaeSynchronized=true`: при attach к существующему exact XAE
+session без dirty project documents gateway принимает текущий disk graph как
+начальный baseline без reload. Это осознанно переносит на пользователя
+ответственность за то, что in-memory XAE project model не stale.
+
+При `assumeAttachedXaeSynchronized=false` attach к существующему XAE даёт
+`syncRequired`; только реальная reload operation с проверенными postconditions
+может установить `confirmed`. Dirty documents никогда не попадают под
+assumption и остаются конфликтом. `changedPaths` остаётся необязательным hint.
 
 Dirty XAE buffers всегда имеют приоритет как конфликт: build/sync возвращает
 `DIRTY_XAE_DOCUMENT`, никогда не вызывает Save/SaveAll и не закрывает document

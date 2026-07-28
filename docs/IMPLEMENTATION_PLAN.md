@@ -299,6 +299,9 @@ docs/
 - exact project-graph manifest (`.tsproj` -> `.plcproj` -> `Compile Include`),
   включая относительные ссылки вне каталога `.sln`;
 - profile-level `externalChangePolicy`;
+- profile option `assumeAttachedXaeSynchronized` с default `true`: чистый
+  user-opened XAE принимает disk graph как initial baseline под
+  ответственностью оператора; `false` сохраняет explicit-sync boundary;
 - dirty-document fail-closed policy без automatic save/discard;
 - явная UI synchronization и permission-gated MCP `twincat_sync`;
 - versioned XSD bundle для XAE 3.1.4024.17;

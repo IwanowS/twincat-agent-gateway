@@ -255,6 +255,7 @@ public sealed class MvpContractSerializationTests
             Solution = @"C:\Projects\Machine\Machine.sln",
             XaeProgId = "VisualStudio.DTE.16.0",
             AllowActivation = true,
+            AssumeAttachedXaeSynchronized = false,
             ExpectedTarget = new TargetIdentity
             {
                 Name = "WIN-T077ADA",
@@ -275,6 +276,10 @@ public sealed class MvpContractSerializationTests
         Assert.Equal("VisualStudio.DTE.16.0", result.XaeProgId);
         Assert.DoesNotContain("\"unsavedDocuments\"", json);
         Assert.True(result.AllowActivation);
+        Assert.False(result.AssumeAttachedXaeSynchronized);
+        Assert.Contains(
+            "\"assumeAttachedXaeSynchronized\":false",
+            json);
         Assert.Equal("WIN-T077ADA", result.ExpectedTarget?.Name);
         Assert.Equal("192.168.3.31.1.1", result.ExpectedTarget?.AmsNetId);
         Assert.Equal(

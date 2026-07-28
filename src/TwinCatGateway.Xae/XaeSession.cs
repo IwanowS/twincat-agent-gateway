@@ -79,12 +79,27 @@ public sealed class XaeSession : IDisposable
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        return await AttachAsync(
+            solutionPath,
+            assumeAttachedXaeSynchronized: false,
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<XaeSessionSnapshot> AttachAsync(
+        string solutionPath,
+        bool assumeAttachedXaeSynchronized,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
         ThrowIfDisposed();
         string normalizedSolution = NormalizeSolutionPath(solutionPath);
         DateTimeOffset deadlineUtc = CreateDeadline(timeout);
         XaeSessionSnapshot snapshot =
             await _dispatcher.InvokeAsync(
-                () => AttachOnSta(normalizedSolution),
+                () => AttachOnSta(
+                    normalizedSolution,
+                    assumeAttachedXaeSynchronized),
                 GetRemaining(
                     deadlineUtc,
                     "xae.attach"),
@@ -116,12 +131,30 @@ public sealed class XaeSession : IDisposable
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        return await EnsureAttachedAsync(
+            solutionPath,
+            allowLaunch,
+            configuredProgId,
+            assumeAttachedXaeSynchronized: false,
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<XaeSessionSnapshot> EnsureAttachedAsync(
+        string solutionPath,
+        bool allowLaunch,
+        string? configuredProgId,
+        bool assumeAttachedXaeSynchronized,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
         ThrowIfDisposed();
         DateTimeOffset deadlineUtc = CreateDeadline(timeout);
         try
         {
             return await AttachAsync(
                 solutionPath,
+                assumeAttachedXaeSynchronized,
                 GetRemaining(deadlineUtc, "xae.attach"),
                 cancellationToken).ConfigureAwait(false);
         }
@@ -1136,7 +1169,9 @@ public sealed class XaeSession : IDisposable
         return CloneSnapshot(_snapshot);
     }
 
-    private XaeSessionSnapshot AttachOnSta(string normalizedSolution)
+    private XaeSessionSnapshot AttachOnSta(
+        string normalizedSolution,
+        bool assumeAttachedXaeSynchronized)
     {
         using RotScanResult scan = RunningObjectTableScanner.Scan();
         DteInstanceInfo[] instances = scan.Candidates
@@ -1164,6 +1199,7 @@ public sealed class XaeSession : IDisposable
         ITcSysManager? selectedSysManager = null;
         string twinCatProjectPath = string.Empty;
         string[] projectGraphPaths = Array.Empty<string>();
+        ProjectFileFingerprintSnapshot? capturedGraph = null;
         int dirtyDocumentCount = 0;
         try
         {
@@ -1180,6 +1216,7 @@ public sealed class XaeSession : IDisposable
                         normalizedSolution,
                         twinCatProjectPath,
                         CancellationToken.None);
+                capturedGraph = graph;
                 dirtyDocumentCount =
                     AgentWorkspaceOwnership.FindDirtyDocuments(
                         selectedDte,
@@ -1216,6 +1253,11 @@ public sealed class XaeSession : IDisposable
             instances[selectedIndex].Moniker,
             normalizedSolution,
             twinCatProjectPath);
+        SynchronizationState initialSynchronizationState =
+            SelectInitialSynchronizationState(
+                retainBaseline,
+                assumeAttachedXaeSynchronized,
+                dirtyDocumentCount);
         instances[selectedIndex].Selected = true;
         instances[selectedIndex].SelectionReason =
             "Exact normalized Solution.FullName match.";
@@ -1230,9 +1272,7 @@ public sealed class XaeSession : IDisposable
             AgentWorkspaceOwned = false,
             ClosedDocumentCount = 0,
             DiscardedDocumentCount = 0,
-            SynchronizationState = retainBaseline
-                ? SynchronizationState.Confirmed
-                : SynchronizationState.SyncRequired,
+            SynchronizationState = initialSynchronizationState,
             DirtyDocumentCount = dirtyDocumentCount,
             DiscoveredInstances = instances,
         };
@@ -1241,7 +1281,40 @@ public sealed class XaeSession : IDisposable
             RefreshDiagnosticsOnSta();
         }
 
+        if (!retainBaseline
+            && initialSynchronizationState
+                == SynchronizationState.Confirmed)
+        {
+            ConfirmFingerprintBaseline(
+                normalizedSolution,
+                capturedGraph
+                    ?? throw new GatewayOperationException(
+                        ErrorCodes.ProjectGraphInvalid,
+                        "The attached XAE project graph baseline is "
+                            + "unavailable.",
+                        stage: "xae.workspace.fingerprint"));
+        }
+
         return CloneSnapshot(_snapshot);
+    }
+
+    internal static SynchronizationState
+        SelectInitialSynchronizationState(
+        bool retainBaseline,
+        bool assumeAttachedXaeSynchronized,
+        int dirtyDocumentCount)
+    {
+        if (dirtyDocumentCount < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(dirtyDocumentCount));
+        }
+
+        return retainBaseline
+            || (assumeAttachedXaeSynchronized
+                && dirtyDocumentCount == 0)
+            ? SynchronizationState.Confirmed
+            : SynchronizationState.SyncRequired;
     }
 
     private XaeSessionSnapshot VerifyAttachedOnSta(

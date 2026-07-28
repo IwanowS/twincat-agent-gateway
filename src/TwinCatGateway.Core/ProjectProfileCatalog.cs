@@ -72,6 +72,8 @@ public sealed class ProjectProfileCatalog
                 },
             Configuration = source.Configuration,
             Platform = source.Platform,
+            AssumeAttachedXaeSynchronized =
+                source.AssumeAttachedXaeSynchronized,
             ExternalChangePolicy = source.ExternalChangePolicy,
             AllowAgentForceSynchronization =
                 source.AllowAgentForceSynchronization,

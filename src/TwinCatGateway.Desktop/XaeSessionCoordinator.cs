@@ -105,6 +105,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         _profile.Solution,
                         _profile.AllowXaeLaunch,
                         _profile.XaeProgId,
+                        _profile.AssumeAttachedXaeSynchronized,
                         AttachTimeout,
                         cancellationToken).ConfigureAwait(false);
                 connected = true;
