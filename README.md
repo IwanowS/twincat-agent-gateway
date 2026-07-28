@@ -79,6 +79,8 @@ desktop gateway or its XAE session.
   runtime control are outside the MVP.
 - While attached, the agent owns project files; stale unsaved XAE document
   changes may be discarded before external edits are synchronized.
+- A solution may reference its selected TwinCAT `.tsproj` outside the solution
+  directory; that project's source tree remains inside the verified workspace.
 - Reorder-only `.tsproj` changes are classified and retained, not rewritten.
 
 ## Development

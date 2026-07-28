@@ -36,6 +36,7 @@ public sealed class XaeSession : IDisposable
     private string? _fingerprintSolution;
     private ITcSysManager? _sysManager;
     private TwinCatSilentModeLease? _silentModeLease;
+    private string[] _workspaceRoots = Array.Empty<string>();
     private XaeSessionSnapshot _snapshot = new();
     private int _disposed;
 
@@ -301,6 +302,7 @@ public sealed class XaeSession : IDisposable
         ProjectFileFingerprintSnapshot current =
             ProjectFileFingerprintScanner.Capture(
                 state.SolutionPath,
+                state.WorkspaceRoots,
                 cancellationToken);
         IReadOnlyList<ProjectFileChange> detected =
             ProjectFileFingerprintScanner.Compare(
@@ -329,12 +331,16 @@ public sealed class XaeSession : IDisposable
                 paths.Add(
                     NormalizeChangedPath(
                         state.SolutionPath,
+                        state.WorkspaceRoots,
                         path));
             }
         }
 
+        string[] sourcePaths = paths
+            .Where(ProjectFileFingerprintScanner.IsSupportedPath)
+            .ToArray();
         ValidateChangedPlcObjects(
-            paths,
+            sourcePaths,
             cancellationToken);
         GetRemaining(
             deadlineUtc,
@@ -343,7 +349,7 @@ public sealed class XaeSession : IDisposable
             await _dispatcher.InvokeAsync(
                 () => SynchronizeExternalChangesOnSta(
                     state.SolutionPath,
-                    paths),
+                    sourcePaths),
                 GetRemaining(
                     deadlineUtc,
                     "xae.workspace.synchronize"),
@@ -351,6 +357,7 @@ public sealed class XaeSession : IDisposable
         ProjectFileFingerprintSnapshot verified =
             ProjectFileFingerprintScanner.Capture(
                 state.SolutionPath,
+                state.WorkspaceRoots,
                 cancellationToken);
         IReadOnlyList<ProjectFileChange> concurrentChanges =
             ProjectFileFingerprintScanner.Compare(
@@ -774,11 +781,13 @@ public sealed class XaeSession : IDisposable
         }
 
         ITcSysManager sysManager;
+        string twinCatProjectPath;
         try
         {
             sysManager = AcquireSysManager(
                 _dte!,
-                normalizedSolution);
+                normalizedSolution,
+                out twinCatProjectPath);
         }
         catch (GatewayOperationException exception) when (
             exception.Code == ErrorCodes.SysManagerNotAvailable)
@@ -786,12 +795,16 @@ public sealed class XaeSession : IDisposable
             return null;
         }
 
+        string[] workspaceRoots = CreateWorkspaceRoots(
+            normalizedSolution,
+            twinCatProjectPath);
         AgentWorkspaceOwnershipResult ownership;
         try
         {
             ownership = AgentWorkspaceOwnership.Acquire(
                 _dte!,
-                normalizedSolution);
+                normalizedSolution,
+                workspaceRoots);
         }
         catch
         {
@@ -801,6 +814,7 @@ public sealed class XaeSession : IDisposable
 
         ComObject.Release(_sysManager);
         _sysManager = sysManager;
+        _workspaceRoots = workspaceRoots;
         info.Selected = true;
         info.SelectionReason =
             "Gateway-launched XAE opened the exact normalized solution path.";
@@ -849,6 +863,7 @@ public sealed class XaeSession : IDisposable
         DTE2 selectedDte = selected.TakeDte();
         ITcSysManager? selectedSysManager = null;
         AgentWorkspaceOwnershipResult? ownership = null;
+        string[] workspaceRoots = Array.Empty<string>();
         try
         {
             using (TwinCatSilentModeLease.Enable(
@@ -857,10 +872,15 @@ public sealed class XaeSession : IDisposable
             {
                 selectedSysManager = AcquireSysManager(
                     selectedDte,
-                    normalizedSolution);
+                    normalizedSolution,
+                    out string twinCatProjectPath);
+                workspaceRoots = CreateWorkspaceRoots(
+                    normalizedSolution,
+                    twinCatProjectPath);
                 ownership = AgentWorkspaceOwnership.Acquire(
                     selectedDte,
-                    normalizedSolution);
+                    normalizedSolution,
+                    workspaceRoots);
             }
         }
         catch
@@ -883,6 +903,7 @@ public sealed class XaeSession : IDisposable
 
         _dte = selectedDte;
         _sysManager = selectedSysManager;
+        _workspaceRoots = workspaceRoots;
         instances[selectedIndex].Selected = true;
         instances[selectedIndex].SelectionReason =
             "Exact normalized Solution.FullName match.";
@@ -1251,12 +1272,15 @@ public sealed class XaeSession : IDisposable
 
     private static ITcSysManager AcquireSysManager(
         DTE dte,
-        string normalizedSolution)
+        string normalizedSolution,
+        out string twinCatProjectPath)
     {
         Solution? solution = null;
         Projects? projects = null;
         List<ITcSysManager> sysManagers = new();
+        List<string> projectPaths = new();
         bool ownershipTransferred = false;
+        twinCatProjectPath = string.Empty;
         try
         {
             solution = dte.Solution;
@@ -1294,6 +1318,7 @@ public sealed class XaeSession : IDisposable
                     if (projectObject is ITcSysManager sysManager)
                     {
                         sysManagers.Add(sysManager);
+                        projectPaths.Add(Path.GetFullPath(projectPath));
                     }
                     else
                     {
@@ -1316,6 +1341,7 @@ public sealed class XaeSession : IDisposable
                     stage: "xae.sysManager");
             }
 
+            twinCatProjectPath = projectPaths[0];
             ownershipTransferred = true;
             return sysManagers[0];
         }
@@ -1353,7 +1379,8 @@ public sealed class XaeSession : IDisposable
             AgentWorkspaceOwnershipResult ownership =
                 AgentWorkspaceOwnership.Acquire(
                     dte,
-                    solutionPath);
+                    solutionPath,
+                    _workspaceRoots);
             _snapshot.AgentWorkspaceOwned = true;
             _snapshot.ClosedDocumentCount =
                 ownership.ClosedDocuments.Count;
@@ -1395,7 +1422,8 @@ public sealed class XaeSession : IDisposable
                 ExternalChangeSynchronizer.Synchronize(
                     dte,
                     solutionPath,
-                    changedPaths);
+                    changedPaths,
+                    _workspaceRoots);
             _snapshot.AgentWorkspaceOwned = true;
             _snapshot.ClosedDocumentCount = 0;
             _snapshot.DiscardedDocumentCount =
@@ -1741,6 +1769,7 @@ public sealed class XaeSession : IDisposable
         ProjectFileFingerprintSnapshot baseline =
             ProjectFileFingerprintScanner.Capture(
                 solutionPath,
+                _workspaceRoots,
                 cancellationToken);
         lock (_fingerprintSync)
         {
@@ -1765,7 +1794,8 @@ public sealed class XaeSession : IDisposable
 
             return new FingerprintState(
                 _fingerprintSolution,
-                _fingerprintBaseline);
+                _fingerprintBaseline,
+                _workspaceRoots);
         }
     }
 
@@ -1801,8 +1831,9 @@ public sealed class XaeSession : IDisposable
         }
     }
 
-    private static string NormalizeChangedPath(
+    internal static string NormalizeChangedPath(
         string solutionPath,
+        IReadOnlyList<string> workspaceRoots,
         string path)
     {
         if (string.IsNullOrWhiteSpace(path))
@@ -1822,22 +1853,19 @@ public sealed class XaeSession : IDisposable
             Path.IsPathRooted(path)
                 ? path
                 : Path.Combine(root, path));
-        string rootPrefix = root.TrimEnd(
-            Path.DirectorySeparatorChar,
-            Path.AltDirectorySeparatorChar)
-            + Path.DirectorySeparatorChar;
-        if (!fullPath.StartsWith(
-            rootPrefix,
-            StringComparison.OrdinalIgnoreCase))
+        if (!workspaceRoots.Any(
+            workspaceRoot =>
+                IsInsideRoot(fullPath, workspaceRoot)))
         {
             throw new GatewayOperationException(
                 ErrorCodes.RequestInvalid,
-                "Changed project file must be inside the selected "
-                + "solution directory.",
+                "Changed project file must belong to the selected "
+                + "solution or its referenced TwinCAT project.",
                 stage: "xae.workspace.validate");
         }
 
-        if (!ProjectFileFingerprintScanner.IsSupportedPath(fullPath))
+        if (!ProjectFileFingerprintScanner.IsSupportedPath(fullPath)
+            && !IsSupportedProjectMetadataPath(fullPath))
         {
             throw new GatewayOperationException(
                 ErrorCodes.ExternalEditUnsupported,
@@ -1854,6 +1882,57 @@ public sealed class XaeSession : IDisposable
         }
 
         return fullPath;
+    }
+
+    private static string[] CreateWorkspaceRoots(
+        string solutionPath,
+        string twinCatProjectPath)
+    {
+        string solutionRoot = Path.GetDirectoryName(solutionPath)
+            ?? throw new GatewayOperationException(
+                ErrorCodes.SolutionMismatch,
+                "The selected solution path has no parent directory.",
+                stage: "xae.workspace.acquire");
+        string projectRoot = Path.GetDirectoryName(twinCatProjectPath)
+            ?? throw new GatewayOperationException(
+                ErrorCodes.SysManagerNotAvailable,
+                "The selected TwinCAT project path has no parent directory.",
+                stage: "xae.workspace.acquire");
+        return new[] { solutionRoot, projectRoot }
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static bool IsInsideRoot(
+        string path,
+        string root)
+    {
+        string fullRoot = Path.GetFullPath(root);
+        string rootPrefix = fullRoot.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        return string.Equals(
+                path,
+                fullRoot,
+                StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(
+                rootPrefix,
+                StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsSupportedProjectMetadataPath(string path)
+    {
+        string extension = Path.GetExtension(path);
+        return string.Equals(
+                extension,
+                ".tsproj",
+                StringComparison.OrdinalIgnoreCase)
+            || string.Equals(
+                extension,
+                ".plcproj",
+                StringComparison.OrdinalIgnoreCase);
     }
 
     internal static void ValidateChangedPlcObjects(
@@ -1971,6 +2050,7 @@ public sealed class XaeSession : IDisposable
             ComObject.Release(_dte);
             _sysManager = null;
             _dte = null;
+            _workspaceRoots = Array.Empty<string>();
             _snapshot = new XaeSessionSnapshot();
         }
 
@@ -2161,15 +2241,19 @@ public sealed class XaeSession : IDisposable
     {
         public FingerprintState(
             string solutionPath,
-            ProjectFileFingerprintSnapshot baseline)
+            ProjectFileFingerprintSnapshot baseline,
+            IReadOnlyList<string> workspaceRoots)
         {
             SolutionPath = solutionPath;
             Baseline = baseline;
+            WorkspaceRoots = workspaceRoots.ToArray();
         }
 
         public string SolutionPath { get; }
 
         public ProjectFileFingerprintSnapshot Baseline { get; }
+
+        public IReadOnlyList<string> WorkspaceRoots { get; }
     }
 
     private sealed class StartedXaeProcess

@@ -62,6 +62,32 @@ public sealed class ProjectFileFingerprintScannerTests
     }
 
     [Fact]
+    public void CaptureIncludesReferencedProjectRootOutsideSolution()
+    {
+        using TemporaryProject solution = new();
+        using TemporaryProject referencedProject = new();
+        string local = solution.Write(
+            "Local\\MAIN.TcPOU",
+            "local");
+        string referenced = referencedProject.Write(
+            "External\\MAIN.TcPOU",
+            "external");
+
+        ProjectFileFingerprintSnapshot snapshot =
+            ProjectFileFingerprintScanner.Capture(
+                solution.SolutionPath,
+                new[] { referencedProject.Root },
+                CancellationToken.None);
+
+        Assert.Contains(
+            snapshot.Files,
+            file => file.Path == Path.GetFullPath(local));
+        Assert.Contains(
+            snapshot.Files,
+            file => file.Path == Path.GetFullPath(referenced));
+    }
+
+    [Fact]
     public void CompareDetectsAddedAndDeletedSources()
     {
         using TemporaryProject project = new();

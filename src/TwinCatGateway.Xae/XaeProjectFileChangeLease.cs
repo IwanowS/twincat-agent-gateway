@@ -42,17 +42,20 @@ public sealed class XaeProjectFileChangeResult
 internal sealed class XaeProjectFileChangeLease : IDisposable
 {
     private readonly IVsFileChangeEx _fileChange;
-    private readonly string _root;
+    private readonly EnvDTE80.DTE2 _dte;
+    private readonly string _solutionPath;
     private readonly IReadOnlyList<ProjectFileState> _files;
     private bool _disposed;
 
     private XaeProjectFileChangeLease(
         IVsFileChangeEx fileChange,
-        string root,
+        EnvDTE80.DTE2 dte,
+        string solutionPath,
         IReadOnlyList<ProjectFileState> files)
     {
         _fileChange = fileChange;
-        _root = root;
+        _dte = dte;
+        _solutionPath = solutionPath;
         _files = files;
     }
 
@@ -60,12 +63,10 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
         EnvDTE80.DTE2 dte,
         string solutionPath)
     {
-        string root = Path.GetDirectoryName(
-            Path.GetFullPath(solutionPath))
-            ?? throw new ArgumentException(
-                "Solution path has no parent directory.",
-                nameof(solutionPath));
-        string[] paths = EnumerateProjectFiles(root);
+        string normalizedSolution = Path.GetFullPath(solutionPath);
+        string[] paths = EnumerateProjectFiles(
+            dte,
+            normalizedSolution);
         IVsFileChangeEx? fileChange = null;
         List<ProjectFileState> files = new();
         try
@@ -89,7 +90,11 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
             }
 
             XaeProjectFileChangeLease lease =
-                new(fileChange, root, files);
+                new(
+                    fileChange,
+                    dte,
+                    normalizedSolution,
+                    files);
             fileChange = null;
             return lease;
         }
@@ -160,7 +165,9 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                 changes.Add(classification);
             }
 
-            foreach (string addedPath in EnumerateProjectFiles(_root)
+            foreach (string addedPath in EnumerateProjectFiles(
+                _dte,
+                _solutionPath)
                 .Where(path => !baselinePaths.Contains(path)))
             {
                 changes.Add(
@@ -296,18 +303,71 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
         return content;
     }
 
-    private static string[] EnumerateProjectFiles(string root)
+    private static string[] EnumerateProjectFiles(
+        EnvDTE80.DTE2 dte,
+        string solutionPath)
     {
-        return Directory
-            .EnumerateFiles(
-                root,
-                "*.tsproj",
-                SearchOption.AllDirectories)
-            .Select(Path.GetFullPath)
+        EnvDTE.Solution? solution = null;
+        EnvDTE.Projects? projects = null;
+        List<string> paths = new();
+        try
+        {
+            solution = dte.Solution;
+            if (!string.Equals(
+                NormalizeOptionalPath(solution.FullName),
+                solutionPath,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.SolutionMismatch,
+                    "The selected XAE solution changed while "
+                    + "TwinCAT project files were tracked.",
+                    retryable: true,
+                    stage: "xae.build.projectFiles");
+            }
+
+            projects = solution.Projects;
+            int count = projects.Count;
+            for (int index = 1; index <= count; index++)
+            {
+                EnvDTE.Project? project = null;
+                try
+                {
+                    project = projects.Item(index);
+                    string? path = project.FullName;
+                    if (string.Equals(
+                        Path.GetExtension(path),
+                        ".tsproj",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        paths.Add(Path.GetFullPath(path));
+                    }
+                }
+                finally
+                {
+                    ComObject.Release(project);
+                }
+            }
+        }
+        finally
+        {
+            ComObject.Release(projects);
+            ComObject.Release(solution);
+        }
+
+        return paths
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .OrderBy(
                 path => path,
                 StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    private static string? NormalizeOptionalPath(string? path)
+    {
+        return string.IsNullOrWhiteSpace(path)
+            ? null
+            : Path.GetFullPath(path);
     }
 
     private static void RestoreNotifications(

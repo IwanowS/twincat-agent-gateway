@@ -28,7 +28,8 @@ internal static class AgentWorkspaceOwnership
 {
     public static AgentWorkspaceOwnershipResult Acquire(
         DTE2 dte,
-        string solutionPath)
+        string solutionPath,
+        IEnumerable<string>? workspaceRoots = null)
     {
         if (dte is null)
         {
@@ -40,10 +41,11 @@ internal static class AgentWorkspaceOwnership
             ?? throw new ArgumentException(
                 "Solution path has no parent directory.",
                 nameof(solutionPath));
-        string rootPrefix = solutionRoot.TrimEnd(
-            Path.DirectorySeparatorChar,
-            Path.AltDirectorySeparatorChar)
-            + Path.DirectorySeparatorChar;
+        string[] roots = (workspaceRoots ?? new[] { solutionRoot })
+            .Append(solutionRoot)
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
         List<string> closed = new();
         List<string> discarded = new();
         Documents? documents = null;
@@ -58,7 +60,7 @@ internal static class AgentWorkspaceOwnership
                     document = documents.Item(index);
                     string? path = TryGetOwnedSourcePath(
                         document,
-                        rootPrefix);
+                        roots);
                     if (path is null)
                     {
                         continue;
@@ -90,7 +92,7 @@ internal static class AgentWorkspaceOwnership
 
             string[] stillOpen = FindOpenOwnedSources(
                 documents,
-                rootPrefix);
+                roots);
             if (stillOpen.Length != 0)
             {
                 throw new GatewayOperationException(
@@ -116,7 +118,7 @@ internal static class AgentWorkspaceOwnership
 
     private static string[] FindOpenOwnedSources(
         Documents documents,
-        string rootPrefix)
+        IReadOnlyList<string> roots)
     {
         List<string> paths = new();
         int count = documents.Count;
@@ -128,7 +130,7 @@ internal static class AgentWorkspaceOwnership
                 document = documents.Item(index);
                 string? path = TryGetOwnedSourcePath(
                     document,
-                    rootPrefix);
+                    roots);
                 if (path is not null)
                 {
                     paths.Add(path);
@@ -145,7 +147,7 @@ internal static class AgentWorkspaceOwnership
 
     private static string? TryGetOwnedSourcePath(
         Document document,
-        string rootPrefix)
+        IReadOnlyList<string> roots)
     {
         string? path = document.FullName;
         if (string.IsNullOrWhiteSpace(path)
@@ -155,10 +157,26 @@ internal static class AgentWorkspaceOwnership
         }
 
         string fullPath = Path.GetFullPath(path);
-        return fullPath.StartsWith(
-            rootPrefix,
-            StringComparison.OrdinalIgnoreCase)
+        return roots.Any(root => IsInsideRoot(fullPath, root))
             ? fullPath
             : null;
+    }
+
+    private static bool IsInsideRoot(
+        string path,
+        string root)
+    {
+        string fullRoot = Path.GetFullPath(root);
+        string rootPrefix = fullRoot.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        return string.Equals(
+                path,
+                fullRoot,
+                StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(
+                rootPrefix,
+                StringComparison.OrdinalIgnoreCase);
     }
 }

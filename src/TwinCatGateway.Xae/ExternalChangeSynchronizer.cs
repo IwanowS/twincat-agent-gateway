@@ -52,7 +52,8 @@ internal static class ExternalChangeSynchronizer
     public static XaeDocumentSynchronizationResult Synchronize(
         DTE2 dte,
         string solutionPath,
-        IEnumerable<string> changedPaths)
+        IEnumerable<string> changedPaths,
+        IEnumerable<string>? workspaceRoots = null)
     {
         if (dte is null)
         {
@@ -66,7 +67,8 @@ internal static class ExternalChangeSynchronizer
         AgentWorkspaceOwnershipResult ownership =
             AgentWorkspaceOwnership.Acquire(
                 dte,
-                solutionPath);
+                solutionPath,
+                workspaceRoots);
         if (paths.Length == 0)
         {
             return new XaeDocumentSynchronizationResult(

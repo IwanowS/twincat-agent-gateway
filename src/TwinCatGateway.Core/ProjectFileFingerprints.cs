@@ -92,6 +92,17 @@ public static class ProjectFileFingerprintScanner
         string solutionPath,
         CancellationToken cancellationToken)
     {
+        return Capture(
+            solutionPath,
+            Array.Empty<string>(),
+            cancellationToken);
+    }
+
+    public static ProjectFileFingerprintSnapshot Capture(
+        string solutionPath,
+        IEnumerable<string> additionalRoots,
+        CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(solutionPath))
         {
             throw new ArgumentException(
@@ -111,16 +122,20 @@ public static class ProjectFileFingerprintScanner
             ?? throw new ArgumentException(
                 "Solution path has no parent directory.",
                 nameof(solutionPath));
+        string[] roots = NormalizeRoots(root, additionalRoots);
         Dictionary<string, ProjectFileFingerprint> files =
             new(StringComparer.OrdinalIgnoreCase);
-        foreach (string path in EnumerateSupportedFiles(
-            root,
-            cancellationToken))
+        foreach (string workspaceRoot in roots)
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            ProjectFileFingerprint fingerprint =
-                CaptureFile(path, cancellationToken);
-            files.Add(fingerprint.Path, fingerprint);
+            foreach (string path in EnumerateSupportedFiles(
+                workspaceRoot,
+                cancellationToken))
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                ProjectFileFingerprint fingerprint =
+                    CaptureFile(path, cancellationToken);
+                files.Add(fingerprint.Path, fingerprint);
+            }
         }
 
         return new ProjectFileFingerprintSnapshot(files);
@@ -219,6 +234,56 @@ public static class ProjectFileFingerprintScanner
                 }
             }
         }
+    }
+
+    private static string[] NormalizeRoots(
+        string solutionRoot,
+        IEnumerable<string> additionalRoots)
+    {
+        if (additionalRoots is null)
+        {
+            throw new ArgumentNullException(nameof(additionalRoots));
+        }
+
+        List<string> roots = new();
+        foreach (string candidate in new[] { solutionRoot }
+            .Concat(additionalRoots)
+            .Select(Path.GetFullPath)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path.Length))
+        {
+            if (!Directory.Exists(candidate))
+            {
+                throw new DirectoryNotFoundException(
+                    $"Project workspace directory was not found: '{candidate}'.");
+            }
+
+            if (roots.Any(root => IsInsideRoot(candidate, root)))
+            {
+                continue;
+            }
+
+            roots.Add(candidate);
+        }
+
+        return roots.ToArray();
+    }
+
+    private static bool IsInsideRoot(
+        string path,
+        string root)
+    {
+        string rootPrefix = root.TrimEnd(
+            Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar)
+            + Path.DirectorySeparatorChar;
+        return string.Equals(
+                path,
+                root,
+                StringComparison.OrdinalIgnoreCase)
+            || path.StartsWith(
+                rootPrefix,
+                StringComparison.OrdinalIgnoreCase);
     }
 
     private static ProjectFileFingerprint CaptureFile(

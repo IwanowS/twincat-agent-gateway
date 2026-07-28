@@ -24,6 +24,9 @@ discards conflicting dirty XAE documents, and reloads changed files before the
 operation. Added or removed PLC source files are unsupported by the MVP and
 must be surfaced instead of worked around.
 
+The verified workspace includes the selected `.tsproj` directory when the
+solution references that TwinCAT project outside its own directory.
+
 Trust `ExpectedReorderOnly` for `.tsproj` noise. Do not load the full project
 file, rewrite it, or revert it merely to restore ordering. Inspect only the
 focused diff resource when the classifier reports another result.
