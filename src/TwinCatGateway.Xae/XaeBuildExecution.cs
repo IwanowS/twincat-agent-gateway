@@ -71,6 +71,8 @@ internal sealed class XaeBuildEventLease : IDisposable
     private readonly SolutionBuild _solutionBuild;
     private readonly XaeOutputSnapshot _outputSnapshot;
     private readonly XaeProjectFileChangeLease _projectFileLease;
+    private readonly IReadOnlyList<BuildDiagnostic>
+        _errorListBaseline = Array.Empty<BuildDiagnostic>();
     private vsBuildAction _expectedAction;
     private bool _disposed;
 
@@ -96,6 +98,7 @@ internal sealed class XaeBuildEventLease : IDisposable
             _projectFileLease = projectFileLease;
             _outputSnapshot =
                 XaeOutputCollector.Capture(dte);
+            _errorListBaseline = ReadErrorList();
             _buildEvents.OnBuildDone += _doneHandler;
             subscribed = true;
         }
@@ -159,7 +162,10 @@ internal sealed class XaeBuildEventLease : IDisposable
         List<BuildDiagnostic> diagnostics =
             _requestedAction == BuildAction.Clean
                 ? new List<BuildDiagnostic>()
-                : ReadErrorList();
+                : BuildDiagnosticMultiset.Except(
+                        ReadErrorList(),
+                        _errorListBaseline)
+                    .ToList();
         IReadOnlyList<XaeOutputDelta> output =
             XaeOutputCollector.ReadDelta(
                 _dte,
