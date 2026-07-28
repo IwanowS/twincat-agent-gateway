@@ -6,7 +6,7 @@ using TwinCatGateway.Ipc;
 
 namespace TwinCatGateway.Client;
 
-public sealed class TwinCatGatewayClient
+public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
 {
     private readonly NamedPipeGatewayClient _client;
 
@@ -64,6 +64,8 @@ public sealed class TwinCatGatewayClient
         BuildParameters parameters,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(parameters);
+
         return _client.SendAsync<
             BuildParameters,
             OperationAccepted>(

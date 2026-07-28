@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\TwinCatGateway.Client\TwinCatGateway.Client.csproj" />
     <ProjectReference Include="..\..\src\TwinCatGateway.Core\TwinCatGateway.Core.csproj" />
   </ItemGroup>
 
