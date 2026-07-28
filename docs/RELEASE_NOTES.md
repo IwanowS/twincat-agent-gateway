@@ -9,6 +9,8 @@ TwinCAT Agent Gateway 0.1.0 provides:
 - Build/Rebuild/Clean with external-edit synchronization and compact
   diagnostics;
 - XSD-backed PLC object validation and `.tsproj` reorder classification;
+- exact project-graph fingerprints, configurable external-change policies,
+  explicit disk synchronization, and fail-closed dirty-document handling;
 - explicit allow-listed remote activation/restart with verified postconditions;
 - one-PLC linked TcUnit completion and fresh xUnit result collection;
 - versioned Named Pipe contracts, .NET 8 development CLI, and stdio MCP
@@ -44,13 +46,15 @@ read-only ADS runtime verification, and a fresh linked TcUnit xUnit report.
 The repository solution, unit tests, contract tests, focused desktop
 integration tests, real-XAE checks, temporary per-user installation smoke, and
 portable package build were run warning-free for this release candidate.
+The newer project-graph policy, force-sync, and dirty-document scenarios still
+require a repeat of their marked real-XAE checks on the configured bench.
 
 ### Known MVP limits
 
 - one TcUnit PLC/report publisher per profile; multi-PLC aggregation is planned
   post-MVP;
-- added/removed PLC source files require structural synchronization not present
-  in 0.1.0;
+- structural project changes require `reloadAll` or explicit force
+  synchronization; the candidate graph must validate before reload;
 - no general ADS client, ADS writes, RPC, PLC login, debugger, or local runtime
   control;
 - no TwinCAT 4026/Visual Studio 2022 specialization;

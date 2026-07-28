@@ -62,6 +62,9 @@ disabled until the operator deliberately changes `allowActivation`.
       },
       "configuration": null,
       "platform": null,
+      "externalChangePolicy": "reloadModified",
+      "allowAgentForceSynchronization": false,
+      "allowDirtyDocumentDiscard": false,
       "requireRecentSuccessfulBuild": true,
       "recentBuildMaxAgeSeconds": 600,
       "autoWaitForTcUnit": false,
@@ -140,6 +143,9 @@ Neither option permits an agent to select another solution or target.
 | `expectedTarget` | object or `null`, `null` | Exact target identity. Required when `allowActivation` is true. |
 | `configuration` | string or `null`, `null` | Optional XAE solution configuration name used by build. `null` keeps the verified active selection. Empty or whitespace values are invalid. |
 | `platform` | string or `null`, `null` | Optional XAE solution platform name used by build. `null` keeps the verified active selection. Empty or whitespace values are invalid. |
+| `externalChangePolicy` | `reloadAll`, `reloadModified`, or `error`; `reloadModified` | Reaction to non-generated disk changes found by the authoritative project-graph fingerprint scan. `reloadModified` reloads only modified `.TcPOU`/`.TcGVL`/`.TcDUT` and rejects graph or metadata changes. `reloadAll` permits them and reloads the selected TwinCAT project. `error` rejects every non-noise difference. |
+| `allowAgentForceSynchronization` | Boolean, `false` | Permits the destructive MCP `twincat_sync` operation. The desktop UI may always request synchronization for the selected profile. |
+| `allowDirtyDocumentDiscard` | Boolean, `false` | Allows an explicit build/sync request with `discardDirtyDocuments=true` to close dirty project documents without saving. It never enables automatic saving or automatic discard. |
 | `requireRecentSuccessfulBuild` | Boolean, `true` | Requires a recent successful build before activation. |
 | `recentBuildMaxAgeSeconds` | integer, `600` | Maximum age of that build. Must be positive when the recent-build requirement is enabled. |
 | `autoWaitForTcUnit` | Boolean, `false` | Links activation to TcUnit completion and report collection. Requires `tcUnit`. |
@@ -175,6 +181,10 @@ Pass/fail comes from the fresh xUnit report, not from XAE/VSTest exit code.
 - Keep `allowActivation` false until the exact remote target is verified.
 - Activation is always a separate explicit operation and never follows build
   implicitly.
+- Keep `allowAgentForceSynchronization` and `allowDirtyDocumentDiscard` false
+  unless the operator deliberately accepts those independent capabilities.
+- The gateway never saves an XAE editor buffer. Dirty documents fail with
+  `DIRTY_XAE_DOCUMENT` unless discard was explicitly requested and allowed.
 - Local activation, restart, runtime state changes, ADS writes, and arbitrary
   symbol access are outside the MVP.
 - The agent may select a configured profile but may not supply a different

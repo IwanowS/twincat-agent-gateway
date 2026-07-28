@@ -294,7 +294,13 @@ docs/
 
 - operation contract `build`;
 - необязательный `changedPaths` hint плюс авторитетный fingerprint diff;
-- agent workspace ownership с закрытием editors без сохранения;
+- session fingerprint state `uninitialized -> syncRequired ->
+  synchronizing -> confirmed`;
+- exact project-graph manifest (`.tsproj` -> `.plcproj` -> `Compile Include`),
+  включая относительные ссылки вне каталога `.sln`;
+- profile-level `externalChangePolicy`;
+- dirty-document fail-closed policy без automatic save/discard;
+- явная UI synchronization и permission-gated MCP `twincat_sync`;
 - versioned XSD bundle для XAE 3.1.4024.17;
 - preflight изменённых `.TcPOU`, `.TcGVL`, `.TcDUT` по
   `TcPlcObject.xsd`;

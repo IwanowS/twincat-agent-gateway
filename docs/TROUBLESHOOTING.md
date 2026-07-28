@@ -80,23 +80,26 @@ The gateway does not guess among mixed platforms.
 
 ## File Modification Detected dialogs
 
-Gateway-owned edits are synchronized before build by fingerprinting project
-sources, discarding supported dirty XAE documents, reloading changed documents,
-and temporarily suppressing `.tsproj` file-change notifications during the
-operation.
+The gateway fingerprints only the selected TwinCAT project graph. Dirty XAE
+documents are reported and block build/sync; they are never saved or discarded
+automatically. Modified PLC sources may be reloaded according to
+`externalChangePolicy`, while `.tsproj` notifications are temporarily
+suppressed during a tracked operation.
 
 If a dialog remains:
 
 1. do not click Save; it can overwrite the agent's external edit;
 2. record the dialog and current operation stage;
-3. close the dialog with Reload/Reload All only when the disk version is the
-   intended source of truth;
-4. request reconnect and retry once;
+3. use the UI **Sync disk** action (or permitted MCP `twincat_sync`) only when
+   the disk version is the intended source of truth;
+4. if XAE has dirty documents, either save/close them manually or explicitly
+   request discard when the profile permits it;
 5. inspect diagnostics for `EXTERNAL_EDIT_CONFLICT` or
    `XAE_WORKSPACE_OWNERSHIP_FAILED`.
 
-Added and removed PLC source files are not structurally synchronized in the
-MVP and fail explicitly.
+Added and removed PLC sources require `reloadAll` or an explicit force sync.
+The candidate project graph is validated before the selected TwinCAT project
+is reloaded.
 
 ## Activation or runtime verification fails
 

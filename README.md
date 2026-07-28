@@ -79,11 +79,16 @@ desktop gateway or its XAE session.
   AMS NetId in the selected profile.
 - General ADS reads, ADS writes, RPC, `WriteControl`, PLC login, and local
   runtime control are outside the MVP.
-- While attached, the agent owns project files; stale unsaved XAE document
-  changes may be discarded before external edits are synchronized.
+- An attached user-owned XAE session starts in `syncRequired`; the current disk
+  state is not assumed to match its in-memory project model.
+- Unsaved XAE documents are never saved or discarded automatically. They fail
+  build/sync with `DIRTY_XAE_DOCUMENT`; discard requires both an explicit
+  request and profile permission.
 - A solution may reference its selected TwinCAT `.tsproj` outside the solution
   directory; that project's source tree remains inside the verified workspace.
-- Reorder-only `.tsproj` changes are classified and retained, not rewritten.
+- Schema-valid reorder-only `.tsproj` changes are accepted only when observed
+  inside a tracked, successfully completed XAE operation. They are retained,
+  not rewritten.
 
 ## Development
 

@@ -457,6 +457,7 @@ Operation deadline не заменяет postcondition.
   "changedPaths": [
     "TC3_SimpleProject/PlcProject1/POUs/MAIN.TcPOU"
   ],
+  "discardDirtyDocuments": false,
   "detail": "compact"
 }
 ```
@@ -477,52 +478,71 @@ configuration/platform отклоняется как `BUILD_CONFIGURATION_NOT_FO
 как `BUILD_CONFIGURATION_AMBIGUOUS`; gateway не выбирает один вариант
 эвристически.
 
-`changedPaths` необязателен: gateway в любом случае обнаруживает изменения
-поддерживаемых PLC sources по fingerprint baseline, а список от caller
-используется только как дополнительная явная подсказка. Абсолютные и
-относительные paths могут находиться под solution root либо под каталогом
-фактически подключённого `.tsproj`. Это поддерживает solution, который
-ссылается на TwinCAT project за пределами собственного каталога, но не
-разрешает произвольные внешние paths.
+`changedPaths` необязателен и является только hint. Авторитетное сравнение
+всегда выполняется по точному graph выбранного TwinCAT project:
+`.tsproj` -> `PrjFilePath` -> `.plcproj` -> `Compile Include`. Относительные
+ссылки разрешаются от содержащего их project file, включая ссылки вне
+каталога `.sln`. Соседние файлы, не входящие в graph, не сканируются; hint вне
+graph отклоняется как `REQUEST_INVALID`.
 
-Точный path выбранного `.tsproj` также принимается, когда caller включает
-сам solution project в `changedPaths`; он не проходит через PLC source
-`ReloadDocData`. Остальные project metadata, включая `.plcproj`, сохраняют
-предыдущее unsupported-поведение до отдельного решения о project reload
-semantics. Поддерживаемые `.TcPOU`, `.TcGVL` и `.TcDUT` сохраняют строгий
-fingerprint, XSD validation и typed reload workflow.
+Baseline подтверждает именно состояние, реально загруженное в XAE. Attach к
+существующему пользовательскому XAE устанавливает `syncRequired`, а не
+принимает текущий диск автоматически. Gateway-launched XAE может подтвердить
+baseline после полного проверенного открытия. Force sync без baseline всегда
+перезагружает выбранный `.tsproj`.
+
+`externalChangePolicy`:
+
+| Policy | Modified PLC source | Add/remove | Project metadata |
+|---|---|---|---|
+| `reloadAll` | typed file reload | разрешено после проверки нового graph; selected TwinCAT project reload | selected TwinCAT project reload |
+| `reloadModified` (default) | typed file reload | error | error |
+| `error` | error | error | error |
+
+Одинаковый SHA не является изменением. Schema-valid whitespace/reorder
+классифицируется как доказанный generated noise только если изменение
+произошло между снимками отслеживаемой успешно завершённой XAE operation.
+Предсуществующий reorder и изменение `ProgramVersion` в `.plcproj` не обходят
+policy.
 
 ### 10.2 Последовательность
 
 1. Валидация profile, solution и action.
-2. Сравнение текущих PLC source fingerprints под solution root и каталогом
-   выбранного `.tsproj` с session baseline.
-3. Объединение обнаруженных файлов с необязательным `changedPaths`.
-4. Отказ для добавленных/удалённых source files, пока structural sync не
-   реализован.
-5. Исключение точного path выбранного `.tsproj` из source-document reload.
-6. Закрытие поддерживаемых XAE editors без сохранения; dirty in-memory
-   изменения отбрасываются.
+2. Построение и fingerprint scan точного выбранного project graph.
+3. Сравнение с confirmed baseline; `changedPaths` проверяется как hint внутри
+   graph, но не заменяет scan.
+4. Применение `externalChangePolicy` и выбор минимального reload scope:
+   source documents либо selected TwinCAT project.
+5. Проверка dirty XAE documents. По умолчанию возвращается
+   `DIRTY_XAE_DOCUMENT`; gateway никогда не сохраняет buffer. Discard возможен
+   только при `discardDirtyDocuments=true` и
+   `allowDirtyDocumentDiscard=true`.
+6. XSD preflight изменённых PLC objects.
 7. Типизированный reload изменённых PLC source документов через VSSDK Running Document
    Table и `IVsPersistDocData.ReloadDocData(...)`.
-8. Повторный fingerprint scan; concurrent external change завершает операцию
-   ошибкой.
-9. SHA-256 snapshot всех выбранных solution `.tsproj`, включая проекты вне
+8. Для structural/metadata changes — проверка candidate graph, reload
+   выбранного TwinCAT project через `IVsSolution4.ReloadProject`, повторное
+   получение COM objects и проверка точной identity.
+9. Повторный fingerprint scan после reload; concurrent change завершает
+   retryable error. Baseline обновляется только после postconditions.
+10. SHA-256 snapshot всех выбранных solution `.tsproj`, включая проекты вне
    solution root, и временное подавление их file-change
    notifications через `SVsFileChangeEx` / `IVsFileChangeEx.IgnoreFile(...)`.
-10. Выбор и проверка configuration/platform.
-11. Snapshot текущих Output позиций.
-12. Подписка/проверка `BuildEvents`.
-13. Запуск Build/Clean через `SolutionBuild`; Rebuild через
+11. Выбор и проверка configuration/platform.
+12. Snapshot текущих Output позиций.
+13. Подписка/проверка `BuildEvents`.
+14. Запуск Build/Clean через `SolutionBuild`; Rebuild через
     `DTE.ExecuteCommand("Build.RebuildSolution")`.
-14. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
-15. Проверка `.tsproj` hashes, синхронизация file watcher и обязательное
+15. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
+16. Проверка `.tsproj` hashes, синхронизация file watcher и обязательное
     восстановление notifications.
-16. Чтение `LastBuildInfo`, Error List snapshot и Output delta.
-17. Нормализация diagnostics.
-18. Классификация содержательных `.tsproj` changes.
-19. Сохранение полного Output delta как отдельного build-log resource.
-20. Возврат compact result.
+17. Повторный project-graph fingerprint scan после build. Любое изменение во
+    время build даёт retryable error, кроме доказанного tracked generated
+    noise.
+18. Чтение `LastBuildInfo`, Error List snapshot и Output delta.
+19. Нормализация diagnostics и классификация `.tsproj` changes.
+20. Сохранение полного Output delta как отдельного build-log resource.
+21. Возврат compact result.
 
 `DTE.ExecuteCommand(...)` допустим для стабильной встроенной команды XAE/VS,
 если нет надёжного отдельного typed automation method. Он всегда вызывается
@@ -749,8 +769,8 @@ run | config | exception | stopped | unknown
 
 ```text
 agent edits files
-    -> build(changedPaths?)
-    -> gateway detects all changed PLC sources
+    -> build(changedPaths?) or explicit sync
+    -> gateway scans the exact selected project graph
     -> gateway synchronizes XAE project model
     -> build
     -> diagnostics
@@ -764,23 +784,19 @@ agent edits files
 - не нужно передавать PLC code через MCP;
 - меньше COM surface.
 
-### 13.2 Agent owns workspace
+### 13.2 Confirmed disk baseline
 
-Пока gateway подключён к solution, поддерживаемые PLC source files под
-solution root и под каталогом фактически выбранного `.tsproj` принадлежат
-агенту. Поэтому относительная ссылка solution на TwinCAT project в соседнем
-дереве не меняет workflow. Агент может менять любой из этих sources в любое
-время после подключения и не обязан заранее объявлять paths. Несохранённые
-изменения тех же документов в XAE не сохраняются: gateway закрывает такие editors с
-`vsSaveChangesNo`. Отдельных `SaveAll|Reject` policy и
-`prepare_external_edit` / `complete_external_edit` handshake нет.
+Gateway не объявляет agent ownership над XAE buffers. Он хранит подтверждённый
+SHA-256 manifest точного выбранного project graph. При attach к существующему
+XAE session состояние становится `syncRequired`; только реальная reload
+operation с проверенными postconditions может установить `confirmed`.
+`changedPaths` остаётся необязательным hint.
 
-При подключении gateway вычисляет SHA-256 fingerprint всех `.TcPOU`, `.TcGVL`
-и `.TcDUT` под обоими workspace roots. Непосредственно перед каждой
-Build/Rebuild/Clean выполняется новый scan. Фактический source diff является
-авторитетным; `changedPaths` только дополняет его и может также содержать
-точный path выбранного `.tsproj`. Другие project metadata пока не входят в
-этот контракт.
+Dirty XAE buffers всегда имеют приоритет как конфликт: build/sync возвращает
+`DIRTY_XAE_DOCUMENT`, никогда не вызывает Save/SaveAll и не закрывает document
+автоматически. `vsSaveChangesNo` разрешён только при явном
+`discardDirtyDocuments=true` и profile
+`allowDirtyDocumentDiscard=true`; результат сообщает paths/count.
 
 Проверка на TwinCAT 3.1.4024.17 уточнила границу:
 
@@ -801,13 +817,14 @@ Build/Rebuild/Clean выполняется новый scan. Фактически
   `ReloadDocData(...)` обновляет project model; XAE после reload снова не
   оставляет editor открытым;
 - закрытие dirty editor с `vsSaveChangesNo` надёжно отбрасывает in-memory
-  версию до reload.
+  версию до reload, поэтому используется только как явно разрешённое
+  destructive действие.
 
-Перед build gateway повторно захватывает ownership, временно открывает каждый
-изменённый закрытый document, выполняет typed reload и снова закрывает editor.
-После reload выполняется второй fingerprint scan: изменение файлов во время
-синхронизации возвращает retryable error. В MVP добавление и удаление project
-sources не синхронизируется автоматически и завершается явной ошибкой.
+Перед build gateway проверяет dirty state, временно открывает каждый изменённый
+закрытый document, выполняет typed reload и снова закрывает editor. После
+reload и после build выполняется повторный graph fingerprint scan: изменение
+файлов в любом из этих интервалов возвращает retryable error, кроме
+reorder/whitespace noise, доказанного снимками tracked XAE operation.
 
 ## 14. `.tsproj` reorder-only noise
 
@@ -1019,6 +1036,7 @@ gateway_start
 gateway_shutdown
 twincat_status
 twincat_build
+twincat_sync
 twincat_activate
 twincat_get_diagnostics
 twincat_get_test_results
