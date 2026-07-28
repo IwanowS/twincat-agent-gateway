@@ -127,6 +127,8 @@ public sealed class GatewayDesktopHost : IDisposable
 
     public string? StartupError { get; }
 
+    public bool CanReconnectXae => _xaeCoordinator is not null;
+
     public void Start()
     {
         if (Interlocked.Exchange(ref _started, 1) != 0)
@@ -172,6 +174,15 @@ public sealed class GatewayDesktopHost : IDisposable
         {
             _xaeTask = _xaeCoordinator.RunAsync(_shutdown.Token);
         }
+    }
+
+    public void RequestXaeReconnect()
+    {
+        XaeSessionCoordinator coordinator =
+            _xaeCoordinator
+            ?? throw new InvalidOperationException(
+                "No valid project profile is configured.");
+        coordinator.RequestReconnect();
     }
 
     public async Task StopAsync()

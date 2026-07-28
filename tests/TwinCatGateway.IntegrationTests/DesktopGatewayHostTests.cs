@@ -15,6 +15,50 @@ namespace TwinCatGateway.IntegrationTests;
 public sealed class DesktopGatewayHostTests
 {
     [Fact]
+    public void ManualReconnectIsPublishedWithoutCallingCom()
+    {
+        using TemporaryDirectory temporary = new();
+        string configurationPath = Path.Combine(
+            temporary.Path,
+            "gateway.json");
+        string solutionPath = Path.Combine(
+            temporary.Path,
+            "missing.sln");
+        File.WriteAllText(
+            configurationPath,
+            $$"""
+            {
+              "schemaVersion": 1,
+              "logDirectory": "{{EscapeJson(temporary.Path)}}",
+              "defaultProfile": "fixture",
+              "profiles": [
+                {
+                  "name": "fixture",
+                  "solution": "{{EscapeJson(solutionPath)}}",
+                  "allowXaeLaunch": false,
+                  "allowActivation": false
+                }
+              ]
+            }
+            """);
+        using GatewayDesktopHost host = new(
+            new GatewayHostOptions
+            {
+                ConfigurationPath = configurationPath,
+            });
+
+        host.RequestXaeReconnect();
+
+        Assert.True(host.CanReconnectXae);
+        Assert.Contains(
+            host.ApplicationService.GetDiagnostics().Events,
+            gatewayEvent =>
+                gatewayEvent.Type
+                    == GatewayEventTypes
+                        .XaeReconnectRequested);
+    }
+
+    [Fact]
     public void SingleInstanceGuardRejectsSecondOwnerForCurrentUser()
     {
         string name = "TwinCatGatewayTests-" + Guid.NewGuid().ToString("N");

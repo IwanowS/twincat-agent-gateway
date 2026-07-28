@@ -31,6 +31,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly IGatewayEventSink _events;
     private readonly XaeSession _session = new();
     private readonly TcUnitRunExecutor _tcUnit;
+    private readonly SemaphoreSlim _wakeSignal = new(0, 1);
     private XaeSessionSnapshot _lastSnapshot = new();
     private ComDiagnostics _lastComDiagnostics = new();
     private AdsRuntimeDiagnostics _lastRuntimeDiagnostics = new();
@@ -40,6 +41,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private string? _lastRuntimeFailureSignature;
     private string? _lastRuntimeStateSignature;
     private bool _wasConnected;
+    private int _reconnectRequested;
     private int _disposed;
 
     public XaeSessionCoordinator(
@@ -75,6 +77,15 @@ internal sealed class XaeSessionCoordinator : IDisposable
             {
                 await DelayAsync(cancellationToken).ConfigureAwait(false);
                 continue;
+            }
+
+            if (Interlocked.Exchange(
+                    ref _reconnectRequested,
+                    0)
+                != 0)
+            {
+                connected = false;
+                await TryDisconnectAsync().ConfigureAwait(false);
             }
 
             try
@@ -517,6 +528,40 @@ internal sealed class XaeSessionCoordinator : IDisposable
             activationOperationId);
     }
 
+    public void RequestReconnect()
+    {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            throw new ObjectDisposedException(
+                nameof(XaeSessionCoordinator));
+        }
+
+        Interlocked.Exchange(ref _reconnectRequested, 1);
+        try
+        {
+            _wakeSignal.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // A pending wake-up already represents this request.
+        }
+
+        _logger.Write(
+            StructuredLogLevel.Information,
+            "xae.reconnect.requested",
+            "Manual XAE reconnect requested.");
+        _events.Record(
+            new GatewayEvent
+            {
+                Type =
+                    GatewayEventTypes.XaeReconnectRequested,
+                Severity = DiagnosticSeverity.Info,
+                Stage = "xae.reconnect",
+                Message = "Manual XAE reconnect requested.",
+            },
+            DateTimeOffset.UtcNow);
+    }
+
     public async Task<TestResult> ExecuteTcUnitAsync(
         string operationId,
         string activationOperationId,
@@ -593,6 +638,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         _session.Dispose();
+        _wakeSignal.Dispose();
     }
 
     private bool HasActiveChangingOperation()
@@ -980,12 +1026,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
             : (int?)null;
     }
 
-    private static async Task DelayAsync(
+    private async Task DelayAsync(
         CancellationToken cancellationToken)
     {
         try
         {
-            await Task.Delay(
+            await _wakeSignal.WaitAsync(
                 ReconnectInterval,
                 cancellationToken).ConfigureAwait(false);
         }

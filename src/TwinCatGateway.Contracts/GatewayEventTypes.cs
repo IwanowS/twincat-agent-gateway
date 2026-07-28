@@ -16,6 +16,9 @@ public static class GatewayEventTypes
 
     public const string XaeConnectionFailed = "xae.connectionFailed";
 
+    public const string XaeReconnectRequested =
+        "xae.reconnectRequested";
+
     public const string RuntimeStateChanged = "runtime.stateChanged";
 
     public const string RuntimeStatusReadFailed =
