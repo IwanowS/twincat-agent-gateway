@@ -28,6 +28,12 @@ available directly from the InstallRoot\bin directory.
 Skips the Release build. Use this only when the required Release artifacts
 already exist in the repository output directories.
 
+.PARAMETER GatewayOnly
+Builds and replaces only the desktop gateway. The installed MCP adapter and
+its command shim are preserved, so a running MCP adapter does not need to be
+stopped and Codex does not need to be restarted. Use this only when the MCP
+contract and adapter are unchanged. An existing full installation is required.
+
 .PARAMETER Force
 Replaces an existing installation without prompting. An existing installation
 cannot be replaced non-interactively unless this switch is specified.
@@ -53,6 +59,12 @@ and shows detailed installation progress.
 Installs into a custom directory without changing PATH.
 
 .EXAMPLE
+.\scripts\Install-Gateway.ps1 -GatewayOnly -NonInteractive -Force
+
+Builds and replaces only the desktop gateway while preserving the installed
+MCP adapter. Codex does not need to be restarted.
+
+.EXAMPLE
 .\scripts\Install-Gateway.ps1 -Help
 
 Displays full help and performs no installation actions.
@@ -61,7 +73,9 @@ Displays full help and performs no installation actions.
 Run this script from a normal, non-elevated PowerShell. It installs applications
 only; Codex MCP registration and agent skills are separate explicit steps.
 Project configurations and logs outside the app directory are preserved.
-Running installed gateway or MCP processes must be closed before replacement.
+Full replacement requires both installed processes to be closed. -GatewayOnly
+requires only the installed desktop gateway to be closed and preserves a
+running MCP adapter.
 -SkipBuild is intended for verified local artifacts and installer smoke tests.
 #>
 [CmdletBinding()]
@@ -73,6 +87,8 @@ param(
     [switch]$NoPathUpdate,
 
     [switch]$SkipBuild,
+
+    [switch]$GatewayOnly,
 
     [switch]$Force,
 
@@ -102,6 +118,9 @@ Write-Verbose "Install root: '$resolvedInstallRoot'."
 $solutionPath = Join-Path `
     $repositoryRoot `
     'TwinCatGateway.sln'
+$desktopProject = Join-Path `
+    $repositoryRoot `
+    'src\TwinCatGateway.Desktop\TwinCatGateway.Desktop.csproj'
 $desktopOutput = Join-Path `
     $repositoryRoot `
     'src\TwinCatGateway.Desktop\bin\Release\net48'
@@ -124,6 +143,10 @@ $installedMcp = Join-Path $applicationRoot 'mcp'
 $commandDirectory = Join-Path $resolvedInstallRoot 'bin'
 
 function Get-InstalledGatewayProcesses {
+    param(
+        [switch]$DesktopOnly
+    )
+
     $installationRoots = @(
         $applicationRoot,
         $legacyVersionsRoot
@@ -134,9 +157,12 @@ function Get-InstalledGatewayProcesses {
         ) + [IO.Path]::DirectorySeparatorChar
     }
 
-    foreach ($processName in @(
-            'twincat-gateway',
-            'twincat-gateway-mcp')) {
+    $processNames = @('twincat-gateway')
+    if (-not $DesktopOnly) {
+        $processNames += 'twincat-gateway-mcp'
+    }
+
+    foreach ($processName in $processNames) {
         foreach ($process in @(
                 Get-Process `
                     -Name $processName `
@@ -167,7 +193,8 @@ function Get-InstalledGatewayProcesses {
 }
 
 function Assert-NoInstalledGatewayProcesses {
-    $runningProcesses = @(Get-InstalledGatewayProcesses)
+    $runningProcesses = @(
+        Get-InstalledGatewayProcesses -DesktopOnly:$GatewayOnly)
     if ($runningProcesses.Count -eq 0) {
         return
     }
@@ -176,15 +203,40 @@ function Assert-NoInstalledGatewayProcesses {
         ForEach-Object {
             "PID $($_.Id) '$($_.Path)'"
         }
+    $processDescriptionText = $processDescription -join ', '
+    if ($GatewayOnly) {
+        throw (
+            "Close the installed TwinCAT Agent Gateway before " +
+            "gateway-only replacement. The MCP adapter may remain " +
+            "running. Running: " +
+            $processDescriptionText)
+    }
+
     throw (
         "Close the installed TwinCAT Agent Gateway and MCP adapter " +
         "before replacement. Running: " +
-        ($processDescription -join ', '))
+        $processDescriptionText)
 }
 
 $installationExists =
     (Test-Path -LiteralPath $applicationRoot) `
     -or (Test-Path -LiteralPath $legacyVersionsRoot)
+if ($GatewayOnly) {
+    $requiredInstalledPaths = @(
+        $applicationRoot,
+        $installedDesktop,
+        (Join-Path $installedMcp 'twincat-gateway-mcp.exe'),
+        (Join-Path $commandDirectory 'twincat-gateway-mcp.cmd')
+    )
+    foreach ($requiredInstalledPath in $requiredInstalledPaths) {
+        if (-not (Test-Path -LiteralPath $requiredInstalledPath)) {
+            throw (
+                "-GatewayOnly requires an existing full installation. " +
+                "Missing '$requiredInstalledPath'.")
+        }
+    }
+}
+
 if ($installationExists -and -not $Force) {
     if ($NonInteractive) {
         throw (
@@ -217,9 +269,15 @@ if ($installationExists) {
 }
 
 if (-not $SkipBuild) {
-    Write-Verbose "Building '$solutionPath' in Release configuration."
+    $buildTarget = if ($GatewayOnly) {
+        $desktopProject
+    }
+    else {
+        $solutionPath
+    }
+    Write-Verbose "Building '$buildTarget' in Release configuration."
     & dotnet build `
-        $solutionPath `
+        $buildTarget `
         '--configuration' 'Release'
     if ($LASTEXITCODE -ne 0) {
         throw "dotnet build failed with exit code $LASTEXITCODE."
@@ -229,10 +287,14 @@ else {
     Write-Verbose 'Skipping the Release build by request.'
 }
 
-foreach ($requiredPath in @(
-        $desktopExecutable,
-        $mcpExecutable,
-        $setupSource)) {
+$requiredArtifacts = @(
+    $desktopExecutable,
+    $setupSource
+)
+if (-not $GatewayOnly) {
+    $requiredArtifacts += $mcpExecutable
+}
+foreach ($requiredPath in $requiredArtifacts) {
     if (-not (Test-Path -LiteralPath $requiredPath)) {
         throw "Required install artifact was not found at '$requiredPath'."
     }
@@ -254,9 +316,11 @@ $installRootPrefix =
 Write-Verbose "Preparing application version '$assemblyVersion'."
 
 try {
-    foreach ($directory in @(
-            $stagedDesktop,
-            $stagedMcp)) {
+    $stagingDirectories = @($stagedDesktop)
+    if (-not $GatewayOnly) {
+        $stagingDirectories += $stagedMcp
+    }
+    foreach ($directory in $stagingDirectories) {
         New-Item `
             -ItemType Directory `
             -Path $directory `
@@ -270,45 +334,71 @@ try {
         -Destination $stagedDesktop `
         -Recurse `
         -Force
-    Write-Verbose "Staging MCP adapter files in '$stagedMcp'."
-    Copy-Item `
-        -Path (Join-Path $mcpOutput '*') `
-        -Destination $stagedMcp `
-        -Recurse `
-        -Force
+    if (-not $GatewayOnly) {
+        Write-Verbose "Staging MCP adapter files in '$stagedMcp'."
+        Copy-Item `
+            -Path (Join-Path $mcpOutput '*') `
+            -Destination $stagedMcp `
+            -Recurse `
+            -Force
+    }
 
     if ($installationExists) {
         Assert-NoInstalledGatewayProcesses
     }
 
-    foreach ($obsoleteDirectory in @(
-            $applicationRoot,
-            $legacyVersionsRoot)) {
-        if (-not (Test-Path -LiteralPath $obsoleteDirectory)) {
-            continue
-        }
-
-        $resolvedObsoleteDirectory =
-            [IO.Path]::GetFullPath($obsoleteDirectory)
-        if (-not $resolvedObsoleteDirectory.StartsWith(
+    if ($GatewayOnly) {
+        $resolvedInstalledDesktop =
+            [IO.Path]::GetFullPath($installedDesktop)
+        if (-not $resolvedInstalledDesktop.StartsWith(
                 $installRootPrefix,
                 [StringComparison]::OrdinalIgnoreCase)) {
             throw (
                 "Refusing to remove install path " +
-                "'$resolvedObsoleteDirectory'.")
+                "'$resolvedInstalledDesktop'.")
         }
 
-        Write-Verbose "Removing '$resolvedObsoleteDirectory'."
+        Write-Verbose "Removing '$resolvedInstalledDesktop'."
         Remove-Item `
-            -LiteralPath $resolvedObsoleteDirectory `
+            -LiteralPath $resolvedInstalledDesktop `
             -Recurse `
             -Force
+        Write-Verbose (
+            "Installing desktop gateway files to '$installedDesktop'.")
+        Move-Item `
+            -LiteralPath $stagedDesktop `
+            -Destination $installedDesktop
     }
+    else {
+        foreach ($obsoleteDirectory in @(
+                $applicationRoot,
+                $legacyVersionsRoot)) {
+            if (-not (Test-Path -LiteralPath $obsoleteDirectory)) {
+                continue
+            }
 
-    Write-Verbose "Installing application files to '$applicationRoot'."
-    Move-Item `
-        -LiteralPath $stagingRoot `
-        -Destination $applicationRoot
+            $resolvedObsoleteDirectory =
+                [IO.Path]::GetFullPath($obsoleteDirectory)
+            if (-not $resolvedObsoleteDirectory.StartsWith(
+                    $installRootPrefix,
+                    [StringComparison]::OrdinalIgnoreCase)) {
+                throw (
+                    "Refusing to remove install path " +
+                    "'$resolvedObsoleteDirectory'.")
+            }
+
+            Write-Verbose "Removing '$resolvedObsoleteDirectory'."
+            Remove-Item `
+                -LiteralPath $resolvedObsoleteDirectory `
+                -Recurse `
+                -Force
+        }
+
+        Write-Verbose "Installing application files to '$applicationRoot'."
+        Move-Item `
+            -LiteralPath $stagingRoot `
+            -Destination $applicationRoot
+    }
 }
 finally {
     if (Test-Path -LiteralPath $stagingRoot) {
@@ -366,11 +456,13 @@ Write-Verbose "Updating command shims in '$commandDirectory'."
 Write-CommandShim `
     -Path (Join-Path $commandDirectory 'twincat-gateway.cmd') `
     -Target (Join-Path $installedDesktop 'twincat-gateway.exe')
-Write-CommandShim `
-    -Path (Join-Path $commandDirectory 'twincat-gateway-mcp.cmd') `
-    -Target (Join-Path $installedMcp 'twincat-gateway-mcp.exe')
+if (-not $GatewayOnly) {
+    Write-CommandShim `
+        -Path (Join-Path $commandDirectory 'twincat-gateway-mcp.cmd') `
+        -Target (Join-Path $installedMcp 'twincat-gateway-mcp.exe')
+}
 
-$shouldUpdatePath = -not $NoPathUpdate
+$shouldUpdatePath = -not $NoPathUpdate -and -not $GatewayOnly
 if ($shouldUpdatePath -and -not $NonInteractive) {
     Write-Verbose 'Requesting confirmation before changing the user PATH.'
     $answer = Read-Host `
@@ -415,6 +507,10 @@ elseif ($NoPathUpdate) {
     $pathStatus = 'skipped by -NoPathUpdate'
     Write-Verbose 'Skipped the user PATH update by request.'
 }
+elseif ($GatewayOnly) {
+    $pathStatus = 'unchanged by -GatewayOnly'
+    Write-Verbose 'Gateway-only replacement does not change PATH.'
+}
 else {
     $pathStatus = 'declined'
     Write-Verbose 'The user declined the PATH update.'
@@ -427,6 +523,10 @@ Write-Output "Application directory: $applicationRoot"
 Write-Output "Installed version: $assemblyVersion"
 Write-Output "Command directory: $commandDirectory"
 Write-Output "User PATH: $pathStatus"
+if ($GatewayOnly) {
+    Write-Output "MCP adapter: preserved"
+    Write-Output "Codex restart: not required"
+}
 Write-Output "A new PowerShell may be required to see PATH changes."
 Write-Output ""
 Write-Verbose "Printing canonical setup instructions from '$setupSource'."

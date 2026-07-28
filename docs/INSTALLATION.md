@@ -43,6 +43,19 @@ installation asks before replacing it. Non-interactive replacement requires
 installed desktop gateway and MCP adapter before replacement. Configuration
 files and logs stored outside `app` are preserved.
 
+When only the desktop gateway changed and the MCP contract/adapter did not,
+replace just the gateway:
+
+```powershell
+.\scripts\Install-Gateway.ps1 -GatewayOnly -NonInteractive -Force
+```
+
+This mode requires an existing full installation, builds only the desktop
+project, closes/replaces only `app\gateway`, preserves `app\mcp` and the MCP
+command shim byte-for-byte, and does not change PATH. A running MCP adapter may
+remain connected, so Codex does not need to be restarted. Do not use this mode
+after MCP or shared IPC contract changes; perform a full replacement instead.
+
 ## Configure a project
 
 Copy [the safe example](../examples/twincat-gateway.json) to

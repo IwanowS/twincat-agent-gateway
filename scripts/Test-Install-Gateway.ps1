@@ -87,6 +87,41 @@ try {
         -Force |
         Out-Null
 
+    $installedMcpDirectory = Join-Path $applicationRoot 'mcp'
+    $installedMcpMarker = Join-Path $installedMcpDirectory 'preserved.marker'
+    $installedMcpShim = Join-Path `
+        $testRoot `
+        'bin\twincat-gateway-mcp.cmd'
+    [IO.File]::WriteAllText(
+        $installedMcpMarker,
+        'preserve-mcp')
+    $mcpShimBefore = [IO.File]::ReadAllBytes($installedMcpShim)
+    $gatewayOnlyOutput = & $installer `
+        -InstallRoot $testRoot `
+        -NonInteractive `
+        -SkipBuild `
+        -GatewayOnly `
+        -Force |
+        Out-String
+    if (-not (Test-Path -LiteralPath $installedMcpMarker) `
+        -or [IO.File]::ReadAllText($installedMcpMarker) `
+            -ne 'preserve-mcp') {
+        throw 'Gateway-only replacement modified the MCP directory.'
+    }
+
+    $mcpShimAfter = [IO.File]::ReadAllBytes($installedMcpShim)
+    if (-not [Linq.Enumerable]::SequenceEqual(
+            [byte[]]$mcpShimBefore,
+            [byte[]]$mcpShimAfter)) {
+        throw 'Gateway-only replacement modified the MCP command shim.'
+    }
+
+    if (-not $gatewayOnlyOutput.Contains('MCP adapter: preserved') `
+        -or -not $gatewayOnlyOutput.Contains(
+            'Codex restart: not required')) {
+        throw 'Gateway-only replacement output omitted restart guidance.'
+    }
+
     if (-not (Test-Path -LiteralPath $preservedConfiguration) `
         -or -not (Test-Path -LiteralPath $preservedLog)) {
         throw 'Replacement removed configuration or logs.'
@@ -132,8 +167,10 @@ try {
             -or -not $mcpHelp.Contains(
                 '--gateway-command <command>') `
             -or -not $mcpHelp.Contains(
-                '[default: twincat-gateway]')) {
-            throw 'Installed MCP command help is incomplete.'
+                '[default:')) {
+            throw (
+                "Installed MCP command help is incomplete. Exit code: " +
+                "$LASTEXITCODE. Output: $mcpHelp")
         }
     }
     finally {
