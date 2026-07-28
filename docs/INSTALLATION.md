@@ -48,6 +48,9 @@ files and logs stored outside `app` are preserved.
 Copy [the safe example](../examples/twincat-gateway.json) to
 `twincat-gateway.json` in the project or Git root. Relative solution, log, and
 TcUnit report paths are resolved from the configuration file's directory.
+See the [complete configuration reference](CONFIGURATION.md) for every option,
+default, constraint, and a full example. The same reference is installed with
+the desktop application and shown by `Setup instructions`.
 
 Discovery order is:
 

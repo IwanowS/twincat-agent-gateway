@@ -17,9 +17,18 @@ The MVP covers XAE connection/status, `Build`, `Rebuild`, `Clean`, explicit conf
 Authoritative design documents:
 
 - architecture and operation semantics: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md);
-- milestones and acceptance criteria: [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md).
+- milestones and acceptance criteria: [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md);
+- complete project configuration reference and safe examples:
+  [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
 
-Do not read both documents in full for every task. Read only the relevant sections when changing process boundaries, public contracts, XAE operation semantics, or milestone scope.
+Do not read all documents in full for every task. Read only the relevant
+sections when changing process boundaries, public contracts, configuration,
+XAE operation semantics, or milestone scope.
+
+When creating or reviewing `twincat-gateway.json`, use the configuration
+reference rather than inferring defaults from examples. Do not enable
+activation, change the expected AMS NetId, broaden ADS access, or enable report
+deletion without an explicit user decision.
 
 ## Repository layout
 

@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using Xunit;
@@ -40,6 +41,54 @@ public sealed class GatewayConfigurationTests
         Assert.False(profile.AllowActivation);
         Assert.Null(profile.ExpectedTarget);
         Assert.Null(profile.TcUnit);
+    }
+
+    [Fact]
+    public void DocumentedJsonExamplesAreValid()
+    {
+        string documentation = File.ReadAllText(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "CONFIGURATION.md"));
+        MatchCollection examples = Regex.Matches(
+            documentation,
+            "```json\\s*(.*?)\\s*```",
+            RegexOptions.Singleline
+                | RegexOptions.CultureInvariant);
+        Assert.Equal(2, examples.Count);
+
+        string directory = Path.Combine(
+            Path.GetTempPath(),
+            "TwinCatGatewayTests",
+            Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            for (int index = 0; index < examples.Count; index++)
+            {
+                string path = Path.Combine(
+                    directory,
+                    $"example-{index}.json");
+                File.WriteAllText(
+                    path,
+                    examples[index].Groups[1].Value);
+                GatewayConfiguration configuration =
+                    new GatewayConfigurationLoader().Load(path);
+                ConfigurationValidationResult validation =
+                    GatewayConfigurationValidator.Validate(
+                        configuration);
+
+                Assert.True(
+                    validation.IsValid,
+                    string.Join(
+                        Environment.NewLine,
+                        validation.Issues));
+            }
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
     }
 
     [Fact]

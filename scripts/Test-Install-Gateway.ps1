@@ -145,8 +145,13 @@ try {
     $mcpTarget = Join-Path `
         $applicationRoot `
         'mcp\twincat-gateway-mcp.exe'
+    $configurationReferenceTarget = Join-Path `
+        $applicationRoot `
+        'gateway\CONFIGURATION.md'
     if (-not (Test-Path -LiteralPath $desktopTarget) `
-        -or -not (Test-Path -LiteralPath $mcpTarget)) {
+        -or -not (Test-Path -LiteralPath $mcpTarget) `
+        -or -not (Test-Path `
+            -LiteralPath $configurationReferenceTarget)) {
         throw 'Installed application artifacts are incomplete.'
     }
 

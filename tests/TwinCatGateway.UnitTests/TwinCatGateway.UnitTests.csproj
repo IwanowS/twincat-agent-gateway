@@ -27,6 +27,10 @@
       Link="twincat-gateway.example.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
+      Include="..\..\docs\CONFIGURATION.md"
+      Link="CONFIGURATION.md"
+      CopyToOutputDirectory="PreserveNewest" />
+    <None
       Include="..\fixtures\TC3_SimpleProject\TC3_SimpleProject\TC3_SimpleProject.tsproj"
       Link="Fixtures\TC3_SimpleProject.tsproj"
       CopyToOutputDirectory="PreserveNewest" />

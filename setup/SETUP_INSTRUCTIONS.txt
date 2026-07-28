@@ -14,6 +14,10 @@ Installed command examples:
   twincat-gateway --config C:\path\to\twincat-gateway.json
   codex mcp add twincat-gateway-mcp -- twincat-gateway-mcp
 
+The desktop Setup instructions view includes the complete configuration
+reference and a copyable example. In the repository, read
+docs\CONFIGURATION.md.
+
 The agent uses MCP only. If a normal TwinCAT tool returns
 GATEWAY_NOT_RUNNING, call gateway_start once, wait for Ready, and retry the
 original operation once. Do not close the gateway at the end of an agent task.

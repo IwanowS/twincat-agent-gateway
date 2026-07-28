@@ -18,6 +18,15 @@ public sealed class DesktopGatewayHostTests
         { "--unknown" };
     private static readonly string[] AgentLaunchArguments =
         { "--launch-source", "agent" };
+    private static readonly Type[] ConfigurationContractTypes =
+    {
+        typeof(GatewayConfiguration),
+        typeof(GatewayUiConfiguration),
+        typeof(AgentProcessControlConfiguration),
+        typeof(ProjectProfile),
+        typeof(TargetIdentity),
+        typeof(TcUnitProfile),
+    };
 
     [Fact]
     public void HostOptionsParseLaunchIdentityAndUiOverride()
@@ -141,6 +150,20 @@ public sealed class DesktopGatewayHostTests
         Assert.Contains(
             "gateway_start once",
             instructions);
+        foreach (Type contractType in ConfigurationContractTypes)
+        {
+            foreach (System.Reflection.PropertyInfo property in
+                contractType.GetProperties())
+            {
+                string jsonName =
+                    char.ToLowerInvariant(property.Name[0])
+                    + property.Name.Substring(1);
+                Assert.Contains(
+                    $"`{jsonName}`",
+                    instructions);
+            }
+        }
+
         Assert.False(
             string.IsNullOrWhiteSpace(
                 GatewayProductVersion.Value));
