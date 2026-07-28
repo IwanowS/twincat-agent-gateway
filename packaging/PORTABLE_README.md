@@ -9,13 +9,13 @@
 
 ## First run
 
-1. Copy `appsettings.example.json` to `appsettings.Local.json`.
-2. Set the absolute `solution` path. Keep `allowActivation` false until an
+1. Copy `twincat-gateway.example.json` to the project as
+   `twincat-gateway.json`.
+2. Set the relative or absolute `solution` path. Keep `allowActivation` false until an
    explicit remote target profile is configured and reviewed.
-3. Start `desktop\TwinCatGateway.Desktop.exe`. The UI reports configuration,
+3. Start `desktop\twincat-gateway.exe`. The UI reports configuration,
    XAE discovery, and connection failures.
-4. Start agents through `mcp\twincat-gateway-mcp.exe`, or inspect the gateway
-   with `cli\twincat-gateway.exe status`.
+4. Start agents through `mcp\twincat-gateway-mcp.exe`.
 
 The desktop gateway, CLI, and MCP adapter must run as the same interactive
 Windows user. XAE must also run in the same session and at the same integrity

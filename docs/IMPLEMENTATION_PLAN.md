@@ -555,6 +555,8 @@ docs/
 - stdio server transport через `WithStdioServerTransport()`;
 - tool/resource handlers являются тонким отображением
   `TwinCatGateway.Client` и versioned gateway contracts;
+- project config discovery и process lifecycle orchestration используют
+  общие Core policies, но не вызывают COM/XAE;
 - MCP SDK не подключается к Desktop, XAE, Core, Contracts или Ipc;
 - HTTP/AspNetCore transport, prerelease `2.x` и MCP Tasks extension не входят
   в MVP; длительные операции используют существующий `operationId`.
@@ -562,6 +564,7 @@ docs/
 ### MCP tools
 
 ```text
+gateway_start
 twincat_status
 twincat_build
 twincat_activate
@@ -612,6 +615,10 @@ twincat-diff://<operation-id>/project-noise
 ### Acceptance
 
 - schemas tools короткие;
+- обычные tools не запускают gateway и возвращают `GATEWAY_NOT_RUNNING`;
+- `gateway_start` проверяет workspace config, `allowStart`, singleton identity
+  и Ready, делает не более одной попытки и идемпотентен для того же проекта;
+- gateway другого проекта не закрывается и не переключается;
 - обычная compile-fix итерация не требует чтения raw Build Output;
 - MCP process можно перезапустить без потери XAE session;
 - CLI и MCP возвращают одинаковую domain semantics;
@@ -623,7 +630,13 @@ twincat-diff://<operation-id>/project-noise
 
 ### Задачи
 
-- installer/portable packaging;
+- per-user installer двух независимых приложений с versioned artifacts,
+  стабильным command directory и user PATH;
+- отдельная глобальная Codex MCP registration через поддерживаемый CLI;
+- отдельная установка skills в user/project/explicit destination;
+- portable packaging как дополнительный формат;
+- project-local `twincat-gateway.json` и одинаковый manual/MCP discovery;
+- WPF `auto|window|tray`, manual/agent launch identity и canonical setup UI;
 - first-run environment diagnostics;
 - config migration;
 - log retention settings;
@@ -638,6 +651,12 @@ twincat-diff://<operation-id>/project-noise
 
 ### Acceptance
 
+- `dotnet build` формирует оба устанавливаемых комплекта без VS msbuild;
+- повторная установка и PATH update идемпотентны и не удаляют configs/logs;
+- installed `twincat-gateway` и `twincat-gateway-mcp` доступны через user PATH;
+- MCP stdio wrapper не пишет setup/diagnostic text в stdout;
+- global Codex registration и project-local alternative документированы как
+  взаимоисключающие варианты;
 - чистая установка обнаруживает совместимую XAE среду;
 - ошибка отсутствующей зависимости понятна;
 - gateway корректно восстанавливается после собственного restart;
@@ -687,6 +706,8 @@ twincat-diff://<operation-id>/project-noise
 - remote gateway;
 - CI/headless execution;
 - TwinCAT 4026/VS2022 specialization.
+- Claude-specific global MCP registration; до отдельного решения поддерживать
+  только документируемый manual stdio command, без installer integration.
 
 ## 15. Test matrix
 
@@ -708,6 +729,9 @@ twincat-diff://<operation-id>/project-noise
 | ADS target/profile mismatch | Да | Да | Да |
 | TcUnit fresh report | Да | Да | Да |
 | MCP/CLI parity | Нет | Да | Smoke |
+| Config discovery/Git root | Да | Нет | Smoke |
+| MCP explicit gateway start | Да | Да | Smoke |
+| Per-user install/PATH idempotency | Script smoke | Нет | Smoke |
 
 ## 16. Миграция с текущего build skill
 
@@ -750,6 +774,10 @@ twincat-diff://<operation-id>/project-noise
 - Нет PowerShell runtime dependency.
 - ADS client ограничен System Service `ReadState` и фиксированными TcUnit completion reads выбранного target; general-purpose ADS access отсутствует.
 - MCP можно перезапустить без потери gateway/XAE session.
+- Agent может явно запустить отсутствующий gateway один раз, но обычные MCP
+  tools никогда не auto-start process.
+- Per-user installer предоставляет WPF и MCP commands без `dotnet tool` и
+  без дополнительного command host.
 - CLI и MCP используют общий IPC/domain contract.
 - Все P0 сценарии имеют тесты соответствующего уровня.
 - AGENTS.md, architecture и troubleshooting документация актуальны.

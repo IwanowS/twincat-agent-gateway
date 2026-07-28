@@ -1,18 +1,25 @@
 # Troubleshooting
 
-Start with compact `status`, then read the cursor-based event page. Fetch one
-raw resource only when those results are insufficient.
-
-```powershell
-twincat-gateway status
-twincat-gateway diagnostics --after-cursor 0 --max-events 100
-twincat-gateway diagnostics --after-cursor 0 --minimum-severity error
-```
+Start with the MCP `twincat_status` tool, then read
+`twincat_get_diagnostics` with a cursor. Fetch one raw resource only when those
+results are insufficient. The globally installed `twincat-gateway` command is
+the WPF host, not the repository development CLI.
 
 ## Gateway does not start
 
-- `No configuration file was found`: copy `appsettings.example.json` to
-  `appsettings.Local.json`, or pass `--config <absolute-path>`.
+- `GATEWAY_CONFIG_NOT_FOUND`: put `twincat-gateway.json` in the project/Git
+  root, or pass `--config <path>`.
+- `GATEWAY_CONFIG_AMBIGUOUS`: MCP workspace roots resolved to different
+  project configurations; narrow the workspace rather than choosing one
+  implicitly.
+- `GATEWAY_NOT_RUNNING`: start `twincat-gateway` manually or call
+  `gateway_start` once.
+- `GATEWAY_RUNNING_DIFFERENT_PROJECT`: do not close or switch the existing
+  process automatically; ask the user to resolve the project ownership.
+- `GATEWAY_START_DISABLED`: project policy has `allowStart: false`; manual
+  launch is required.
+- `GATEWAY_START_TIMEOUT`: one start attempt was made but IPC did not become
+  ready. Inspect the WPF/tray process and instance log; do not loop restarts.
 - `Configuration could not be loaded`: fix the reported JSON/property error.
   Only `schemaVersion: 1` is accepted; there is no earlier public schema to
   migrate in version 0.1.0.
@@ -120,7 +127,9 @@ The fresh linked xUnit report determines test pass/fail.
 
 ## Uninstall
 
-Exit the MCP adapter and desktop gateway, then remove the extracted portable
-directory. This does not remove TwinCAT projects, XAE state,
-`appsettings.Local.json` stored elsewhere, or logs under LocalAppData. Delete
-configuration and logs separately only after confirmation.
+Exit the MCP adapter and desktop gateway. For a per-user install, remove only
+`bin` and the selected directories below `versions` under
+`%LOCALAPPDATA%\TwinCatAgentGateway`, then remove the user PATH entry if
+needed. This does not remove project-local `twincat-gateway.json`, TwinCAT
+projects, XAE state, or logs. Delete configuration and logs separately only
+after confirmation.

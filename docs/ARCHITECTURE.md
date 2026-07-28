@@ -6,7 +6,9 @@ AI-агент должен иметь возможность редактиро�
 
 Автоматизация TwinCAT XAE строится поверх COM-интерфейсов Visual Studio DTE и TwinCAT Automation Interface. Эти интерфейсы stateful, чувствительны к apartment model, состоянию IDE, модальным операциям и жизненному циклу COM-объектов. Одноразовые shell-процессы плохо подходят для удержания такой сессии.
 
-Поэтому основой системы является постоянно работающий desktop gateway. MCP и CLI являются только внешними протоколами доступа.
+Поэтому основой системы является постоянно работающий desktop gateway. Агент
+взаимодействует только с MCP; repository CLI остаётся development-клиентом.
+Обычная MCP-операция не запускает desktop process автоматически.
 
 ## 2. Цели
 
@@ -73,12 +75,75 @@ AI-агент должен иметь возможность редактиро�
                                        ReadState + fixed TcUnit
                                        completion symbols only
 
-┌──────────────────────┐
-│ twincatctl            │ .NET 8
-│ thin IPC client       │
-└──────────┬───────────┘
-           └────────────── тот же local IPC
+┌─────────────────────────────┐
+│ TwinCatGateway.Cli          │ .NET 8, repository development only
+│ thin IPC client             │ не устанавливается глобально
+└────────────┬────────────────┘
+             └──────────────── тот же local IPC
 ```
+
+### 4.1 Поставка и lifecycle процессов
+
+Per-user установка содержит два независимых приложения:
+
+- `twincat-gateway` — существующий WPF/.NET Framework 4.8 x86 desktop host;
+- `twincat-gateway-mcp` — существующий .NET 8 stdio adapter.
+
+Оба доступны через стабильный user-PATH каталог. `dotnet tool` и
+универсальный .NET 8 command host не используются.
+
+Gateway имеет один per-user singleton. После захвата mutex desktop host
+атомарно публикует в
+`%LOCALAPPDATA%\TwinCatAgentGateway\gateway-instance.json` PID, process start
+time, pipe, нормализованные config/solution paths, profile, launch source и
+effective UI mode. Record не является публичным control API: MCP проверяет PID
+и start time, затем подтверждает identity через versioned IPC `status`.
+Регистрация удаляется только владеющим instance id, поэтому завершающаяся
+старая сессия не может удалить record новой.
+
+Ручной запуск:
+
+```text
+twincat-gateway [--config <path>] [--ui-mode auto|window|tray]
+```
+
+Agent launch возможен только через MCP tool `gateway_start`. Он:
+
+1. находит и валидирует точный project config;
+2. проверяет `agentProcessControl.allowStart`;
+3. возвращает успех для уже готового gateway с тем же config/solution;
+4. возвращает `GATEWAY_RUNNING_DIFFERENT_PROJECT` для другого singleton, не
+   закрывая и не переключая его;
+5. делает не более одной попытки
+   `twincat-gateway --config <absolute> --launch-source agent`;
+6. bounded-wait ожидает IPC и сверяет status identity/ready.
+
+Обычные tools при отсутствии процесса возвращают `GATEWAY_NOT_RUNNING`.
+Завершение MCP не закрывает desktop gateway. `allowShutdown` зарезервирован
+как явная policy-граница; agent shutdown tool в MVP отсутствует.
+
+### 4.2 Project-local configuration
+
+Основное имя — `twincat-gateway.json`. Относительные `solution`,
+`logDirectory` и TcUnit `reportPath` разрешаются относительно каталога config.
+Discovery выполняется одинаково для manual и MCP:
+
+1. явный `--config`;
+2. workspace roots, полученные MCP от клиента;
+3. current working directory как fallback;
+4. ближайший файл вверх, включая Git root, но не выше него; вне Git — до
+   корня диска.
+
+Разные config из нескольких workspace roots дают
+`GATEWAY_CONFIG_AMBIGUOUS`; отсутствие — `GATEWAY_CONFIG_NOT_FOUND`.
+`appsettings.Local.json` не ищется автоматически и принимается только как
+явный `--config`.
+
+Полный нормализованный config path включён в локальный status contract как
+безопасное диагностическое identity: config не содержит секретов по контракту,
+ответ не включает его содержимое, PLC source или большие данные. Status также
+возвращает active profile, configured solution path, `manual|agent`,
+effective `window|tray` и `ready`.
 
 ## 5. Почему desktop gateway
 
@@ -90,7 +155,11 @@ Gateway должен работать в интерактивной пользо
 - Windows Service усложняет COM, desktop interaction и session isolation;
 - gateway может показывать блокирующие состояния, logs и safety prompts.
 
-Gateway не обязан всегда отображать главное окно. Допустим tray mode с отдельным окном состояния.
+Gateway не обязан всегда отображать главное окно. В `auto` ручной запуск
+показывает окно, agent launch начинает в tray. Явный `window`/`tray` имеет
+приоритет над config; config имеет приоритет над `auto`. При скрытом окне
+обязательно остаётся tray icon, поэтому gateway не работает полностью
+невидимо.
 
 ## 6. Target frameworks и bitness
 
@@ -890,6 +959,7 @@ route/port возвращает `TEST_ADS_UNAVAILABLE`, missing fixed symbol —
 ### Tools
 
 ```text
+gateway_start
 twincat_status
 twincat_build
 twincat_activate
@@ -923,6 +993,8 @@ Tool result должен быть достаточен для обычного �
 - явный индикатор, когда activation запрещён profile;
 - индикатор agent-owned workspace и количества отброшенных dirty documents;
 - отображение ошибок fingerprint/reload synchronization.
+- кнопка `Setup instructions`, читающая тот же канонический файл, который
+  печатает installer.
 
 UI не должен содержать отдельную реализацию операций; он вызывает тот же application service, что IPC.
 
@@ -931,7 +1003,14 @@ UI не должен содержать отдельную реализацию 
 Примеры error codes:
 
 ```text
+GATEWAY_NOT_RUNNING
 GATEWAY_NOT_READY
+GATEWAY_CONFIG_NOT_FOUND
+GATEWAY_CONFIG_AMBIGUOUS
+GATEWAY_START_DISABLED
+GATEWAY_START_FAILED
+GATEWAY_START_TIMEOUT
+GATEWAY_RUNNING_DIFFERENT_PROJECT
 XAE_NOT_FOUND
 XAE_MULTIPLE_MATCHES
 XAE_SILENT_MODE_FAILED

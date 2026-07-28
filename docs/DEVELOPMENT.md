@@ -179,7 +179,16 @@ verified in a real target XAE before relying on it.
 
 ## Local configuration
 
-Machine-specific profiles belong in ignored files such as `profiles.local.yml` or `appsettings.Local.json`. Commit only safe examples without credentials, host-specific paths, or AMS identities.
+The production discovery name is `twincat-gateway.json`. Put machine-specific
+profiles in the local project and ignore them when they contain host paths or
+AMS identities. Relative paths resolve from the configuration directory.
+`appsettings.Local.json` is never discovered automatically, but an existing
+file can still be selected explicitly with `--config`.
+
+Commit only safe examples without credentials, host-specific paths, or AMS
+identities. The fixture configuration is activation-disabled; real activation
+tests continue to require the allow-listed environment profile described
+above.
 
 ## Formatting and validation
 
