@@ -22,7 +22,8 @@ public sealed class XaeBuildExecutionResult
         IEnumerable<BuildDiagnostic> diagnostics,
         IEnumerable<XaeOutputDelta> output,
         IEnumerable<XaeProjectFileChangeResult> projectChanges,
-        ExternalChangeSynchronizationResult synchronization)
+        ExternalChangeSynchronizationResult synchronization,
+        XaeAcceptedProjectGraphChanges? acceptedProjectChanges = null)
     {
         Action = action;
         DurationMs = durationMs;
@@ -34,6 +35,7 @@ public sealed class XaeBuildExecutionResult
         Output = output.ToArray();
         ProjectChanges = projectChanges.ToArray();
         Synchronization = synchronization;
+        AcceptedProjectChanges = acceptedProjectChanges;
     }
 
     public BuildAction Action { get; }
@@ -55,6 +57,12 @@ public sealed class XaeBuildExecutionResult
     public IReadOnlyList<XaeProjectFileChangeResult> ProjectChanges { get; }
 
     public ExternalChangeSynchronizationResult Synchronization { get; }
+
+    public XaeAcceptedProjectGraphChanges? AcceptedProjectChanges
+    {
+        get;
+        internal set;
+    }
 }
 
 internal sealed class XaeBuildEventLease : IDisposable

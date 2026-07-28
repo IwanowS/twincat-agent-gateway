@@ -141,10 +141,7 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                                 contentChanges: 0,
                                 "The TwinCAT project file was removed "
                                 + "during the operation.");
-                    file.AcknowledgeWhileIgnored =
-                        removed.Classification
-                            == ProjectChangeClassification
-                                .ExpectedGeneratedArtifact;
+                    file.AcknowledgeWhileIgnored = true;
                     changes.Add(
                         removed);
                     continue;
@@ -166,16 +163,7 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                         file.Path,
                         file.BaselineContent,
                         current);
-                file.AcknowledgeWhileIgnored =
-                    classification.Classification
-                        == ProjectChangeClassification
-                            .ExpectedGeneratedArtifact
-                    || classification.Classification
-                        == ProjectChangeClassification
-                            .ExpectedReorderOnly
-                    || classification.Classification
-                        == ProjectChangeClassification
-                            .WhitespaceOnly;
+                file.AcknowledgeWhileIgnored = true;
                 changes.Add(classification);
             }
 

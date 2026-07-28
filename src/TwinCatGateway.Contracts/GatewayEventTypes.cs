@@ -4,6 +4,9 @@ public static class GatewayEventTypes
 {
     public const string XaeDialogObserved = "xae.dialog.observed";
 
+    public const string XaeProjectChangesAccepted =
+        "xae.projectChangesAccepted";
+
     public const string GatewayStarted = "gateway.started";
 
     public const string GatewayStopping = "gateway.stopping";

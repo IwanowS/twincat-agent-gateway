@@ -697,6 +697,8 @@ public sealed class XaeSession : IDisposable
                     deadlineUtc,
                     "xae.build.synchronize"),
                 cancellationToken).ConfigureAwait(false);
+        using XaeProjectGraphChangeScope projectChanges =
+            BeginProjectGraphChangeTracking();
         Task<XaeBuildEventEvidence> completion =
             await _dispatcher.InvokeAsync(
                 () => StartBuildOnSta(
@@ -723,63 +725,18 @@ public sealed class XaeSession : IDisposable
                     deadlineUtc,
                     "xae.build.verify"),
                 cancellationToken).ConfigureAwait(false);
-            FingerprintState state = GetFingerprintState();
-            ProjectFileFingerprintSnapshot afterBuild =
-                CaptureProjectGraph(
-                    state.SolutionPath,
-                    state.TwinCatProjectPath,
-                    cancellationToken);
-            IReadOnlyList<ProjectFileChange> buildChanges =
-                ProjectFileFingerprintScanner.Compare(
-                    state.Baseline
-                        ?? throw new GatewayOperationException(
-                            ErrorCodes.XaeSyncRequired,
-                            "The confirmed XAE baseline was lost "
-                            + "during the build.",
-                            retryable: true,
-                            stage: "xae.build.verify"),
-                    afterBuild);
-            HashSet<string> provenBuildNoisePaths = new(
-                result.ProjectChanges
-                    .Where(change =>
-                        change.Classification
-                            == ProjectChangeClassification
-                                .ExpectedReorderOnly
-                        || change.Classification
-                            == ProjectChangeClassification
-                                .WhitespaceOnly)
-                    .Select(change => change.Path),
-                StringComparer.OrdinalIgnoreCase);
-            bool provenGeneratedNoise =
-                buildChanges.All(change =>
-                    change.Role
-                        == ProjectGraphFileRole
-                            .GeneratedArtifact
-                    || (change.Role
-                            == ProjectGraphFileRole
-                                .TwinCatProject
-                        && change.Kind
-                            == ProjectFileChangeKind.Modified
-                        && provenBuildNoisePaths.Contains(
-                            change.Path)));
-            if (buildChanges.Count != 0
-                && !provenGeneratedNoise)
-            {
-                throw new GatewayOperationException(
-                    ErrorCodes.ExternalEditSyncFailed,
-                    "Project graph files changed while the XAE build "
-                    + "was running. Retry the operation.",
-                    retryable: true,
-                    stage: "xae.build.verify");
-            }
-
-            ConfirmFingerprintBaseline(
-                state.SolutionPath,
-                afterBuild);
+            result.AcceptedProjectChanges =
+                await AcceptProjectGraphChangesAsync(
+                    projectChanges,
+                    GetRemaining(
+                        deadlineUtc,
+                        "xae.build.settle"),
+                    cancellationToken).ConfigureAwait(false);
             return result;
         }
         catch
         {
+            AbandonProjectGraphChanges(projectChanges);
             await TryAbortActiveBuildAsync().ConfigureAwait(false);
             throw;
         }
@@ -789,6 +746,73 @@ public sealed class XaeSession : IDisposable
     {
         ThrowIfDisposed();
         return _dispatcher.GetDiagnostics();
+    }
+
+    public XaeProjectGraphChangeScope
+        BeginProjectGraphChangeTracking()
+    {
+        ThrowIfDisposed();
+        FingerprintState state = GetFingerprintState();
+        return new XaeProjectGraphChangeScope(
+            state.SolutionPath,
+            state.TwinCatProjectPath,
+            state.Baseline
+                ?? throw new GatewayOperationException(
+                    ErrorCodes.XaeSyncRequired,
+                    "The attached XAE session has no confirmed disk "
+                        + "baseline.",
+                    retryable: true,
+                    stage: "xae.workspace.fingerprint"));
+    }
+
+    public async Task<XaeAcceptedProjectGraphChanges>
+        AcceptProjectGraphChangesAsync(
+        XaeProjectGraphChangeScope scope,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        if (scope is null)
+        {
+            throw new ArgumentNullException(nameof(scope));
+        }
+
+        try
+        {
+            XaeAcceptedProjectGraphChanges accepted =
+                await scope.SettleAsync(
+                    token => CaptureProjectGraph(
+                        scope.SolutionPath,
+                        scope.TwinCatProjectPath,
+                        token),
+                    timeout,
+                    cancellationToken).ConfigureAwait(false);
+            ConfirmFingerprintBaseline(
+                scope.SolutionPath,
+                accepted.Snapshot);
+            return accepted;
+        }
+        catch
+        {
+            RequireSynchronization(
+                scope.SolutionPath,
+                CancellationToken.None);
+            throw;
+        }
+    }
+
+    public void AbandonProjectGraphChanges(
+        XaeProjectGraphChangeScope scope)
+    {
+        ThrowIfDisposed();
+        if (scope is null)
+        {
+            throw new ArgumentNullException(nameof(scope));
+        }
+
+        RequireSynchronization(
+            scope.SolutionPath,
+            CancellationToken.None);
     }
 
     internal async Task<bool> CloseGatewayLaunchedAsync(

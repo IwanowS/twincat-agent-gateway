@@ -212,7 +212,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 .ConfigureAwait(false);
         }
         catch (GatewayOperationException exception) when (
-            RequiresSynchronization(exception.Code))
+            RequiresSynchronization(exception.Code)
+            || string.Equals(
+                exception.Stage,
+                "xae.workspace.settle",
+                StringComparison.Ordinal))
         {
             PublishSynchronizationRequired();
             throw;
@@ -275,23 +279,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         Details = projectNoise,
                     })
                 .ToList();
-        XaeProjectFileChangeResult? unsupportedProjectChange =
-            execution.ProjectChanges.FirstOrDefault(change =>
-                change.Classification
-                    == ProjectChangeClassification.ContentChanged
-                || change.Classification
-                    == ProjectChangeClassification.Unknown);
-        if (unsupportedProjectChange is not null)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ExternalEditUnsupported,
-                "TwinCAT project content changed during the operation "
-                + $"and was classified as "
-                + $"'{unsupportedProjectChange.Classification}': "
-                + $"'{unsupportedProjectChange.Path}'.",
-                stage: "xae.build.project-file",
-                rawLogRef: projectNoise?.Uri);
-        }
+        LogAcceptedProjectChanges(
+            operationId,
+            OperationKind.Build,
+            "xae.build.settle",
+            execution.AcceptedProjectChanges);
 
         BuildResult result = new()
         {
@@ -514,16 +506,60 @@ internal sealed class XaeSessionCoordinator : IDisposable
             "activation.activateConfiguration",
             "TwinCAT configuration activation started.",
             expectedAmsNetId);
-        XaeActivationCommandResult command =
-            await _session.ActivateConfigurationAsync(
-                _profile.Solution,
-                expectedAmsNetId,
-                parameters.RunAfterActivation,
-                dialogScope,
-                GetRemaining(
-                    deadlineUtc,
-                    "activation.activateConfiguration"),
-                cancellationToken).ConfigureAwait(false);
+        XaeActivationCommandResult command;
+        using (XaeProjectGraphChangeScope projectChanges =
+            _session.BeginProjectGraphChangeTracking())
+        {
+            try
+            {
+                command =
+                    await _session.ActivateConfigurationAsync(
+                        _profile.Solution,
+                        expectedAmsNetId,
+                        parameters.RunAfterActivation,
+                        dialogScope,
+                        GetRemaining(
+                            deadlineUtc,
+                            "activation.activateConfiguration"),
+                        cancellationToken).ConfigureAwait(false);
+                XaeAcceptedProjectGraphChanges accepted =
+                    await AcceptProjectGraphChangesAsync(
+                        projectChanges,
+                        GetRemaining(
+                            deadlineUtc,
+                            "activation.projectFiles"),
+                        cancellationToken).ConfigureAwait(false);
+                LogAcceptedProjectChanges(
+                    operationId,
+                    OperationKind.Activate,
+                    "activation.projectFiles",
+                    accepted);
+            }
+            catch (GatewayOperationException exception) when (
+                IsTerminalActivationOutcome(exception.Code))
+            {
+                XaeAcceptedProjectGraphChanges accepted =
+                    await AcceptProjectGraphChangesAsync(
+                        projectChanges,
+                        GetRemaining(
+                            deadlineUtc,
+                            "activation.projectFiles"),
+                        cancellationToken).ConfigureAwait(false);
+                LogAcceptedProjectChanges(
+                    operationId,
+                    OperationKind.Activate,
+                    "activation.projectFiles",
+                    accepted);
+                throw;
+            }
+            catch
+            {
+                _session.AbandonProjectGraphChanges(
+                    projectChanges);
+                PublishSynchronizationRequired();
+                throw;
+            }
+        }
 
         dialogScope.SetStage("activation.verify");
         if (parameters.RunAfterActivation)
@@ -1391,6 +1427,109 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 Properties = properties,
             },
             dialog.ObservedAtUtc);
+    }
+
+    private void LogAcceptedProjectChanges(
+        string operationId,
+        OperationKind operationKind,
+        string stage,
+        XaeAcceptedProjectGraphChanges? accepted)
+    {
+        if (accepted is null)
+        {
+            return;
+        }
+
+        Dictionary<string, string> summary = new()
+        {
+            ["changeCount"] = accepted.Changes.Count.ToString(
+                CultureInfo.InvariantCulture),
+            ["watcherEventCount"] =
+                accepted.WatcherEventCount.ToString(
+                    CultureInfo.InvariantCulture),
+            ["watcherOverflow"] =
+                accepted.WatcherOverflow.ToString(),
+            ["settleDurationMs"] =
+                accepted.SettleDurationMs.ToString(
+                    CultureInfo.InvariantCulture),
+        };
+        _logger.Write(
+            accepted.WatcherOverflow
+                ? StructuredLogLevel.Warning
+                : StructuredLogLevel.Information,
+            GatewayEventTypes.XaeProjectChangesAccepted,
+            accepted.Changes.Count == 0
+                ? "XAE project files became quiet without graph changes."
+                : $"{accepted.Changes.Count} XAE project graph change(s) "
+                    + "were accepted.",
+            operationId,
+            summary);
+        foreach (ProjectFileChange change in accepted.Changes)
+        {
+            _logger.Write(
+                StructuredLogLevel.Information,
+                "xae.projectFile.accepted",
+                "A project graph file change made during the XAE "
+                    + "operation was accepted.",
+                operationId,
+                properties: new Dictionary<string, string>
+                {
+                    ["path"] = change.Path,
+                    ["kind"] = change.Kind.ToString(),
+                    ["role"] = change.Role.ToString(),
+                });
+        }
+
+        _events.Record(
+            new GatewayEvent
+            {
+                Type = GatewayEventTypes.XaeProjectChangesAccepted,
+                Severity = accepted.WatcherOverflow
+                    ? DiagnosticSeverity.Warning
+                    : DiagnosticSeverity.Info,
+                OperationId = operationId,
+                OperationKind = operationKind,
+                Stage = stage,
+                Message = accepted.Changes.Count == 0
+                    ? "XAE project files became quiet without graph "
+                        + "changes."
+                    : $"{accepted.Changes.Count} XAE project graph "
+                        + "change(s) were accepted.",
+                Properties = summary,
+            },
+            DateTimeOffset.UtcNow);
+    }
+
+    private async Task<XaeAcceptedProjectGraphChanges>
+        AcceptProjectGraphChangesAsync(
+        XaeProjectGraphChangeScope scope,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await _session.AcceptProjectGraphChangesAsync(
+                scope,
+                timeout,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            PublishSynchronizationRequired();
+            throw;
+        }
+    }
+
+    private static bool IsTerminalActivationOutcome(string code)
+    {
+        return string.Equals(
+                code,
+                ErrorCodes.ActivationDialogDetected,
+                StringComparison.Ordinal)
+            || string.Equals(
+                code,
+                ErrorCodes.XaeDialogReportedFailure,
+                StringComparison.Ordinal);
     }
 
     private static OperationKind? MapDialogOperationKind(
