@@ -875,6 +875,66 @@ run | config | exception | stopped | unknown
 
 `Run`, `Config/Reconfig`, `Stop/Stopping/Shutdown` и `Error/Exception` отображаются соответственно в `run`, `config`, `stopped` и `exception`. Переходные, неподдержанные состояния и ошибки ADS возвращают `unknown`. Detailed diagnostics сохраняет NetId, port, raw ADS state, device state, timestamp и error code. Runtime status failure не делает исправную XAE-сессию disconnected.
 
+### 12.4 Continuous ADS runtime monitoring
+
+PLC `Exception` не является частью activation transaction. Активация может
+успешно завершиться, после чего пользовательский код перейдёт в `Exception`
+немедленно или в любой более поздний момент. Такой переход записывается как
+отдельное runtime event и сам по себе не меняет уже завершённый результат
+activation operation.
+
+Continuous monitor использует гибридную схему:
+
+- долгоживущий `AdsClient` для System Service port 10000 выполняет bounded
+  heartbeat через `TryReadState`/`ReadStateAsync`. Событие
+  `AdsStateChanged` на этом порту недоступно, поэтому здесь polling обязателен;
+- для PLC runtime ports, обнаруженных только из выбранного XAE project graph,
+  gateway регистрирует `RegisterAdsStateChangedAsync` и получает переходы PLC
+  event-driven. Caller не может передать произвольный ADS port;
+- heartbeat остаётся необходимым и при подписке на PLC events: согласно
+  официальному примеру Beckhoff, `ConnectionStateChanged` обновляется только
+  при установке/закрытии соединения либо когда активный ADS-вызов обнаружил
+  изменение. Потеря сети не гарантирует самостоятельного callback без обмена;
+- heartbeat имеет bounded timeout и configurable interval. Значения
+  фиксируются после real-XAE измерений; официальный пример Beckhoff использует
+  периодический `TryReadState`, а не предлагает считать этот период частью
+  protocol contract;
+- одинаковые observations coalesce, а изменения System/PLC state,
+  disconnect, reconnect и read failure записываются в retained gateway event
+  stream с timestamp, NetId, port, предыдущим и новым состоянием;
+- сетевой disconnect является отдельным runtime-health event. `unknown`
+  остаётся представлением недостоверного текущего состояния, но диагностика
+  сохраняет причину, последний успешный read и момент потери связи.
+
+Официальные ограничения API, определяющие эту схему:
+`AdsStateChanged` поддерживается только ADS ports с device notifications
+(например PLC port 851), но не System Service port 10000; официальный пример
+`ConnectionStateChanged` выполняет периодический `TryReadState`, чтобы
+активный обмен обнаруживал изменения соединения.
+
+### 12.5 Доставка runtime events агенту
+
+Gateway всегда сохраняет runtime transitions в существующей cursor-based
+event stream, чтобы временно отсутствующий клиент мог дочитать события после
+reconnect. MCP notification нельзя считать гарантированным способом
+автономно разбудить модель после завершения её turn:
+
+- `notifications/resources/updated` применимо как best-effort сигнал только
+  для MCP-клиента, который предварительно подписался на runtime resource;
+- logging notifications не являются domain alert contract;
+- надёжный interactive workflow требует отдельного read-only long-poll tool
+  наподобие
+  `twincat_watch_runtime(eventStreamId, afterCursor, timeoutSeconds)`. Tool
+  возвращается сразу при exception, disconnect, reconnect или выбранном
+  state transition и используется агентом только во время явной команды
+  «наблюдать»;
+- уведомление после завершения agent turn требует host-level wakeup,
+  automation или другого внешнего delivery mechanism; стандартный MCP
+  resource update сам по себе такой гарантии не задаёт.
+
+Long-poll tool и subscribable runtime resource являются предложением для
+следующего изменения public contract и не входят в текущий MCP tool list.
+
 ## 13. Редактирование через файлы
 
 ### 13.1 Основной workflow
@@ -1331,8 +1391,14 @@ Metrics не обязательны для MVP, но structured events долж�
 - Beckhoff: Loading the program automatically — https://infosys.beckhoff.com/content/1033/tc3_plc_intro/8102877579.html
 - Beckhoff: TwinCAT project files and generated PLC TMC — https://infosys.beckhoff.com/content/1033/tc3_sourcecontrol/406303499.html
 - Beckhoff: Silent Mode — https://infosys.beckhoff.com/content/1033/tc3_automationinterface/2489025803.html
+- Beckhoff: AdsClient — https://infosys.beckhoff.com/content/1033/tc3_ads.net/9407705867.html
+- Beckhoff: RegisterAdsStateChangedAsync — https://infosys.beckhoff.com/content/1033/tc3_ads.net/9407816459.html
+- Beckhoff: AdsStateChanged event and unsupported port 10000 — https://infosys.beckhoff.com/content/1033/tc3_ads.net/9407905547.html
+- Beckhoff: ConnectionStateChanged polling example — https://infosys.beckhoff.com/content/1033/tc3_adsnetref/7312679051.html
 - Beckhoff: AdsClient.TryReadState — https://infosys.beckhoff.com/content/1033/tc3_ads.net/9407838987.html
 - Beckhoff: ADS System Service port 10000 — https://infosys.beckhoff.com/content/1033/tcadscommon/12439473419.html
+- MCP: Resources and subscriptions — https://modelcontextprotocol.io/specification/2025-06-18/server/resources
+- MCP: Server notifications schema — https://modelcontextprotocol.io/specification/2025-06-18/schema
 - Microsoft: IVsDocDataFileChangeControl — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivsdocdatafilechangecontrol
 - Microsoft: IVsPersistDocData.ReloadDocData — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivspersistdocdata.reloaddocdata
 - Microsoft: IVsFileChangeEx — https://learn.microsoft.com/en-us/dotnet/api/microsoft.visualstudio.shell.interop.ivsfilechangeex
