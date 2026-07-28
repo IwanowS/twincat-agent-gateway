@@ -433,7 +433,8 @@ docs/
 
 ### Цель
 
-Безопасно применить конфигурацию и запустить Auto Boot project.
+Безопасно применить конфигурацию и по явному параметру подтвердить или
+отклонить переход в Run, не меняя пользовательскую настройку Auto Boot.
 
 ### Задачи
 
@@ -442,11 +443,24 @@ docs/
 - preconditions;
 - optional recent-build policy;
 - recovery-to-Config adapter;
-- `ActivateConfiguration()`;
-- `StartRestartTwinCAT()`;
-- postcondition checks;
-- error collection;
-- события activation/restart/postcondition в общей event stream;
+- отдельные CLI/MCP `recover-to-config` / `twincat_recover_to_config`;
+- DTE command `TwinCAT.ActivateConfiguration`;
+- `runAfterActivation` с default `true`;
+- platform mismatch -> Cancel и подробная ошибка;
+- activation confirmation -> OK без изменения tri-state
+  `Autostart PLC Boot Project(s)`;
+- Run confirmation -> OK/Cancel согласно `runAfterActivation`;
+- отсутствие отдельного `StartRestartTwinCAT()` после XAE-команды;
+- conditional Run/Config stable-runtime postcondition;
+- discovery Auto Boot PLC через `BootProjectAutostart` и проверка online state
+  каждого обязательного PLC;
+- Error List baseline/delta с классификацией runtime faults, TcUnit summary и
+  warnings;
+- мониторинг dialog точного XAE process id на всём асинхронном activation
+  window;
+- объединение Error List, `GetLastErrorMessages()` и ADS runtime evidence в
+  compact activation error;
+- события activation/dialog/postcondition в общей event stream;
 - UI confirmation policy;
 - CLI command;
 - integration tests на отдельном удалённом стенде; локальная activation/restart запрещена.
@@ -455,12 +469,23 @@ docs/
 
 - normal activation из Run;
 - activation из Config;
+- activation без Run для ручной отладки;
 - PLC exception требует recovery;
+- recent build истёк в `Exception`, а solution build не может завершиться:
+  standalone recovery остаётся доступен без build precondition;
 - XAE busy;
 - target mismatch;
 - activation disabled profile;
 - `ActivateConfiguration` fail;
-- restart fail;
+- Run confirmation fail;
+- platform mismatch dialog;
+- кратковременный `Run` с последующим PLC `Exception`;
+- System Service `Run`, но один Auto Boot PLC не в `Run`;
+- runtime `Exception` до достижения timeout;
+- известный fatal XAE dialog;
+- неизвестный XAE dialog не подтверждается автоматически;
+- TcUnit summary строки имеют Error severity, но тесты успешны;
+- warning-only activation diagnostics;
 - TwinCAT started state unknown;
 - user cancels до irreversible step.
 
@@ -471,9 +496,30 @@ docs/
 - AMS NetId является единственной обязательной target identity; имя target
   необязательно и не участвует в safety decision;
 - ошибка конкретного stage видна агенту;
-- `ActivateConfiguration()` не считается полным успехом без последующего restart/postcondition;
+- XAE-команда не считается полным успехом без ожидаемых activation и Run
+  confirmation dialogs и выбранного postcondition;
+- после `TwinCAT.ActivateConfiguration` не вызывается второй
+  `StartRestartTwinCAT`;
+- gateway читает, но никогда не меняет tri-state Autostart checkbox;
+- `waitForTcUnit=true` требует `runAfterActivation=true`;
+- состояние `Exception` после activation немедленно завершает operation, а не
+  расходует весь timeout;
+- сохранённое до activation состояние `Run` и кратковременный `Run` не считаются
+  достаточным postcondition;
+- успешная activation с `runAfterActivation=true` подтверждает `Run` System
+  Service и healthy online state каждого PLC с
+  `BootProjectAutostart=true`; при `false` подтверждается `Config`;
+- runtime fault из дельты Error List возвращается даже при пустом
+  `GetLastErrorMessages()`, а TcUnit summary строки не считаются runtime fault
+  только из-за XAE severity `Error`;
+- warnings читаются и возвращаются отдельно от fatal activation errors;
+- диалог принадлежит точному XAE process id, его текст записан в diagnostics,
+  а неизвестная кнопка никогда не нажимается автоматически;
 - exception recovery требует подтверждённого ADS-состояния `Config`, иначе
   возвращает `CONFIG_MODE_RECOVERY_FAILED` без ложного success.
+- recovery-to-Config не требует recent successful build и разрывает цикл, в
+  котором XAE не может завершить верхнеуровневую system-project build из
+  runtime `Exception`.
 
 ## 11. Milestone 8 — TcUnit ADS completion и report flow
 
@@ -577,6 +623,7 @@ gateway_shutdown
 twincat_status
 twincat_build
 twincat_activate
+twincat_recover_to_config
 twincat_get_diagnostics
 twincat_get_test_results
 ```
@@ -631,6 +678,8 @@ twincat-diff://<operation-id>/project-noise
 - `gateway_shutdown` помечен destructive, проверяет загруженный
   `allowShutdown`, отправляет успешный response до остановки desktop gateway
   и не закрывает user-owned XAE;
+- gateway-launched XAE сохраняет ownership после ROT reconnect и закрывается
+  при `gateway_shutdown`; XAE, открытый пользователем, не закрывается;
 - Desktop gateway не наследует agent-added environment; отсутствие
   интерактивного Explorer завершается fail-closed без прямого process fallback;
 - gateway другого проекта не закрывается и не переключается;
@@ -699,7 +748,7 @@ twincat-diff://<operation-id>/project-noise
 - read-only ADS System Service status adapter;
 - local IPC;
 - safe activation profile;
-- `ActivateConfiguration + StartRestartTwinCAT`;
+- `TwinCAT.ActivateConfiguration` dialog controller без второго restart;
 - Config recovery spike;
 - read-only ADS TcUnit completion adapter;
 - TcUnit report parser;
@@ -745,8 +794,14 @@ twincat-diff://<operation-id>/project-noise
 | XAE busy | Нет | Нет | Да |
 | Agent-owned external edit sync | Да | Да | Да |
 | `.tsproj` reorder-only | Да | Да | Да |
+| PLC `.tmc` generated artifact | Да | Да | Да |
 | Activation allowed/denied | Да | Да | Да |
 | Recovery after exception | Нет | Да | Да |
+| Public recover-to-Config tool | Да | Да | Да |
+| Run-to-Exception short-circuit | Да | Да | Да |
+| Auto Boot PLC readiness | Да | Да | Да |
+| Activation Error List classification | Парсер | Да | Да |
+| XAE fatal dialog capture | Нет | Да | Да |
 | ADS System Service runtime status | Да | Да | Да |
 | TcUnit ADS completion | Да (fake ADS) | Да | Да |
 | ADS target/profile mismatch | Да | Да | Да |
@@ -789,7 +844,8 @@ twincat-diff://<operation-id>/project-noise
 - Проверена TwinCAT 3.1.4024.17.
 - Build/Rebuild/Clean корректно диагностируют success/failure.
 - Agent получает compile errors без полного Build Output.
-- Activation ограничена profile и включает restart.
+- Activation ограничена profile и имеет явный `runAfterActivation`; отдельный
+  restart после XAE activation command отсутствует.
 - Exception recovery честно работает или честно сообщает ручной Config Mode.
 - TcUnit completion подтверждён через read-only ADS на target связанной activation.
 - TcUnit report связан с текущим запуском и не берётся из старого файла.

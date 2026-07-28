@@ -209,16 +209,37 @@ public sealed class XaeSession : IDisposable
             cancellationToken);
     }
 
-    public async Task ActivateConfigurationAsync(
+    public async Task<XaeActivationCommandResult>
+        ActivateConfigurationAsync(
         string solutionPath,
         string expectedAmsNetId,
+        bool runAfterActivation,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         string normalizedSolution =
             NormalizeSolutionPath(solutionPath);
-        await _dispatcher.InvokeAsync(
+        DateTimeOffset deadlineUtc = CreateDeadline(timeout);
+        int processId = await _dispatcher.InvokeAsync(
+            () =>
+            {
+                return _snapshot.SelectedInstance?.ProcessId
+                    ?? throw new GatewayOperationException(
+                        ErrorCodes.XaeNotFound,
+                        "The selected XAE process identity is unavailable.",
+                        retryable: true,
+                        stage: "activation.preflight");
+            },
+            GetRemaining(
+                deadlineUtc,
+                "activation.preflight"),
+            cancellationToken).ConfigureAwait(false);
+        using XaeActivationDialogController dialogController =
+            XaeActivationDialogController.Start(
+                processId,
+                runAfterActivation);
+        Task activation = _dispatcher.InvokeAsync(
             () =>
             {
                 ActivateConfigurationOnSta(
@@ -226,29 +247,37 @@ public sealed class XaeSession : IDisposable
                     expectedAmsNetId);
                 return true;
             },
-            timeout,
-            cancellationToken).ConfigureAwait(false);
-    }
+            GetRemaining(
+                deadlineUtc,
+                "activation.activateConfiguration"),
+            cancellationToken);
+        await Task.WhenAny(
+            activation,
+            dialogController.FailureDetected).ConfigureAwait(false);
+        if (dialogController.FailureDetected.IsCompleted)
+        {
+            ObserveFault(activation);
+            throw CreateActivationDialogError(
+                await dialogController.FailureDetected
+                    .ConfigureAwait(false));
+        }
 
-    public async Task StartRestartTwinCatAsync(
-        string solutionPath,
-        string expectedAmsNetId,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
-    {
-        ThrowIfDisposed();
-        string normalizedSolution =
-            NormalizeSolutionPath(solutionPath);
-        await _dispatcher.InvokeAsync(
-            () =>
-            {
-                StartRestartTwinCatOnSta(
-                    normalizedSolution,
-                    expectedAmsNetId);
-                return true;
-            },
-            timeout,
-            cancellationToken).ConfigureAwait(false);
+        await activation.ConfigureAwait(false);
+        XaeActivationCommandResult result =
+            dialogController.StopAndGetResult();
+        if (!result.ActivationConfirmed
+            || !result.RunDecisionHandled)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ActivateConfigurationFailed,
+                "The TwinCAT Activate Configuration command did not "
+                + "present the expected activation and Run confirmation "
+                + "dialogs.",
+                retryable: false,
+                stage: "activation.dialog");
+        }
+
+        return result;
     }
 
     public async Task RestartTwinCatConfigModeAsync(
@@ -337,13 +366,27 @@ public sealed class XaeSession : IDisposable
                 ? Array.Empty<ProjectFileChange>()
                 : ProjectFileFingerprintScanner.Compare(
                     state.Baseline,
-                    current);
+                    current)
+                    .Where(change =>
+                        change.Role
+                            != ProjectGraphFileRole
+                                .GeneratedArtifact)
+                    .ToArray();
         HashSet<string> graphPaths = new(
             current.Files.Select(file => file.Path),
             StringComparer.OrdinalIgnoreCase);
+        HashSet<string> synchronizedGraphPaths = new(
+            current.Files
+                .Where(file =>
+                    file.Role
+                        != ProjectGraphFileRole
+                            .GeneratedArtifact)
+                .Select(file => file.Path),
+            StringComparer.OrdinalIgnoreCase);
         IReadOnlyList<string> dirtyDocuments =
             await _dispatcher.InvokeAsync(
-                () => InspectDirtyDocumentsOnSta(graphPaths),
+                () => InspectDirtyDocumentsOnSta(
+                    synchronizedGraphPaths),
                 GetRemaining(
                     deadlineUtc,
                     "xae.workspace.dirty"),
@@ -448,7 +491,12 @@ public sealed class XaeSession : IDisposable
         IReadOnlyList<ProjectFileChange> concurrentChanges =
             ProjectFileFingerprintScanner.Compare(
                 current,
-                verified);
+                verified)
+                .Where(change =>
+                    change.Role
+                        != ProjectGraphFileRole
+                            .GeneratedArtifact)
+                .ToArray();
         HashSet<string> provenNoisePaths = new(
             trackedProjectChanges
                 .Where(change =>
@@ -602,11 +650,15 @@ public sealed class XaeSession : IDisposable
             bool provenGeneratedNoise =
                 buildChanges.All(change =>
                     change.Role
-                        == ProjectGraphFileRole.TwinCatProject
-                    && change.Kind
-                        == ProjectFileChangeKind.Modified)
-                && buildChanges.All(change =>
-                    provenBuildNoisePaths.Contains(change.Path));
+                        == ProjectGraphFileRole
+                            .GeneratedArtifact
+                    || (change.Role
+                            == ProjectGraphFileRole
+                                .TwinCatProject
+                        && change.Kind
+                            == ProjectFileChangeKind.Modified
+                        && provenBuildNoisePaths.Contains(
+                            change.Path)));
             if (buildChanges.Count != 0
                 && !provenGeneratedNoise)
             {
@@ -1192,7 +1244,14 @@ public sealed class XaeSession : IDisposable
     {
         const string stage =
             "activation.activateConfiguration";
-        using (CreateUserSilentModeLease())
+        using (TwinCatSilentModeLease.Disable(
+            _dte
+                ?? throw new GatewayOperationException(
+                    ErrorCodes.XaeNotFound,
+                    "No XAE session is currently attached.",
+                    retryable: true,
+                    stage: "xae.silentMode"),
+            restoreOnDispose: true))
         {
             VerifyActivationBoundaryOnSta(
                 normalizedSolution,
@@ -1200,13 +1259,19 @@ public sealed class XaeSession : IDisposable
                 stage);
             try
             {
-                _sysManager!.ActivateConfiguration();
+                // This is intentionally the UI-equivalent XAE command.
+                // It owns platform validation, the activation/autostart
+                // confirmation, build and deployment, and the final
+                // optional Run confirmation. Do not follow it with
+                // ITcSysManager.StartRestartTwinCAT().
+                _dte!.ExecuteCommand(
+                    "TwinCAT.ActivateConfiguration");
             }
             catch (Exception exception)
             {
                 throw new GatewayOperationException(
                     ErrorCodes.ActivateConfigurationFailed,
-                    "TwinCAT configuration activation failed.",
+                    "The TwinCAT Activate Configuration command failed.",
                     retryable: false,
                     stage: stage,
                     innerException: exception);
@@ -1214,31 +1279,49 @@ public sealed class XaeSession : IDisposable
         }
     }
 
-    private void StartRestartTwinCatOnSta(
-        string normalizedSolution,
-        string expectedAmsNetId)
+    private static GatewayOperationException
+        CreateActivationDialogError(
+        XaeActivationDialogInfo dialog)
     {
-        const string stage = "activation.restart";
-        using (CreateUserSilentModeLease())
-        {
-            VerifyActivationBoundaryOnSta(
-                normalizedSolution,
-                expectedAmsNetId,
-                stage);
-            try
+        string title = string.IsNullOrWhiteSpace(dialog.Title)
+            ? "(untitled)"
+            : dialog.Title;
+        string details = string.IsNullOrWhiteSpace(dialog.Text)
+            ? string.Empty
+            : $": {dialog.Text}";
+        string message = LimitDiagnosticText(
+            $"XAE displayed a '{dialog.Kind}' dialog '{title}'"
+            + details
+            + (dialog.ActionRequested
+                ? $". The fail-closed '{dialog.Action}' action "
+                    + "was requested."
+                : ". The dialog was not confirmed automatically."));
+        return new GatewayOperationException(
+            ErrorCodes.ActivationDialogDetected,
+            message,
+            retryable: false,
+            stage: "activation.dialog");
+    }
+
+    private static void ObserveFault(Task operation)
+    {
+        operation.ContinueWith(
+            completed =>
             {
-                _sysManager!.StartRestartTwinCAT();
-            }
-            catch (Exception exception)
-            {
-                throw new GatewayOperationException(
-                    ErrorCodes.TwinCatRestartFailed,
-                    "TwinCAT restart request failed.",
-                    retryable: true,
-                    stage: stage,
-                    innerException: exception);
-            }
-        }
+                _ = completed.Exception;
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted
+                | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default);
+    }
+
+    private static string LimitDiagnosticText(string value)
+    {
+        const int maximumLength = 1024;
+        return value.Length <= maximumLength
+            ? value
+            : value.Substring(0, maximumLength);
     }
 
     private void RestartTwinCatConfigModeOnSta(
@@ -2188,12 +2271,17 @@ public sealed class XaeSession : IDisposable
         bool force,
         bool baselineMissing)
     {
+        ProjectFileChange[] sourceChanges = changes
+            .Where(change =>
+                change.Role
+                    != ProjectGraphFileRole.GeneratedArtifact)
+            .ToArray();
         if (baselineMissing)
         {
             return SynchronizationScope.TwinCatProject;
         }
 
-        if (changes.Count == 0)
+        if (sourceChanges.Length == 0)
         {
             return force
                 ? SynchronizationScope.TwinCatProject
@@ -2202,17 +2290,17 @@ public sealed class XaeSession : IDisposable
 
         if (!force && policy == ExternalChangePolicy.Error)
         {
-            throw CreateExternalChangeError(changes, policy);
+            throw CreateExternalChangeError(sourceChanges, policy);
         }
 
-        bool sourcesOnly = changes.All(change =>
+        bool sourcesOnly = sourceChanges.All(change =>
             change.Role == ProjectGraphFileRole.PlcSource
             && change.Kind == ProjectFileChangeKind.Modified);
         if (!force
             && policy == ExternalChangePolicy.ReloadModified
             && !sourcesOnly)
         {
-            throw CreateExternalChangeError(changes, policy);
+            throw CreateExternalChangeError(sourceChanges, policy);
         }
 
         if (sourcesOnly)
@@ -2220,7 +2308,7 @@ public sealed class XaeSession : IDisposable
             return SynchronizationScope.ModifiedSources;
         }
 
-        if (changes.Any(change =>
+        if (sourceChanges.Any(change =>
             change.Role == ProjectGraphFileRole.TwinCatProject))
         {
             return SynchronizationScope.TwinCatProject;

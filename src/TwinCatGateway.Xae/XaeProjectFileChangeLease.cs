@@ -128,14 +128,25 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
             {
                 if (!File.Exists(file.Path))
                 {
+                    XaeProjectFileChangeResult removed =
+                        IsGeneratedArtifact(file.Path)
+                            ? CreateExpectedGeneratedArtifact(
+                                file.Path,
+                                "The PLC TMC build artifact was removed "
+                                + "during the tracked XAE operation.")
+                            : new XaeProjectFileChangeResult(
+                                file.Path,
+                                ProjectChangeClassification.Unknown,
+                                movedBlocks: 0,
+                                contentChanges: 0,
+                                "The TwinCAT project file was removed "
+                                + "during the operation.");
+                    file.AcknowledgeWhileIgnored =
+                        removed.Classification
+                            == ProjectChangeClassification
+                                .ExpectedGeneratedArtifact;
                     changes.Add(
-                        new XaeProjectFileChangeResult(
-                            file.Path,
-                            ProjectChangeClassification.Unknown,
-                            movedBlocks: 0,
-                            contentChanges: 0,
-                            "The TwinCAT project file was removed "
-                            + "during the operation."));
+                        removed);
                     continue;
                 }
 
@@ -158,6 +169,9 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                 file.AcknowledgeWhileIgnored =
                     classification.Classification
                         == ProjectChangeClassification
+                            .ExpectedGeneratedArtifact
+                    || classification.Classification
+                        == ProjectChangeClassification
                             .ExpectedReorderOnly
                     || classification.Classification
                         == ProjectChangeClassification
@@ -171,13 +185,18 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                 .Where(path => !baselinePaths.Contains(path)))
             {
                 changes.Add(
-                    new XaeProjectFileChangeResult(
-                        addedPath,
-                        ProjectChangeClassification.Unknown,
-                        movedBlocks: 0,
-                        contentChanges: 0,
-                        "A TwinCAT project file was added during "
-                        + "the operation."));
+                    IsGeneratedArtifact(addedPath)
+                        ? CreateExpectedGeneratedArtifact(
+                            addedPath,
+                            "The PLC TMC build artifact was generated "
+                            + "during the tracked XAE operation.")
+                        : new XaeProjectFileChangeResult(
+                            addedPath,
+                            ProjectChangeClassification.Unknown,
+                            movedBlocks: 0,
+                            contentChanges: 0,
+                            "A TwinCAT project file was added during "
+                            + "the operation."));
             }
 
             return changes;
@@ -195,6 +214,14 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
             byte[] baseline,
             byte[] current)
     {
+        if (IsGeneratedArtifact(path))
+        {
+            return CreateExpectedGeneratedArtifact(
+                path,
+                "The PLC TMC file is a compiler-generated artifact. "
+                + "Changes are expected and the file must not be merged.");
+        }
+
         if (action == BuildAction.Clean)
         {
             return new XaeProjectFileChangeResult(
@@ -217,6 +244,27 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
             classification.MovedBlocks,
             classification.ContentChanges,
             classification.Reason);
+    }
+
+    private static XaeProjectFileChangeResult
+        CreateExpectedGeneratedArtifact(
+        string path,
+        string reason)
+    {
+        return new XaeProjectFileChangeResult(
+            path,
+            ProjectChangeClassification.ExpectedGeneratedArtifact,
+            movedBlocks: 0,
+            contentChanges: 0,
+            reason);
+    }
+
+    private static bool IsGeneratedArtifact(string path)
+    {
+        return string.Equals(
+            Path.GetExtension(path),
+            ".tmc",
+            StringComparison.OrdinalIgnoreCase);
     }
 
     public void Dispose()
@@ -340,7 +388,22 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                         ".tsproj",
                         StringComparison.OrdinalIgnoreCase))
                     {
-                        paths.Add(Path.GetFullPath(path));
+                        string twinCatProjectPath =
+                            Path.GetFullPath(path);
+                        paths.Add(twinCatProjectPath);
+                        paths.AddRange(
+                            ProjectFileFingerprintScanner
+                                .CaptureProjectGraph(
+                                    solutionPath,
+                                    twinCatProjectPath,
+                                    System.Threading
+                                        .CancellationToken.None)
+                                .Files
+                                .Where(file =>
+                                    file.Role
+                                        == ProjectGraphFileRole
+                                            .GeneratedArtifact)
+                                .Select(file => file.Path));
                     }
                 }
                 finally
@@ -379,12 +442,14 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
         {
             try
             {
-                bool unchanged = File.Exists(file.Path)
+                bool exists = File.Exists(file.Path);
+                bool unchanged = exists
                     && string.Equals(
                         file.Sha256,
                         ComputeSha256(file.Path),
                         StringComparison.Ordinal);
-                if (unchanged || file.AcknowledgeWhileIgnored)
+                if (exists
+                    && (unchanged || file.AcknowledgeWhileIgnored))
                 {
                     Marshal.ThrowExceptionForHR(
                         fileChange.SyncFile(file.Path));
@@ -395,7 +460,9 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                         0,
                         file.Path,
                         0));
-                if (!unchanged && !file.AcknowledgeWhileIgnored)
+                if (exists
+                    && !unchanged
+                    && !file.AcknowledgeWhileIgnored)
                 {
                     Marshal.ThrowExceptionForHR(
                         fileChange.SyncFile(file.Path));

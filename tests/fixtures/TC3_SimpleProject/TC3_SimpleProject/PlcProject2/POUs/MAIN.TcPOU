@@ -4,11 +4,24 @@
     <Declaration><![CDATA[PROGRAM MAIN
 VAR
 	bToggle : BOOL;
+	bArray	: ARRAY[0..1] OF BOOL;
+	f1 : LREAL := 10;
+	f2 : LREAL := 1.0;
+	idx : INT := 0;
 END_VAR
 ]]></Declaration>
     <Implementation>
       <ST><![CDATA[
 bToggle := NOT bToggle;
+f2 := 1;
+
+//f1 := f1 / f2;
+
+(*
+FOR idx := -1 TO 2 DO
+	bArray[idx] := bToggle;
+END_FOR;
+*)
 ]]></ST>
     </Implementation>
   </POU>

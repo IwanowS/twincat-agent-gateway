@@ -21,6 +21,7 @@ public sealed class XaeActivationBoundaryTests
                 () => session.ActivateConfigurationAsync(
                     @"C:\missing\Machine.sln",
                     "192.168.3.31.1.1",
+                    runAfterActivation: true,
                     TimeSpan.FromSeconds(2),
                     CancellationToken.None));
 
@@ -45,13 +46,7 @@ public sealed class XaeActivationBoundaryTests
                 () => session.ActivateConfigurationAsync(
                     solution,
                     wrongTarget,
-                    TimeSpan.FromSeconds(10),
-                    CancellationToken.None));
-        GatewayOperationException restart =
-            await Assert.ThrowsAsync<GatewayOperationException>(
-                () => session.StartRestartTwinCatAsync(
-                    solution,
-                    wrongTarget,
+                    runAfterActivation: true,
                     TimeSpan.FromSeconds(10),
                     CancellationToken.None));
         GatewayOperationException recover =
@@ -65,9 +60,6 @@ public sealed class XaeActivationBoundaryTests
         Assert.Equal(
             ErrorCodes.ActivationTargetMismatch,
             activate.Code);
-        Assert.Equal(
-            ErrorCodes.ActivationTargetMismatch,
-            restart.Code);
         Assert.Equal(
             ErrorCodes.ActivationTargetMismatch,
             recover.Code);

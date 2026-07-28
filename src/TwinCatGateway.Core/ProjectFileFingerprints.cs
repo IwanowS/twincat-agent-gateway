@@ -21,6 +21,7 @@ public enum ProjectGraphFileRole
     TwinCatProject,
     PlcProject,
     PlcSource,
+    GeneratedArtifact,
 }
 
 public sealed class ProjectFileFingerprint
@@ -211,6 +212,29 @@ public static class ProjectFileFingerprintScanner
                 reference!);
             graph[plcProjectPath] =
                 ProjectGraphFileRole.PlcProject;
+            foreach (XAttribute tmcReference in project
+                .DescendantsAndSelf()
+                .Attributes()
+                .Where(attribute =>
+                    string.Equals(
+                        attribute.Name.LocalName,
+                        "TmcFilePath",
+                        StringComparison.Ordinal)
+                    || string.Equals(
+                        attribute.Name.LocalName,
+                        "TmcPath",
+                        StringComparison.Ordinal)))
+            {
+                if (!string.IsNullOrWhiteSpace(
+                    tmcReference.Value))
+                {
+                    graph[ResolveReference(
+                        fullTwinCatProjectPath,
+                        tmcReference.Value)] =
+                            ProjectGraphFileRole.GeneratedArtifact;
+                }
+            }
+
             XDocument plcProject = LoadXml(
                 plcProjectPath,
                 cancellationToken);
@@ -238,6 +262,34 @@ public static class ProjectFileFingerprintScanner
                         ProjectGraphFileRole.PlcSource;
                 }
             }
+
+            foreach (XElement item in plcProject
+                .Descendants()
+                .Where(element =>
+                    string.Equals(
+                        element.Name.LocalName,
+                        "None",
+                        StringComparison.Ordinal)))
+            {
+                string? include =
+                    (string?)item.Attribute("Include");
+                if (string.IsNullOrWhiteSpace(include))
+                {
+                    continue;
+                }
+
+                string artifactPath = ResolveReference(
+                    plcProjectPath,
+                    include!);
+                if (string.Equals(
+                    Path.GetExtension(artifactPath),
+                    ".tmc",
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    graph[artifactPath] =
+                        ProjectGraphFileRole.GeneratedArtifact;
+                }
+            }
         }
 
         Dictionary<string, ProjectFileFingerprint> files =
@@ -245,6 +297,12 @@ public static class ProjectFileFingerprintScanner
         foreach (KeyValuePair<string, ProjectGraphFileRole> entry in graph)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (entry.Value == ProjectGraphFileRole.GeneratedArtifact
+                && !File.Exists(entry.Key))
+            {
+                continue;
+            }
+
             ProjectFileFingerprint fingerprint = CaptureFile(
                 entry.Key,
                 entry.Value,

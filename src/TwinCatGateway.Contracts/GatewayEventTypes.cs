@@ -75,6 +75,9 @@ public static class GatewayEventTypes
     public const string ActivationConfigurationStarted =
         "activation.configurationStarted";
 
+    public const string ActivationDialogHandled =
+        "activation.dialogHandled";
+
     public const string ActivationConfigurationActivated =
         "activation.configurationActivated";
 

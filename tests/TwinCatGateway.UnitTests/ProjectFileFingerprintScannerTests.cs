@@ -145,10 +145,14 @@ public sealed class ProjectFileFingerprintScannerTests
         string unrelated = external.Write(
             "PLC\\POUs\\Unused.TcPOU",
             "unused");
+        string generatedArtifact = external.Write(
+            "PLC\\Machine.tmc",
+            "generated");
         string plcProject = external.Write(
             "PLC\\Machine.plcproj",
             "<Project><ItemGroup>"
             + "<Compile Include=\"POUs\\MAIN.TcPOU\" />"
+            + "<None Include=\"Machine.tmc\" />"
             + "</ItemGroup></Project>");
         string relativePlc = Path.GetRelativePath(
             external.Root,
@@ -165,7 +169,7 @@ public sealed class ProjectFileFingerprintScannerTests
                 twinCatProject,
                 CancellationToken.None);
 
-        Assert.Equal(3, snapshot.Files.Count);
+        Assert.Equal(4, snapshot.Files.Count);
         Assert.Contains(
             snapshot.Files,
             file => file.Path == Path.GetFullPath(twinCatProject)
@@ -181,6 +185,12 @@ public sealed class ProjectFileFingerprintScannerTests
             file => file.Path == Path.GetFullPath(source)
                 && file.Role
                     == ProjectGraphFileRole.PlcSource);
+        Assert.Contains(
+            snapshot.Files,
+            file => file.Path
+                    == Path.GetFullPath(generatedArtifact)
+                && file.Role
+                    == ProjectGraphFileRole.GeneratedArtifact);
         Assert.DoesNotContain(
             snapshot.Files,
             file => file.Path == Path.GetFullPath(unrelated));

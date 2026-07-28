@@ -149,7 +149,10 @@ gateway вручную.
 `GATEWAY_SHUTDOWN_DISABLED`. При `true` desktop gateway сначала записывает
 успешный IPC response, затем через completion callback инициирует WPF
 shutdown. Это не закрывает XAE instance, открытый пользователем; обычные
-правила gateway-owned XAE cleanup сохраняются.
+правила gateway-owned XAE cleanup сохраняются. XAE, который был запущен
+gateway для текущего profile, сохраняет ownership marker на весь lifecycle и
+закрывается при `gateway_shutdown`; повторное ROT attach к тому же PID не
+должно ошибочно превращать его в user-owned instance.
 
 ### 4.2 Project-local configuration
 
@@ -300,12 +303,19 @@ Status endpoint читает immutable snapshot и не блокирует UI н
 Физическая семантика:
 
 1. при необходимости recovery to Config;
-2. `ITcSysManager.ActivateConfiguration()`;
-3. `ITcSysManager.StartRestartTwinCAT()`;
-4. ожидание подтверждённого ADS-состояния `Run`;
-5. повторная проверка solution и AMS NetId.
+2. единственный вызов DTE-команды `TwinCAT.ActivateConfiguration`;
+3. детерминированная обработка platform, activation/autostart и Run dialogs;
+4. встроенные в XAE build и deployment выбранной конфигурации;
+5. ожидание подтверждённого ADS-состояния `Run` или `Config` согласно
+   `runAfterActivation`;
+6. повторная проверка solution и AMS NetId.
 
-`ActivateConfiguration()` сам по себе соответствует сохранению текущей конфигурации как активной. Отдельный start/restart необходим для физического применения. При включённом `Autostart boot project` boot project запускается после рестарта.
+Команда XAE уже включает предложение перехода в Run. Поэтому activation
+никогда не вызывает `ITcSysManager.StartRestartTwinCAT()` после
+`TwinCAT.ActivateConfiguration`: это создавало бы второй переход и могло
+запустить ранее активную конфигурацию даже после Cancel в XAE dialog.
+Gateway не меняет tri-state `Autostart PLC Boot Project(s)`; значение,
+настроенное пользователем для PLC projects, только читается для diagnostics.
 
 Перед каждой изменяющей COM/DTE-командой XAE boundary повторно проверяет точный
 `Solution.FullName` и AMS NetId. Необязательное имя target в этих проверках не
@@ -337,7 +347,7 @@ ADS adapters не принимают от вызывающего кода про
 Если unit-тесты запускаются автоматически вместе с boot project, test operation может быть связана с activation operation.
 
 При эффективном `waitForTcUnit=true` gateway снимает baseline отчёта
-непосредственно перед activation. После успешного restart/postcondition он
+непосредственно перед activation. После успешного Run postcondition он
 ставит отдельную `OperationKind.Test` в ту же последовательную очередь и
 возвращает её ID в `ActivationResult.testOperationId`. Activation не
 становится неуспешной из-за последующего test failure: физическое применение
@@ -596,7 +606,17 @@ policy.
 
 ### 11.1 Важное различие
 
-В XAE пользовательская команда **Activate Configuration** может включать диалоги и предложение рестарта. Метод Automation Interface `ActivateConfiguration()` имеет более узкую семантику: сохраняет конфигурацию как активную. После него вызывается `StartRestartTwinCAT()`.
+Gateway намеренно использует DTE command identity
+`TwinCAT.ActivateConfiguration`, то есть тот же workflow, что кнопка
+**Activate Configuration** в XAE. На TwinCAT 3.1.4024.17 он последовательно
+выполняет platform check, confirmation с tri-state
+`Autostart PLC Boot Project(s)`, build, перенос configuration/boot artifacts
+на target и отдельный вопрос о переходе в Run.
+
+Метод Automation Interface `ITcSysManager.ActivateConfiguration()` имеет
+более узкую и другую семантику: в проверенном platform-mismatch scenario он
+не показал UI platform check и применил конфигурацию принудительно. Поэтому
+для agent-facing activation он не используется.
 
 ### 11.2 Последовательность
 
@@ -604,25 +624,67 @@ policy.
 2. Проверить выбранные solution и AMS NetId.
 3. Проверить, что gateway не выполняет build.
 4. Проверить policy актуальности последней успешной сборки.
-5. Прочитать runtime state через read-only ADS `TryReadState` на System Service port 10000; `unknown` завершает операцию до изменения состояния.
+5. Снять baseline XAE Error List и прочитать runtime state через read-only ADS
+   `TryReadState` на System Service port 10000; `unknown` завершает операцию до
+   изменения состояния.
 6. Если runtime находится в `Exception`, выполнить `RecoverToConfig` и дождаться подтверждённого ADS-состояния `Config`.
-7. Повторно проверить solution и AMS NetId, затем вызвать `ActivateConfiguration()`.
-8. Повторно проверить solution и AMS NetId, затем вызвать `StartRestartTwinCAT()`.
-9. Дождаться подтверждённого ADS-состояния `Run`.
-10. Повторно проверить solution и AMS NetId и обновить XAE/runtime diagnostics.
-11. Записать activation resource и stage events в общую event stream.
-12. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
+7. Повторно проверить solution и AMS NetId и один раз вызвать
+   `DTE2.ExecuteCommand("TwinCAT.ActivateConfiguration")` при выключенном
+   Silent Mode.
+8. Обработать только известную последовательность dialogs точного XAE PID:
+   - platform mismatch: нажать Cancel и вернуть подробную ошибку;
+   - `Activate Configuration`: прочитать tri-state Autostart, не менять его
+     и нажать OK;
+   - `Restart TwinCAT System in Run Mode`: нажать OK при
+     `runAfterActivation=true`, иначе Cancel;
+   - fatal dialog: безопасно закрыть и вернуть ошибку;
+   - неизвестный dialog: ничего не подтверждать и завершить operation
+     fail-closed.
+9. Не выполнять отдельный `StartRestartTwinCAT()`. При
+   `runAfterActivation=true` наблюдать переход, не считая сохранённое до
+   команды состояние `Run` доказательством нового запуска. При `false`
+   подтвердить состояние `Config`. Состояние `Exception` является немедленным
+   terminal failure, а не причиной ждать общий timeout.
+10. При `runAfterActivation=true` определить через XAE PLC projects с
+    `BootProjectAutostart=true` и проверить
+    online state каждого такого PLC. Успех требует стабильного `Run` System
+    Service и отсутствия `Exception` у всех обязательных Auto Boot PLC.
+11. Прочитать дельту XAE Error List и `GetLastErrorMessages()`. Runtime
+    exception/page fault и связанные ошибки портов являются fatal; warnings
+    возвращаются в diagnostics, но сами по себе не делают activation
+    неуспешной.
+12. Повторно проверить solution и AMS NetId и обновить XAE/runtime diagnostics.
+13. Записать activation resource и stage events в общую event stream.
+14. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
 
 Gateway не вызывает `SaveAll` перед activation: при agent-owned workspace
 источником истины являются внешние файлы, синхронизированные и собранные
-предшествующей build operation. Build и activation остаются разными
-последовательными операциями; activation никогда не запускается из build
-неявно.
+предшествующей build operation. Standalone Build и activation остаются
+разными явными операциями: Build никогда не запускает activation. При этом
+сама XAE-команда `TwinCAT.ActivateConfiguration` выполняет внутреннюю сборку
+как обязательную часть UI activation workflow; её diagnostics входят в
+activation result.
+
+Error List нельзя трактовать как простой счётчик. Gateway сравнивает снимки до
+и после activation и классифицирует новые строки. Например, TcUnit может
+публиковать успешные итоговые строки (`Tests`, `Successful tests`,
+`TESTS FINISHED RUNNING`) с XAE severity `Error`; такие строки сохраняются в
+диагностике, но не подменяют runtime fault. Наоборот, строка с
+`Exception Code`, `Page Fault`, PLC instance и ADS port должна попадать в
+compact activation error даже когда `ITcSysManager2.GetLastErrorMessages()`
+возвращает пустой список.
+
+Silent Mode для activation намеренно выключен: скрытые default choices
+оказались неэквивалентны безопасной пользовательской последовательности.
+Во время всей operation gateway отслеживает окна только точного XAE process
+id, сохраняет заголовок и нормализованный текст, а кнопки выбирает по
+стандартным dialog control IDs, а не по локализованным надписям.
+Gateway никогда не переключает Autostart checkbox автоматически.
 
 Если TcUnit executor или profile отсутствует, запрос с эффективным
-`waitForTcUnit=true` отклоняется до первой изменяющей команды. Gateway не
-выполняет частичную activation, если обещанная связанная test operation
-недоступна.
+`waitForTcUnit=true` отклоняется до первой изменяющей команды. Такая же
+ошибка возвращается для сочетания `waitForTcUnit=true` и
+`runAfterActivation=false`: тесты не могут выполняться в Config Mode.
 
 ### 11.3 Recovery to Config
 
@@ -638,6 +700,16 @@ Recovery выполняется на том же STA через типизиро
 read-only ADS System Service port 10000 до состояния `Config`, cancellation
 или общего activation deadline. Невыполнение postcondition возвращает
 `CONFIG_MODE_RECOVERY_FAILED`, а не ложный success.
+
+Recovery является самостоятельной serial operation и доступна через
+MCP/CLI как `twincat_recover_to_config`, а не только как внутренний шаг
+activation. Она использует тот же allow-listed profile, target verification,
+deadline и audit trail; произвольный ADS state control не добавляется.
+Recovery не требует recent successful build: в состоянии `Exception` XAE
+может успешно собрать отдельные PLC projects, но завершить solution build
+ошибкой на верхнем TwinCAT system project. Требование сначала обновить build
+создало бы неразрешимый цикл `recovery requires build` / `build requires
+recovery`.
 
 ### 11.4 Safety profile
 
@@ -824,7 +896,8 @@ Dirty XAE buffers всегда имеют приоритет как конфли
 закрытый document, выполняет typed reload и снова закрывает editor. После
 reload и после build выполняется повторный graph fingerprint scan: изменение
 файлов в любом из этих интервалов возвращает retryable error, кроме
-reorder/whitespace noise, доказанного снимками tracked XAE operation.
+reorder/whitespace `.tsproj` noise, доказанного снимками tracked XAE
+operation, и `.tmc` artifacts подключённых PLC projects.
 
 ## 14. `.tsproj` reorder-only noise
 
@@ -960,8 +1033,32 @@ noise-classifier. Любое изменение declaration, implementation, att
 Другие XSD из `C:\TwinCAT\3.1\Config\Modules` не копируются автоматически.
 Новый root schema и его полный dependency closure добавляются в bundle,
 только когда соответствующий формат входит в поддерживаемый gateway
-contract. Например, `TcModuleClass.xsd` не нужен MVP, пока generated TMC не
-становится входом операции.
+contract. `TcModuleClass.xsd` не нужен для PLC `.tmc`: этот файл является
+generated artifact и не используется как авторитетный source input.
+
+### 14.3 PLC `.tmc` generated artifacts
+
+PLC `.tmc` содержит описание типов и символов и автоматически
+регенерируется при компиляции PLC project. Beckhoff допускает хранение файла
+в source control, чтобы описание было доступно сразу после checkout, но
+прямо запрещает merge PLC `.tmc`.
+
+Gateway классифицирует как `expectedGeneratedArtifact` любой added, modified
+или deleted `.tmc`, который явно принадлежит выбранному PLC project graph:
+
+- путь указан через `TmcFilePath`/`TmcPath` в выбранном `.tsproj`; или
+- файл включён в соответствующий `.plcproj`.
+
+Такие изменения:
+
+- никогда не создают external-edit/synchronization conflict;
+- сохраняются на диске и в Git working tree;
+- не откатываются, не форматируются и не сравниваются семантически;
+- возвращаются в `expectedProjectNoise` с `doNotInspectFullFile=true`, если
+  наблюдались во время tracked XAE operation.
+
+Произвольный `.tmc`, не входящий в выбранный project graph, не получает это
+исключение.
 
 ## 15. TcUnit с read-only ADS completion
 
@@ -977,7 +1074,9 @@ PLC и не допускает нескольких writers для настро�
 1. Агент исправляет код.
 2. Gateway выполняет Build/Rebuild.
 3. Агент явно вызывает Activate.
-4. `StartRestartTwinCAT()` запускает boot project при включённом Auto Boot.
+4. Gateway подтверждает Run dialog внутри `TwinCAT.ActivateConfiguration`;
+   XAE запускает boot projects, для которых пользователь заранее включил
+   Auto Boot.
 5. Назначенная PLC task циклически выполняет отдельную test program, которая инстанцирует suites и вызывает `TcUnit.RUN()` или `TcUnit.RUN_IN_SEQUENCE()`.
 6. Gateway подключается к тому же target по ADS на настроенный PLC port.
 7. Gateway опрашивает `GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished` до `TRUE`, cancellation или deadline.
@@ -994,7 +1093,8 @@ Report transport — обычный read-only filesystem path, локальны�
 
 Перед activation gateway сохраняет baseline report и удаляет старый файл только при явно разрешённом локальном report path. Минимальная проверка текущего запуска:
 
-- связать test operation с конкретным successful activation/restart;
+- связать test operation с конкретным successful activation с
+  `runAfterActivation=true`;
 - использовать NetId только из выбранного activation profile/XAE target;
 - дождаться доступности двух фиксированных TcUnit symbols;
 - получить `AllTestSuitesFinished=TRUE` в пределах deadline;
@@ -1038,6 +1138,7 @@ twincat_status
 twincat_build
 twincat_sync
 twincat_activate
+twincat_recover_to_config
 twincat_get_diagnostics
 twincat_get_test_results
 ```
@@ -1173,6 +1274,9 @@ Metrics не обязательны для MVP, но structured events долж�
 - Beckhoff: ITcSysManager — https://infosys.beckhoff.com/content/1033/tc3_automationinterface/242753675.html
 - Beckhoff: ActivateConfiguration — https://infosys.beckhoff.com/content/1031/tcautomationinterface/12425796491.html
 - Beckhoff: StartRestartTwinCAT — https://infosys.beckhoff.com/content/1033/tc3_automationinterface/242762891.html
+- Beckhoff: Command Activate configuration — https://infosys.beckhoff.com/content/1033/tc3_plc_intro/2953964811.html
+- Beckhoff: Loading the program automatically — https://infosys.beckhoff.com/content/1033/tc3_plc_intro/8102877579.html
+- Beckhoff: TwinCAT project files and generated PLC TMC — https://infosys.beckhoff.com/content/1033/tc3_sourcecontrol/406303499.html
 - Beckhoff: Silent Mode — https://infosys.beckhoff.com/content/1033/tc3_automationinterface/2489025803.html
 - Beckhoff: AdsClient.TryReadState — https://infosys.beckhoff.com/content/1033/tc3_ads.net/9407838987.html
 - Beckhoff: ADS System Service port 10000 — https://infosys.beckhoff.com/content/1033/tcadscommon/12439473419.html

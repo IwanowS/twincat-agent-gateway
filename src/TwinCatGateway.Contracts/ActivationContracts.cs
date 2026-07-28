@@ -2,9 +2,19 @@ using System.Collections.Generic;
 
 namespace TwinCatGateway.Contracts;
 
+public enum AutostartBootProjectSelection
+{
+    Unknown,
+    Disabled,
+    Enabled,
+    PartiallyEnabled,
+}
+
 public sealed class ActivateParameters
 {
     public string Profile { get; set; } = string.Empty;
+
+    public bool RunAfterActivation { get; set; } = true;
 
     public bool? WaitForTcUnit { get; set; }
 
@@ -26,6 +36,10 @@ public sealed class ActivationResult
     public TargetIdentity Target { get; set; } = new();
 
     public bool RecoveryAttempted { get; set; }
+
+    public bool RunAfterActivation { get; set; }
+
+    public AutostartBootProjectSelection AutostartBootProjects { get; set; }
 
     public string? TestOperationId { get; set; }
 

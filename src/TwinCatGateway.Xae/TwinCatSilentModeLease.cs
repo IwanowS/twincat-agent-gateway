@@ -26,11 +26,45 @@ internal sealed class TwinCatSilentModeLease : IDisposable
         DTE dte,
         bool restoreOnDispose)
     {
-        return Enable(GetSettings(dte), restoreOnDispose);
+        return Set(
+            GetSettings(dte),
+            enabled: true,
+            restoreOnDispose);
     }
 
     internal static TwinCatSilentModeLease Enable(
         ITwinCatSilentModeSettings settings,
+        bool restoreOnDispose)
+    {
+        return Set(
+            settings,
+            enabled: true,
+            restoreOnDispose);
+    }
+
+    public static TwinCatSilentModeLease Disable(
+        DTE dte,
+        bool restoreOnDispose)
+    {
+        return Set(
+            GetSettings(dte),
+            enabled: false,
+            restoreOnDispose);
+    }
+
+    internal static TwinCatSilentModeLease Disable(
+        ITwinCatSilentModeSettings settings,
+        bool restoreOnDispose)
+    {
+        return Set(
+            settings,
+            enabled: false,
+            restoreOnDispose);
+    }
+
+    private static TwinCatSilentModeLease Set(
+        ITwinCatSilentModeSettings settings,
+        bool enabled,
         bool restoreOnDispose)
     {
         bool previousValue = false;
@@ -39,11 +73,11 @@ internal sealed class TwinCatSilentModeLease : IDisposable
         {
             previousValue = settings.SilentMode;
             previousValueRead = true;
-            settings.SilentMode = true;
-            if (!settings.SilentMode)
+            settings.SilentMode = enabled;
+            if (settings.SilentMode != enabled)
             {
                 throw new InvalidOperationException(
-                    "TwinCAT did not retain the enabled Silent Mode value.");
+                    "TwinCAT did not retain the requested Silent Mode value.");
             }
 
             return new TwinCatSilentModeLease(
@@ -70,7 +104,9 @@ internal sealed class TwinCatSilentModeLease : IDisposable
 
             settings.Dispose();
             throw CreateFailure(
-                "TwinCAT Silent Mode could not be enabled.",
+                enabled
+                    ? "TwinCAT Silent Mode could not be enabled."
+                    : "TwinCAT Silent Mode could not be disabled.",
                 failure);
         }
     }

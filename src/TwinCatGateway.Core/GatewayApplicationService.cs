@@ -297,6 +297,15 @@ public sealed class GatewayApplicationService
         bool waitForTcUnit = parameters.WaitForTcUnit
             ?? _activeProfile.AutoWaitForTcUnit;
         if (waitForTcUnit
+            && !parameters.RunAfterActivation)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "TcUnit waiting requires runAfterActivation=true.",
+                stage: "activation.validate");
+        }
+
+        if (waitForTcUnit
             && _activeProfile.TcUnit is null)
         {
             throw new GatewayOperationException(
@@ -900,6 +909,7 @@ public sealed class GatewayApplicationService
         return new ActivateParameters
         {
             Profile = source.Profile,
+            RunAfterActivation = source.RunAfterActivation,
             WaitForTcUnit = source.WaitForTcUnit,
             TimeoutSeconds = source.TimeoutSeconds,
         };

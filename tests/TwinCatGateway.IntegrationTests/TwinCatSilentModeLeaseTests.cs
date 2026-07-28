@@ -41,6 +41,38 @@ public sealed class TwinCatSilentModeLeaseTests
     }
 
     [Fact]
+    public void TemporarilyDisablesAndRestoresPreviousEnabledValue()
+    {
+        FakeSilentModeSettings settings = new(initialValue: true);
+
+        using (TwinCatSilentModeLease.Disable(
+            settings,
+            restoreOnDispose: true))
+        {
+            Assert.False(settings.SilentMode);
+        }
+
+        Assert.True(settings.Value);
+        Assert.True(settings.Disposed);
+    }
+
+    [Fact]
+    public void PreservesPreviousDisabledValueWhenDisabling()
+    {
+        FakeSilentModeSettings settings = new(initialValue: false);
+
+        using (TwinCatSilentModeLease.Disable(
+            settings,
+            restoreOnDispose: true))
+        {
+            Assert.False(settings.SilentMode);
+        }
+
+        Assert.False(settings.Value);
+        Assert.True(settings.Disposed);
+    }
+
+    [Fact]
     public void FailedEnableUsesStableErrorAndDisposesSettings()
     {
         FakeSilentModeSettings settings = new(initialValue: false)

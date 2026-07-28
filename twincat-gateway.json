@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "pipeName": "TwinCatAgentGatewayMcpExceptionRepro",
+  "defaultProfile": "fixture-activation",
+  "logDirectory": "tests/fixtures/TC3_SimpleProject/.local/mcp-exception-repro-logs",
+  "logRetentionDays": 14,
+  "ui": {
+    "mode": "window"
+  },
+  "agentProcessControl": {
+    "allowStart": true,
+    "allowShutdown": true
+  },
+  "profiles": [
+    {
+      "name": "fixture-activation",
+      "solution": "tests/fixtures/TC3_SimpleProject/TC3_SimpleProject.sln",
+      "allowXaeLaunch": true,
+      "xaeProgId": "TcXaeShell.DTE.15.0",
+      "externalChangePolicy": "reloadModified",
+      "allowAgentForceSynchronization": false,
+      "allowDirtyDocumentDiscard": false,
+      "allowActivation": true,
+      "expectedTarget": {
+        "name": "WIN-T077ADA",
+        "amsNetId": "192.168.3.31.1.1"
+      },
+      "configuration": "Debug",
+      "platform": "TwinCAT CE7 (ARMV7)",
+      "requireRecentSuccessfulBuild": true,
+      "recentBuildMaxAgeSeconds": 600,
+      "autoWaitForTcUnit": false
+    }
+  ]
+}

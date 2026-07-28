@@ -76,6 +76,8 @@ public static class ErrorCodes
     public const string ConfigModeRecoveryFailed =
         "CONFIG_MODE_RECOVERY_FAILED";
     public const string ActivateConfigurationFailed = "ACTIVATE_CONFIGURATION_FAILED";
+    public const string ActivationDialogDetected =
+        "ACTIVATION_DIALOG_DETECTED";
     public const string TwinCatRestartFailed = "TWINCAT_RESTART_FAILED";
     public const string TwinCatStateUnknown = "TWINCAT_STATE_UNKNOWN";
     public const string TestAdsUnavailable = "TEST_ADS_UNAVAILABLE";

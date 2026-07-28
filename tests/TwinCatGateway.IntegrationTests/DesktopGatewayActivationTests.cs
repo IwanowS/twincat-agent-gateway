@@ -67,7 +67,7 @@ public sealed class DesktopGatewayActivationTests
     }
 
     [RemoteActivationFact]
-    public async Task ActivationBuildsAndRestartsRemoteTargetThroughIpc()
+    public async Task ActivationBuildsAndRunsRemoteTargetThroughIpc()
     {
         using TemporaryDirectory temporary = new();
         string solutionPath = GetSolutionPath();
@@ -151,8 +151,6 @@ public sealed class DesktopGatewayActivationTests
                 GatewayEventTypes.ActivationStarted,
                 GatewayEventTypes.ActivationConfigurationStarted,
                 GatewayEventTypes.ActivationConfigurationActivated,
-                GatewayEventTypes.ActivationRestartStarted,
-                GatewayEventTypes.ActivationRestartRequested,
                 GatewayEventTypes.ActivationRuntimeReady,
                 GatewayEventTypes.ActivationSucceeded,
             },

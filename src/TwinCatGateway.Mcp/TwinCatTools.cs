@@ -293,7 +293,7 @@ public sealed class TwinCatTools
         OpenWorld = false)]
     [Description(
         "Explicitly activate the configured allow-listed remote "
-        + "TwinCAT target, restart it, verify postconditions, and "
+        + "TwinCAT target, optionally enter Run, verify postconditions, and "
         + "optionally link a TcUnit run.")]
     public async Task<string> ActivateAsync(
         [Description(
@@ -302,6 +302,10 @@ public sealed class TwinCatTools
         [Description(
             "auto, true, or false. Auto uses profile policy.")]
         string waitForTcUnit = "auto",
+        [Description(
+            "Confirm the XAE Run prompt after activation. "
+            + "False keeps the target in Config Mode.")]
+        bool runAfterActivation = true,
         [Description(
             "Gateway operation timeout in seconds.")]
         int timeoutSeconds =
@@ -315,6 +319,7 @@ public sealed class TwinCatTools
         ActivateParameters parameters = new()
         {
             Profile = RequireText(profile, nameof(profile)),
+            RunAfterActivation = runAfterActivation,
             WaitForTcUnit =
                 McpGatewayJson.ParseOptionalBoolean(
                     waitForTcUnit,

@@ -2,7 +2,8 @@
 
 TwinCAT Agent Gateway is a local Windows desktop application that gives coding
 agents a compact, typed interface to TwinCAT 3 XAE. The MVP supports XAE
-discovery/launch, Build/Rebuild/Clean, explicit remote activation and restart,
+discovery/launch, Build/Rebuild/Clean, explicit remote activation with an
+optional Run confirmation,
 cursor-based diagnostics, local raw logs, and linked TcUnit result collection.
 
 ## Requirements
@@ -36,9 +37,12 @@ Skills remain a separate choice:
 .\scripts\Install-Skills.ps1 -Scope Project -ProjectPath C:\repos\Machine
 ```
 
-Put `twincat-gateway.json` in the project root. Relative paths are resolved
-from that file, and both commands search upward without crossing a Git root.
-See the [canonical setup instructions](setup/SETUP_INSTRUCTIONS.txt) and the
+This repository includes a root `twincat-gateway.json` for MCP debugging with
+`tests/fixtures/TC3_SimpleProject/TC3_SimpleProject.sln` on the allow-listed
+remote TwinCAT target. Other projects should put their own
+`twincat-gateway.json` in the project root. Relative paths are resolved from
+that file, and both commands search upward without crossing a Git root. See the
+[canonical setup instructions](setup/SETUP_INSTRUCTIONS.txt) and the
 [installation guide](docs/INSTALLATION.md).
 
 `twincat-gateway` is the WPF application. Agents use
@@ -90,6 +94,13 @@ desktop gateway or its XAE session.
 - Schema-valid reorder-only `.tsproj` changes are accepted only when observed
   inside a tracked, successfully completed XAE operation. They are retained,
   not rewritten.
+- PLC `.tmc` files that belong to the selected project graph are generated
+  build artifacts. Their changes are always accepted and retained; the gateway
+  never asks an agent to merge or inspect the full file.
+- Activation uses the XAE `TwinCAT.ActivateConfiguration` command once. It
+  preserves the user-configured tri-state Auto Boot selection and answers the
+  final Run prompt through `runAfterActivation`; no second restart command is
+  issued.
 
 ## Development
 

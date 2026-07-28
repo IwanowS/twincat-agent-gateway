@@ -147,6 +147,12 @@ public sealed class MvpContractSerializationTests
                     MovedBlocks = 18,
                     DoNotInspectFullFile = true,
                 },
+                new ProjectChangeSummary
+                {
+                    File = "PLC/Machine.tmc",
+                    Classification = ProjectChangeClassification.ExpectedGeneratedArtifact,
+                    DoNotInspectFullFile = true,
+                },
             },
             Log = new ResourceReference
             {
@@ -165,9 +171,14 @@ public sealed class MvpContractSerializationTests
         Assert.Equal(BuildAction.Rebuild, result.Action);
         Assert.Equal(2, result.Counts.Errors);
         Assert.Equal("C0032", Assert.Single(result.Diagnostics).Code);
-        Assert.True(Assert.Single(result.ExpectedProjectNoise).DoNotInspectFullFile);
+        Assert.All(
+            result.ExpectedProjectNoise,
+            item => Assert.True(item.DoNotInspectFullFile));
         Assert.DoesNotContain("fullOutput", json);
         Assert.Contains("\"classification\":\"expectedReorderOnly\"", json);
+        Assert.Contains(
+            "\"classification\":\"expectedGeneratedArtifact\"",
+            json);
     }
 
     [Fact]
@@ -288,6 +299,9 @@ public sealed class MvpContractSerializationTests
                 AmsNetId = "192.168.3.31.1.1",
             },
             RecoveryAttempted = true,
+            RunAfterActivation = false,
+            AutostartBootProjects =
+                AutostartBootProjectSelection.PartiallyEnabled,
             Resources =
             {
                 new ResourceReference
@@ -311,6 +325,13 @@ public sealed class MvpContractSerializationTests
         Assert.NotNull(result);
         Assert.True(result.Ok);
         Assert.True(result.RecoveryAttempted);
+        Assert.False(result.RunAfterActivation);
+        Assert.Equal(
+            AutostartBootProjectSelection.PartiallyEnabled,
+            result.AutostartBootProjects);
+        Assert.Contains(
+            "\"autostartBootProjects\":\"partiallyEnabled\"",
+            json);
         Assert.Equal(
             ResourceKind.ActivationLog,
             Assert.Single(result.Resources).Kind);

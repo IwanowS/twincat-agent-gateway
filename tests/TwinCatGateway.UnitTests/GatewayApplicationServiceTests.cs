@@ -513,6 +513,7 @@ public sealed class GatewayApplicationServiceTests
                 new ActivateParameters
                 {
                     Profile = profile.Name,
+                    RunAfterActivation = false,
                 });
         StoredOperation completed = await WaitForStateAsync(
             fixture.Operations,
@@ -522,6 +523,7 @@ public sealed class GatewayApplicationServiceTests
         ActivationResult result =
             Assert.IsType<ActivationResult>(completed.Result);
         Assert.True(result.Ok);
+        Assert.False(result.RunAfterActivation);
         Assert.Equal(
             accepted.OperationId,
             fixture.Service.GetStatus()
@@ -686,6 +688,32 @@ public sealed class GatewayApplicationServiceTests
     }
 
     [Fact]
+    public void ActivationWithoutRunRejectsTcUnitWaiting()
+    {
+        ProjectProfile profile = CreateActivationProfile();
+        profile.AutoWaitForTcUnit = true;
+        profile.TcUnit = new TcUnitProfile
+        {
+            ReportPath = @"C:\Reports\tcunit.xml",
+        };
+        using ServiceFixture fixture = new(
+            activationExecutor: SuccessfulActivation,
+            activeProfile: profile);
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.StartActivation(
+                    new ActivateParameters
+                    {
+                        Profile = profile.Name,
+                        RunAfterActivation = false,
+                    }));
+
+        Assert.Equal(ErrorCodes.RequestInvalid, exception.Code);
+        Assert.Equal("activation.validate", exception.Stage);
+    }
+
+    [Fact]
     public void LinkedTcUnitFailsClosedWhenExecutorUnavailable()
     {
         DateTimeOffset now = new(
@@ -744,6 +772,8 @@ public sealed class GatewayApplicationServiceTests
                 Ok = true,
                 OperationId = operationId,
                 Profile = parameters.Profile,
+                RunAfterActivation =
+                    parameters.RunAfterActivation,
                 Solution =
                     @"C:\Projects\Machine\Machine.sln",
                 Target = new TargetIdentity

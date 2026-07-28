@@ -340,6 +340,11 @@ public sealed class GatewayConfigurationTests
         ProjectProfile second = catalog.GetRequired("BENCH");
 
         Assert.Equal("WIN-T077ADA", second.ExpectedTarget?.Name);
+        Assert.Equal(
+            ExternalChangePolicy.ReloadAll,
+            second.ExternalChangePolicy);
+        Assert.True(second.AllowAgentForceSynchronization);
+        Assert.True(second.AllowDirtyDocumentDiscard);
     }
 
     private static GatewayConfiguration CreateValidConfiguration()
@@ -355,6 +360,10 @@ public sealed class GatewayConfigurationTests
                     Name = "bench",
                     Solution = @"C:\Projects\Machine\Machine.sln",
                     AllowActivation = true,
+                    ExternalChangePolicy =
+                        ExternalChangePolicy.ReloadAll,
+                    AllowAgentForceSynchronization = true,
+                    AllowDirtyDocumentDiscard = true,
                     ExpectedTarget = new TargetIdentity
                     {
                         Name = "WIN-T077ADA",

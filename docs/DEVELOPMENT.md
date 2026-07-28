@@ -109,7 +109,7 @@ $env:TWINCAT_GATEWAY_REMOTE_AMS_NET_ID = '192.168.3.31.1.1'
 dotnet vstest `
   'tests\TwinCatGateway.IntegrationTests\bin\Debug\net48\TwinCatGateway.IntegrationTests.dll' `
   '/Platform:x86' `
-  '/TestCaseFilter:FullyQualifiedName~DesktopGatewayActivationTests.ActivationBuildsAndRestartsRemoteTargetThroughIpc'
+  '/TestCaseFilter:FullyQualifiedName~DesktopGatewayActivationTests.ActivationBuildsAndRunsRemoteTargetThroughIpc'
 ```
 
 This test builds the selected solution, activates its configuration, restarts
@@ -178,6 +178,11 @@ investigating generated `.tsproj` noise or PLC source changes. Its formal and
 logical counters do not identify the exact changed XML blocks, so they are not
 by themselves proof that a change is reorder-only.
 
+Do not use Project Compare for PLC `.tmc` gateway policy. Beckhoff documents
+PLC `.tmc` as automatically regenerated after compilation and not mergeable.
+The gateway therefore treats only `.tmc` files explicitly referenced by the
+selected PLC project graph as always-allowed generated artifacts.
+
 `TcProjectCompareCore.dll` exposes a richer `HeadlessDiff` API, including
 accept and save operations, but depends on internal TwinCAT PLC merge, WPF,
 TFS, type-system, and storage assemblies. Prefer the small public COM
@@ -192,16 +197,30 @@ verified in a real target XAE before relying on it.
 
 ## Local configuration
 
-The production discovery name is `twincat-gateway.json`. Put machine-specific
-profiles in the local project and ignore them when they contain host paths or
-AMS identities. Relative paths resolve from the configuration directory.
-`appsettings.Local.json` is never discovered automatically, but an existing
-file can still be selected explicitly with `--config`.
+The production discovery name is `twincat-gateway.json`. This repository
+intentionally commits a root debug configuration for
+`tests/fixtures/TC3_SimpleProject/TC3_SimpleProject.sln`. It enables MCP
+process control and activation only for the allow-listed remote AMS NetId
+`192.168.3.31.1.1`, requires a recent successful build, and keeps TcUnit
+disabled.
 
-Commit only safe examples without credentials, host-specific paths, or AMS
-identities. The fixture configuration is activation-disabled; real activation
-tests continue to require the allow-listed environment profile described
-above.
+For the lightweight exception fixture, use an activation request timeout of
+30 seconds. The timeout is an upper bound, not success evidence; increase it
+explicitly when diagnosing a slower project. The configuration schema does
+not define a profile-level default activation timeout.
+
+The fixture-local
+`tests/fixtures/TC3_SimpleProject/twincat-gateway.json` remains
+activation-disabled for safe test discovery. Real state-changing integration
+tests still require the allow-listed environment opt-in described above.
+
+Put other machine-specific profiles in their local project and ignore them
+when they contain host paths or AMS identities. Relative paths resolve from
+the configuration directory. `appsettings.Local.json` is never discovered
+automatically, but an existing file can still be selected explicitly with
+`--config`. Commit only safe examples without credentials unless the
+repository deliberately owns a specific allow-listed test-bench profile, as
+this checkout now does.
 
 ## Formatting and validation
 

@@ -249,6 +249,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 .Where(change =>
                     change.Classification
                         == ProjectChangeClassification
+                            .ExpectedGeneratedArtifact
+                    || change.Classification
+                        == ProjectChangeClassification
                             .ExpectedReorderOnly
                     || change.Classification
                         == ProjectChangeClassification
@@ -445,15 +448,20 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 stage: "activation.preflight");
         }
 
-        bool recoveryAttempted =
-            runtime.Status.Mode == RuntimeMode.Exception;
+        RuntimeMode initialRuntimeMode = runtime.Status.Mode;
+        bool recoveryAttempted = RequiresConfigModeBeforeActivation(
+            initialRuntimeMode,
+            parameters.RunAfterActivation);
         if (recoveryAttempted)
         {
             RecordActivationEvent(
                 operationId,
                 GatewayEventTypes.ActivationRecoveryStarted,
                 "activation.recoverToConfig",
-                "TwinCAT Config Mode recovery started.",
+                parameters.RunAfterActivation
+                    ? "TwinCAT Config Mode recovery started."
+                    : "TwinCAT Config Mode preparation started for "
+                        + "activation without Run.",
                 expectedAmsNetId);
             await _session.RestartTwinCatConfigModeAsync(
                 _profile.Solution,
@@ -468,13 +476,17 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 deadlineUtc,
                 ErrorCodes.ConfigModeRecoveryFailed,
                 "TwinCAT did not reach Config Mode after recovery.",
+                "activation.recoverToConfig",
                 cancellationToken).ConfigureAwait(false);
             PublishConnected(snapshot, runtime);
             RecordActivationEvent(
                 operationId,
                 GatewayEventTypes.ActivationRecoverySucceeded,
                 "activation.recoverToConfig",
-                "TwinCAT reached Config Mode.",
+                parameters.RunAfterActivation
+                    ? "TwinCAT reached Config Mode."
+                    : "TwinCAT reached Config Mode before activation "
+                        + "without Run.",
                 expectedAmsNetId);
         }
 
@@ -484,46 +496,34 @@ internal sealed class XaeSessionCoordinator : IDisposable
             "activation.activateConfiguration",
             "TwinCAT configuration activation started.",
             expectedAmsNetId);
-        await _session.ActivateConfigurationAsync(
-            _profile.Solution,
-            expectedAmsNetId,
-            GetRemaining(
-                deadlineUtc,
-                "activation.activateConfiguration"),
-            cancellationToken).ConfigureAwait(false);
-        RecordActivationEvent(
+        XaeActivationCommandResult command =
+            await _session.ActivateConfigurationAsync(
+                _profile.Solution,
+                expectedAmsNetId,
+                parameters.RunAfterActivation,
+                GetRemaining(
+                    deadlineUtc,
+                    "activation.activateConfiguration"),
+                cancellationToken).ConfigureAwait(false);
+        RecordActivationDialogEvents(
             operationId,
-            GatewayEventTypes.ActivationConfigurationActivated,
-            "activation.activateConfiguration",
-            "TwinCAT configuration was activated.",
+            command.Dialogs,
             expectedAmsNetId);
 
-        RecordActivationEvent(
-            operationId,
-            GatewayEventTypes.ActivationRestartStarted,
-            "activation.restart",
-            "TwinCAT restart started.",
-            expectedAmsNetId);
-        await _session.StartRestartTwinCatAsync(
-            _profile.Solution,
-            expectedAmsNetId,
-            GetRemaining(
-                deadlineUtc,
-                "activation.restart"),
-            cancellationToken).ConfigureAwait(false);
-        RecordActivationEvent(
-            operationId,
-            GatewayEventTypes.ActivationRestartRequested,
-            "activation.restart",
-            "TwinCAT restart was requested.",
-            expectedAmsNetId);
-
+        RuntimeMode expectedMode = parameters.RunAfterActivation
+            ? RuntimeMode.Run
+            : RuntimeMode.Config;
         runtime = await WaitForRuntimeModeAsync(
             expectedAmsNetId,
-            RuntimeMode.Run,
+            expectedMode,
             deadlineUtc,
-            ErrorCodes.TwinCatRestartFailed,
-            "TwinCAT did not reach Run after restart.",
+            parameters.RunAfterActivation
+                ? ErrorCodes.TwinCatRestartFailed
+                : ErrorCodes.ConfigModeRequired,
+            parameters.RunAfterActivation
+                ? "TwinCAT did not reach Run after activation."
+                : "TwinCAT did not remain in Config Mode after activation.",
+            "activation.verify",
             cancellationToken).ConfigureAwait(false);
         snapshot = await _session.VerifyAttachedAsync(
             _profile.Solution,
@@ -538,9 +538,17 @@ internal sealed class XaeSessionCoordinator : IDisposable
         PublishConnected(snapshot, runtime);
         RecordActivationEvent(
             operationId,
+            GatewayEventTypes.ActivationConfigurationActivated,
+            "activation.verify",
+            "TwinCAT configuration activation was verified.",
+            expectedAmsNetId);
+        RecordActivationEvent(
+            operationId,
             GatewayEventTypes.ActivationRuntimeReady,
             "activation.verify",
-            "TwinCAT runtime reached Run.",
+            parameters.RunAfterActivation
+                ? "TwinCAT runtime reached Run."
+                : "TwinCAT runtime remained in Config Mode.",
             expectedAmsNetId);
 
         long durationMs = Math.Max(
@@ -554,6 +562,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 operationId,
                 expectedAmsNetId,
                 recoveryAttempted,
+                initialRuntimeMode,
+                parameters.RunAfterActivation,
+                command.AutostartSelection,
+                command.Dialogs,
                 runtime,
                 durationMs));
         ActivationResult result = new()
@@ -569,6 +581,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 AmsNetId = expectedAmsNetId,
             },
             RecoveryAttempted = recoveryAttempted,
+            RunAfterActivation =
+                parameters.RunAfterActivation,
+            AutostartBootProjects =
+                command.AutostartSelection,
             Resources =
             {
                 log,
@@ -586,6 +602,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 ["amsNetId"] = expectedAmsNetId,
                 ["recoveryAttempted"] =
                     recoveryAttempted.ToString(),
+                ["runAfterActivation"] =
+                    parameters.RunAfterActivation.ToString(),
+                ["autostartBootProjects"] =
+                    command.AutostartSelection.ToString(),
                 ["durationMs"] = durationMs.ToString(
                     CultureInfo.InvariantCulture),
             });
@@ -1255,6 +1275,54 @@ internal sealed class XaeSessionCoordinator : IDisposable
             DateTimeOffset.UtcNow);
     }
 
+    private void RecordActivationDialogEvents(
+        string operationId,
+        IReadOnlyList<XaeActivationDialogObservation> dialogs,
+        string amsNetId)
+    {
+        foreach (XaeActivationDialogObservation dialog in dialogs)
+        {
+            Dictionary<string, string> properties = new()
+            {
+                ["profile"] = _profile.Name,
+                ["solution"] = _profile.Solution,
+                ["amsNetId"] = amsNetId,
+                ["dialogKind"] = dialog.Kind,
+                ["dialogTitle"] = dialog.Title,
+                ["action"] = dialog.Action,
+                ["actionRequested"] =
+                    dialog.ActionRequested.ToString(),
+            };
+            string? targetName = _profile.ExpectedTarget?.Name;
+            if (!string.IsNullOrWhiteSpace(targetName))
+            {
+                properties["targetName"] = targetName!;
+            }
+
+            _logger.Write(
+                StructuredLogLevel.Information,
+                GatewayEventTypes.ActivationDialogHandled,
+                $"XAE activation dialog '{dialog.Kind}' was handled "
+                    + $"with action '{dialog.Action}'.",
+                operationId,
+                properties);
+            _events.Record(
+                new GatewayEvent
+                {
+                    Type = GatewayEventTypes.ActivationDialogHandled,
+                    Severity = DiagnosticSeverity.Info,
+                    OperationId = operationId,
+                    OperationKind = OperationKind.Activate,
+                    Stage = "activation.dialog",
+                    Message =
+                        $"XAE activation dialog '{dialog.Kind}' was "
+                        + $"handled with action '{dialog.Action}'.",
+                    Properties = properties,
+                },
+                DateTimeOffset.UtcNow);
+        }
+    }
+
     private static async Task<AdsRuntimeStatusReadResult>
         WaitForRuntimeModeAsync(
             string amsNetId,
@@ -1262,6 +1330,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             DateTimeOffset deadlineUtc,
             string errorCode,
             string errorMessage,
+            string stage,
             CancellationToken cancellationToken)
     {
         while (DateTimeOffset.UtcNow < deadlineUtc)
@@ -1305,9 +1374,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             errorCode,
             errorMessage,
             retryable: true,
-            stage: expectedMode == RuntimeMode.Config
-                ? "activation.recoverToConfig"
-                : "activation.verify");
+            stage: stage);
     }
 
     private static void VerifyTarget(
@@ -1369,6 +1436,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
         string operationId,
         string amsNetId,
         bool recoveryAttempted,
+        RuntimeMode initialRuntimeMode,
+        bool runAfterActivation,
+        AutostartBootProjectSelection autostartSelection,
+        IReadOnlyList<XaeActivationDialogObservation> dialogs,
         AdsRuntimeStatusReadResult runtime,
         long durationMs)
     {
@@ -1385,12 +1456,38 @@ internal sealed class XaeSessionCoordinator : IDisposable
         builder.AppendLine(
             $"RecoveryAttempted: {recoveryAttempted}");
         builder.AppendLine(
+            $"InitialRuntimeMode: {initialRuntimeMode}");
+        builder.AppendLine(
+            $"RunAfterActivation: {runAfterActivation}");
+        builder.AppendLine(
+            $"AutostartBootProjects: {autostartSelection}");
+        foreach (XaeActivationDialogObservation dialog in dialogs)
+        {
+            builder.AppendLine(
+                $"Dialog: {dialog.Kind}; Action={dialog.Action}; "
+                    + $"Requested={dialog.ActionRequested}; "
+                    + $"Title={dialog.Title}");
+            if (!string.IsNullOrWhiteSpace(dialog.Text))
+            {
+                builder.AppendLine($"DialogText: {dialog.Text}");
+            }
+        }
+        builder.AppendLine(
             $"FinalRuntimeMode: {runtime.Status.Mode}");
         builder.AppendLine(
             $"FinalAdsState: "
                 + $"{runtime.Diagnostics.AdsState ?? "unknown"}");
         builder.AppendLine($"DurationMs: {durationMs}");
         return builder.ToString();
+    }
+
+    internal static bool RequiresConfigModeBeforeActivation(
+        RuntimeMode currentMode,
+        bool runAfterActivation)
+    {
+        return currentMode == RuntimeMode.Exception
+            || (!runAfterActivation
+                && currentMode != RuntimeMode.Config);
     }
 
     private static AdsRuntimeStatusReadResult ReadRuntimeStatus(

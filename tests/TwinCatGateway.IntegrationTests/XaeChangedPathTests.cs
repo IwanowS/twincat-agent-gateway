@@ -161,7 +161,30 @@ public sealed class XaeChangedPathTests
                 Array.Empty<ProjectFileChange>(),
                 ExternalChangePolicy.ReloadModified,
                 force: true,
-                baselineMissing: false));
+            baselineMissing: false));
+    }
+
+    [Theory]
+    [InlineData(ExternalChangePolicy.Error)]
+    [InlineData(ExternalChangePolicy.ReloadModified)]
+    [InlineData(ExternalChangePolicy.ReloadAll)]
+    public void TmcArtifactNeverRequiresSynchronization(
+        ExternalChangePolicy policy)
+    {
+        SynchronizationScope actual =
+            XaeSession.SelectSynchronizationScope(
+                new[]
+                {
+                    new ProjectFileChange(
+                        @"C:\fixture\Machine.tmc",
+                        ProjectFileChangeKind.Modified,
+                        ProjectGraphFileRole.GeneratedArtifact),
+                },
+                policy,
+                force: false,
+                baselineMissing: false);
+
+        Assert.Equal(SynchronizationScope.None, actual);
     }
 
     private sealed class TemporaryWorkspace : IDisposable

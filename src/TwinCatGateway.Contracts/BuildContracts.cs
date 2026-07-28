@@ -11,6 +11,7 @@ public enum BuildAction
 
 public enum ProjectChangeClassification
 {
+    ExpectedGeneratedArtifact,
     ExpectedReorderOnly,
     WhitespaceOnly,
     ContentChanged,

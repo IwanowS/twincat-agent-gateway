@@ -52,6 +52,7 @@ internal static class CliProgram
           --timeout SECONDS
 
         activate options:
+          --run-after-activation true|false
           --wait-for-tcunit auto|true|false
           --timeout SECONDS
 
@@ -321,12 +322,22 @@ internal static class CliProgram
         OptionBag options = OptionBag.Parse(
             args,
             "--profile",
+            "--run-after-activation",
             "--wait-for-tcunit",
             "--timeout");
         ActivateParameters parameters = new()
         {
             Profile = options.GetRequired("--profile"),
         };
+        if (options.GetOptional("--run-after-activation")
+            is string runAfterActivation)
+        {
+            parameters.RunAfterActivation =
+                ParseBoolean(
+                    runAfterActivation,
+                    "--run-after-activation");
+        }
+
         if (options.GetOptional("--wait-for-tcunit")
             is string waitForTcUnit)
         {
@@ -543,6 +554,20 @@ internal static class CliProgram
         throw new CliUsageException(
             $"Invalid value '{value}' for {option}; "
             + "expected auto, true, or false.");
+    }
+
+    private static bool ParseBoolean(
+        string value,
+        string option)
+    {
+        if (bool.TryParse(value, out bool result))
+        {
+            return result;
+        }
+
+        throw new CliUsageException(
+            $"Invalid value '{value}' for {option}; "
+            + "expected true or false.");
     }
 
     private static int ParsePositiveInt(
