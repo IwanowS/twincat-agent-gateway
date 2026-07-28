@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.17">
+  <POU Name="FB_GatewaySmokeTests" Id="{7794579c-f33b-4b1c-9bd6-31230f87ed8f}" SpecialFunc="None">
+    <Declaration><![CDATA[FUNCTION_BLOCK FB_GatewaySmokeTests EXTENDS TcUnit.FB_TestSuite
+]]></Declaration>
+    <Implementation>
+      <ST><![CDATA[GatewayCanExecuteTcUnit();
+]]></ST>
+    </Implementation>
+    <Method Name="GatewayCanExecuteTcUnit" Id="{fededc5f-649e-4cf5-a82c-0bb8d8ea29f8}">
+      <Declaration><![CDATA[METHOD PRIVATE GatewayCanExecuteTcUnit
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('GatewayCanExecuteTcUnit');
+AssertTrue(
+    Condition := TRUE,
+    Message := 'Gateway TcUnit smoke test should pass');
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+  </POU>
+</TcPlcObject>
