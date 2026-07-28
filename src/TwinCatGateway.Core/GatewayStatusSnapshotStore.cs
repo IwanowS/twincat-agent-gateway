@@ -81,6 +81,8 @@ public sealed class GatewayStatusSnapshotStore
                     source.Gateway.ConfigurationPath,
                 ActiveProfile =
                     source.Gateway.ActiveProfile,
+                SolutionPath =
+                    source.Gateway.SolutionPath,
                 LaunchSource =
                     source.Gateway.LaunchSource,
                 UiMode = source.Gateway.UiMode,

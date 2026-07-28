@@ -2,7 +2,6 @@ using System;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using TwinCatGateway.Client;
 using TwinCatGateway.Mcp;
 
 HostApplicationBuilder builder =
@@ -14,15 +13,23 @@ builder.Logging.AddConsole(
         options.LogToStandardErrorThreshold =
             LogLevel.Trace);
 
-string pipeName =
-    builder.Configuration["pipe"]
-    ?? Environment.GetEnvironmentVariable(
-        "TWINCAT_GATEWAY_PIPE")
-    ?? "TwinCatAgentGateway";
-
-builder.Services.AddSingleton<ITwinCatGatewayClient>(
-    _ => new TwinCatGatewayClient(pipeName));
-builder.Services.AddSingleton<GatewayOperationPoller>();
+GatewayMcpOptions gatewayOptions = new()
+{
+    ExplicitConfigurationPath =
+        builder.Configuration["config"],
+    PipeNameOverride =
+        builder.Configuration["pipe"]
+        ?? Environment.GetEnvironmentVariable(
+            "TWINCAT_GATEWAY_PIPE"),
+    CurrentDirectory = Environment.CurrentDirectory,
+    GatewayCommand =
+        builder.Configuration["gateway-command"]
+        ?? Environment.GetEnvironmentVariable(
+            "TWINCAT_GATEWAY_COMMAND")
+        ?? "twincat-gateway",
+};
+builder.Services.AddSingleton(gatewayOptions);
+builder.Services.AddSingleton<GatewayMcpRuntime>();
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()

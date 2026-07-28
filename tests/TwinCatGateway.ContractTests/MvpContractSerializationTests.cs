@@ -8,6 +8,54 @@ namespace TwinCatGateway.ContractTests;
 public sealed class MvpContractSerializationTests
 {
     [Fact]
+    public void GatewayStartResultRoundTrips()
+    {
+        GatewayResponse<GatewayStartResult> source = new()
+        {
+            Ok = true,
+            Result = new GatewayStartResult
+            {
+                Started = true,
+                AlreadyRunning = false,
+                ProcessId = 1234,
+                Status = new GatewayStatusResult
+                {
+                    Gateway = new GatewayStatus
+                    {
+                        Ready = true,
+                        ConfigurationPath =
+                            @"C:\Project\twincat-gateway.json",
+                        ActiveProfile = "fixture",
+                        SolutionPath =
+                            @"C:\Project\Machine.sln",
+                        LaunchSource =
+                            GatewayLaunchSource.Agent,
+                        UiMode = GatewayUiMode.Tray,
+                    },
+                },
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        GatewayResponse<GatewayStartResult> result =
+            JsonSerializer.Deserialize<
+                GatewayResponse<GatewayStartResult>>(
+                    json,
+                    ContractJson.SerializerOptions)
+            ?? throw new InvalidOperationException(
+                "Gateway start result did not deserialize.");
+
+        Assert.True(result.Ok);
+        Assert.True(result.Result?.Started);
+        Assert.Equal(1234, result.Result?.ProcessId);
+        Assert.Equal(
+            @"C:\Project\Machine.sln",
+            result.Result?.Status.Gateway.SolutionPath);
+    }
+
+    [Fact]
     public void BuildResultRoundTripsAsCompactContract()
     {
         BuildResult build = new()
@@ -79,6 +127,7 @@ public sealed class MvpContractSerializationTests
                 ConfigurationPath =
                     @"C:\Projects\Machine\twincat-gateway.json",
                 ActiveProfile = "bench",
+                SolutionPath = @"C:\TwinCAT\Machine.sln",
                 LaunchSource = GatewayLaunchSource.Agent,
                 UiMode = GatewayUiMode.Tray,
             },
@@ -111,6 +160,9 @@ public sealed class MvpContractSerializationTests
             @"C:\Projects\Machine\twincat-gateway.json",
             result.Gateway.ConfigurationPath);
         Assert.Equal("bench", result.Gateway.ActiveProfile);
+        Assert.Equal(
+            @"C:\TwinCAT\Machine.sln",
+            result.Gateway.SolutionPath);
         Assert.Equal(
             GatewayLaunchSource.Agent,
             result.Gateway.LaunchSource);

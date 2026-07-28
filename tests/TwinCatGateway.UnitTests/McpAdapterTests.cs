@@ -21,6 +21,7 @@ public sealed class McpAdapterTests
 {
     private static readonly string[] ExpectedToolNames =
     {
+        "gateway_start",
         "twincat_activate",
         "twincat_build",
         "twincat_get_diagnostics",
@@ -152,6 +153,35 @@ public sealed class McpAdapterTests
         Assert.False(
             properties.TryGetProperty(
                 "cancellationToken",
+                out _));
+    }
+
+    [Fact]
+    public void GatewayStartSchemaContainsOnlyTimeout()
+    {
+        FakeGatewayClient client = new();
+        TwinCatTools target = new(
+            client,
+            new GatewayOperationPoller(client));
+        MethodInfo method =
+            typeof(TwinCatTools).GetMethod(
+                nameof(TwinCatTools.StartGatewayAsync))
+            ?? throw new InvalidOperationException(
+                "Gateway start tool method was not found.");
+        McpServerTool tool =
+            McpServerTool.Create(method, target);
+        JsonElement properties =
+            tool.ProtocolTool.InputSchema.GetProperty(
+                "properties");
+
+        Assert.Single(properties.EnumerateObject());
+        Assert.True(
+            properties.TryGetProperty(
+                "timeoutSeconds",
+                out _));
+        Assert.False(
+            properties.TryGetProperty(
+                "server",
                 out _));
     }
 

@@ -188,6 +188,22 @@ public sealed class GatewayConfigurationTests
     }
 
     [Fact]
+    public void NullProfilesAreReportedAsInvalid()
+    {
+        GatewayConfiguration configuration =
+            CreateValidConfiguration();
+        configuration.Profiles = null!;
+
+        ConfigurationValidationResult validation =
+            GatewayConfigurationValidator.Validate(
+                configuration);
+
+        Assert.Contains(
+            validation.Issues,
+            issue => issue.Path == "profiles");
+    }
+
+    [Fact]
     public void ActivationProfileAllowsMissingDisplayName()
     {
         GatewayConfiguration configuration = CreateValidConfiguration();

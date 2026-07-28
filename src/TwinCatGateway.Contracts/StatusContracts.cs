@@ -24,6 +24,8 @@ public sealed class GatewayStatus
 
     public string? ActiveProfile { get; set; }
 
+    public string? SolutionPath { get; set; }
+
     public GatewayLaunchSource LaunchSource { get; set; } =
         GatewayLaunchSource.Manual;
 

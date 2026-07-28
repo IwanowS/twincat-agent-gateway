@@ -37,6 +37,7 @@ public sealed class GatewayDesktopHost : IDisposable
         StartupError = hostConfiguration.Error;
         Configuration = hostConfiguration.Configuration;
         ActiveProfile = hostConfiguration.ActiveProfile;
+        PipeName = hostConfiguration.PipeName;
         ConfigurationPath = string.IsNullOrWhiteSpace(
                 options.ConfigurationPath)
             ? null
@@ -115,7 +116,7 @@ public sealed class GatewayDesktopHost : IDisposable
                         : operationId,
                     exception));
         _server = new NamedPipeGatewayServer(
-            hostConfiguration.PipeName,
+            PipeName,
             protocol,
             (operationId, exception) =>
                 _logger.Record(operationId, exception));
@@ -129,6 +130,8 @@ public sealed class GatewayDesktopHost : IDisposable
             ConfigurationPath;
         initial.Gateway.ActiveProfile =
             ActiveProfile?.Name;
+        initial.Gateway.SolutionPath =
+            ActiveProfile?.Solution;
         initial.Gateway.LaunchSource = LaunchSource;
         initial.Gateway.UiMode = EffectiveUiMode;
         _status.Replace(initial);
@@ -141,6 +144,8 @@ public sealed class GatewayDesktopHost : IDisposable
     public ProjectProfile? ActiveProfile { get; }
 
     public string? ConfigurationPath { get; }
+
+    public string PipeName { get; }
 
     public GatewayLaunchSource LaunchSource { get; }
 
@@ -343,8 +348,7 @@ public sealed class GatewayDesktopHost : IDisposable
         if (string.IsNullOrWhiteSpace(options.ConfigurationPath))
         {
             return HostConfiguration.Faulted(
-                "No configuration file was found. Pass --config <path> or set "
-                + "TWINCAT_GATEWAY_CONFIG.");
+                "No configuration file was found. Pass --config <path>.");
         }
 
         try

@@ -125,6 +125,11 @@ public sealed class GatewayConfigurationLoader
         configuration.LogDirectory = ResolveOptionalPath(
             configuration.LogDirectory,
             configurationDirectory);
+        if (configuration.Profiles is null)
+        {
+            return;
+        }
+
         foreach (ProjectProfile? profile in configuration.Profiles)
         {
             if (profile is null)

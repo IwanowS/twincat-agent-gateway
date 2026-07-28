@@ -92,6 +92,12 @@ public static class GatewayConfigurationValidator
         GatewayConfiguration configuration,
         ICollection<ConfigurationIssue> issues)
     {
+        if (configuration.Profiles is null)
+        {
+            Add(issues, "profiles", "Profiles are required.");
+            return;
+        }
+
         if (configuration.Profiles.Count == 0)
         {
             Add(issues, "profiles", "At least one project profile is required.");

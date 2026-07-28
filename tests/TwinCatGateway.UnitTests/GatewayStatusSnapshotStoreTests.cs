@@ -18,6 +18,8 @@ public sealed class GatewayStatusSnapshotStoreTests
         initial.Gateway.ConfigurationPath =
             @"C:\Project\twincat-gateway.json";
         initial.Gateway.ActiveProfile = "fixture";
+        initial.Gateway.SolutionPath =
+            @"C:\TwinCAT\Fixture.sln";
         initial.Gateway.LaunchSource =
             GatewayLaunchSource.Agent;
         initial.Gateway.UiMode = GatewayUiMode.Tray;
@@ -54,6 +56,9 @@ public sealed class GatewayStatusSnapshotStoreTests
         Assert.Equal(
             "fixture",
             second.Gateway.ActiveProfile);
+        Assert.Equal(
+            @"C:\TwinCAT\Fixture.sln",
+            second.Gateway.SolutionPath);
         Assert.Equal(
             GatewayLaunchSource.Agent,
             second.Gateway.LaunchSource);

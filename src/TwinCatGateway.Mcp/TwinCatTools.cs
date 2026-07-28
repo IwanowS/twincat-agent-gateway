@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
 using TwinCatGateway.Client;
 using TwinCatGateway.Contracts;
@@ -14,17 +15,74 @@ public sealed class TwinCatTools
     private const int DefaultOperationTimeoutSeconds = 120;
     private const int ClientTimeoutGraceSeconds = 15;
 
-    private readonly ITwinCatGatewayClient _client;
-    private readonly GatewayOperationPoller _poller;
+    private readonly GatewayMcpRuntime? _runtime;
+    private readonly ITwinCatGatewayClient? _fixedClient;
+    private readonly GatewayOperationPoller? _fixedPoller;
+
+    [ActivatorUtilitiesConstructor]
+    public TwinCatTools(GatewayMcpRuntime runtime)
+    {
+        _runtime = runtime
+            ?? throw new ArgumentNullException(nameof(runtime));
+    }
 
     public TwinCatTools(
         ITwinCatGatewayClient client,
         GatewayOperationPoller poller)
     {
-        _client = client
+        _fixedClient = client
             ?? throw new ArgumentNullException(nameof(client));
-        _poller = poller
+        _fixedPoller = poller
             ?? throw new ArgumentNullException(nameof(poller));
+    }
+
+    [McpServerTool(
+        Name = "gateway_start",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = true,
+        OpenWorld = false)]
+    [Description(
+        "Explicitly start TwinCAT Agent Gateway for the "
+        + "discovered project configuration. Checks project "
+        + "process-control policy and never replaces another "
+        + "project's running gateway.")]
+    public async Task<string> StartGatewayAsync(
+        [Description(
+            "Maximum time to wait for gateway IPC readiness.")]
+        int timeoutSeconds = 30,
+        McpServer? server = null,
+        CancellationToken cancellationToken = default)
+    {
+        McpGatewayJson.RequirePositive(
+            timeoutSeconds,
+            nameof(timeoutSeconds));
+        if (_runtime is null)
+        {
+            return McpGatewayJson.Serialize(
+                new GatewayResponse<GatewayStartResult>
+                {
+                    Ok = false,
+                    Error = new GatewayError
+                    {
+                        Code =
+                            ErrorCodes.GatewayStartFailed,
+                        Message =
+                            "Gateway lifecycle runtime is "
+                            + "not configured.",
+                        Stage =
+                            "gateway.start.runtime",
+                    },
+                });
+        }
+
+        GatewayResponse<GatewayStartResult> response =
+            await _runtime.StartAsync(
+                    server,
+                    TimeSpan.FromSeconds(timeoutSeconds),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        return McpGatewayJson.Serialize(response);
     }
 
     [McpServerTool(
@@ -36,10 +94,17 @@ public sealed class TwinCatTools
         "Return compact gateway, XAE, solution, target, "
         + "runtime, and last-operation status.")]
     public async Task<string> GetStatusAsync(
-        CancellationToken cancellationToken)
+        McpServer? server = null,
+        CancellationToken cancellationToken = default)
     {
+        GatewayToolSession session =
+            await ResolveSessionAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
         GatewayResponse<GatewayStatusResult> response =
-            await _client.GetStatusAsync(cancellationToken)
+            await session.Client
+                .GetStatusAsync(cancellationToken)
                 .ConfigureAwait(false);
         return McpGatewayJson.Serialize(response);
     }
@@ -77,6 +142,7 @@ public sealed class TwinCatTools
             "Gateway operation timeout in seconds.")]
         int timeoutSeconds =
             DefaultOperationTimeoutSeconds,
+        McpServer? server = null,
         CancellationToken cancellationToken = default)
     {
         McpGatewayJson.RequirePositive(
@@ -100,8 +166,13 @@ public sealed class TwinCatTools
             TimeoutSeconds = timeoutSeconds,
         };
 
+        GatewayToolSession session =
+            await ResolveSessionAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
         GatewayResponse<OperationAccepted> accepted =
-            await _client.StartBuildAsync(
+            await session.Client.StartBuildAsync(
                     parameters,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -111,7 +182,7 @@ public sealed class TwinCatTools
         }
 
         GatewayResponse<OperationDetails<BuildResult>> completed =
-            await _poller.WaitAsync<BuildResult>(
+            await session.Poller.WaitAsync<BuildResult>(
                     accepted.Result.OperationId,
                     GetClientWaitTimeout(timeoutSeconds),
                     cancellationToken)
@@ -139,6 +210,7 @@ public sealed class TwinCatTools
             "Gateway operation timeout in seconds.")]
         int timeoutSeconds =
             DefaultOperationTimeoutSeconds,
+        McpServer? server = null,
         CancellationToken cancellationToken = default)
     {
         McpGatewayJson.RequirePositive(
@@ -154,8 +226,13 @@ public sealed class TwinCatTools
             TimeoutSeconds = timeoutSeconds,
         };
 
+        GatewayToolSession session =
+            await ResolveSessionAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
         GatewayResponse<OperationAccepted> accepted =
-            await _client.StartActivationAsync(
+            await session.Client.StartActivationAsync(
                     parameters,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -166,7 +243,7 @@ public sealed class TwinCatTools
 
         GatewayResponse<OperationDetails<ActivationResult>>
             completed =
-                await _poller.WaitAsync<ActivationResult>(
+                await session.Poller.WaitAsync<ActivationResult>(
                         accepted.Result.OperationId,
                         GetClientWaitTimeout(timeoutSeconds),
                         cancellationToken)
@@ -197,6 +274,7 @@ public sealed class TwinCatTools
         [Description(
             "all, info, warning, or error.")]
         string minimumSeverity = "all",
+        McpServer? server = null,
         CancellationToken cancellationToken = default)
     {
         McpGatewayJson.RequireNonNegative(
@@ -216,8 +294,13 @@ public sealed class TwinCatTools
                     minimumSeverity),
         };
 
+        GatewayToolSession session =
+            await ResolveSessionAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
         GatewayResponse<GatewayDiagnosticsResult> response =
-            await _client.GetDiagnosticsAsync(
+            await session.Client.GetDiagnosticsAsync(
                     parameters,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -236,16 +319,48 @@ public sealed class TwinCatTools
         [Description(
             "Linked TcUnit test operation ID.")]
         string operationId,
+        McpServer? server = null,
         CancellationToken cancellationToken = default)
     {
+        GatewayToolSession session =
+            await ResolveSessionAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
         GatewayResponse<OperationDetails<TestResult>> response =
-            await _client.GetTestResultsAsync(
+            await session.Client.GetTestResultsAsync(
                     RequireText(
                         operationId,
                         nameof(operationId)),
                     cancellationToken)
                 .ConfigureAwait(false);
         return McpGatewayJson.Serialize(response);
+    }
+
+    private async Task<GatewayToolSession>
+        ResolveSessionAsync(
+            McpServer? server,
+            CancellationToken cancellationToken)
+    {
+        if (_fixedClient is not null
+            && _fixedPoller is not null)
+        {
+            return new GatewayToolSession(
+                _fixedClient,
+                _fixedPoller);
+        }
+
+        ITwinCatGatewayClient client =
+            await (_runtime
+                    ?? throw new InvalidOperationException(
+                        "Gateway MCP runtime is unavailable."))
+                .ResolveClientAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        return new GatewayToolSession(
+            client,
+            new GatewayOperationPoller(client));
     }
 
     private static TimeSpan GetClientWaitTimeout(
@@ -272,5 +387,20 @@ public sealed class TwinCatTools
         return string.IsNullOrWhiteSpace(value)
             ? null
             : value;
+    }
+
+    private sealed class GatewayToolSession
+    {
+        public GatewayToolSession(
+            ITwinCatGatewayClient client,
+            GatewayOperationPoller poller)
+        {
+            Client = client;
+            Poller = poller;
+        }
+
+        public ITwinCatGatewayClient Client { get; }
+
+        public GatewayOperationPoller Poller { get; }
     }
 }

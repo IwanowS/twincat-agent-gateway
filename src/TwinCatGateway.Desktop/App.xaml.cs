@@ -1,8 +1,10 @@
 using System;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Windows;
 using TwinCatGateway.Contracts;
+using TwinCatGateway.Core;
 
 namespace TwinCatGateway.Desktop;
 
@@ -16,6 +18,7 @@ public partial class App : Application
     private GatewayDesktopHost? _host;
     private MainWindow? _window;
     private TrayIconController? _trayIcon;
+    private GatewayInstanceRegistration? _instanceRegistration;
     private bool _exitRequested;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -47,6 +50,30 @@ public partial class App : Application
 
             _host = new GatewayDesktopHost(options);
             _host.Start();
+            using (Process process = Process.GetCurrentProcess())
+            {
+                _instanceRegistration =
+                    new GatewayInstanceRegistry().Register(
+                        new GatewayInstanceRecord
+                        {
+                            ProcessId = process.Id,
+                            ProcessStartedAtUtc =
+                                process.StartTime.ToUniversalTime(),
+                            PipeName = _host.PipeName,
+                            ConfigurationPath =
+                                _host.ConfigurationPath
+                                ?? options.ConfigurationPath
+                                ?? throw new InvalidOperationException(
+                                    "Gateway configuration path is unavailable."),
+                            ActiveProfile =
+                                _host.ActiveProfile?.Name,
+                            SolutionPath =
+                                _host.ActiveProfile?.Solution,
+                            LaunchSource = _host.LaunchSource,
+                            UiMode = _host.EffectiveUiMode,
+                        });
+            }
+
             _window = new MainWindow(_host);
             _window.Closing += MainWindow_Closing;
             _window.Closed += MainWindow_Closed;
@@ -83,6 +110,7 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         _trayIcon?.Dispose();
+        _instanceRegistration?.Dispose();
         _host?.Dispose();
         _singleInstance?.Dispose();
         base.OnExit(e);

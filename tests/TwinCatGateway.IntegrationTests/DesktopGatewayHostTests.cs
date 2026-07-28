@@ -250,6 +250,10 @@ public sealed class DesktopGatewayHostTests
             "fixture",
             response.Result?.Gateway.ActiveProfile);
         Assert.Equal(
+            solutionPath,
+            response.Result?.Gateway.SolutionPath,
+            ignoreCase: true);
+        Assert.Equal(
             GatewayLaunchSource.Agent,
             response.Result?.Gateway.LaunchSource);
         Assert.Equal(
