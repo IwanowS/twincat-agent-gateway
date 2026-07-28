@@ -25,7 +25,15 @@ try {
         $arguments.SkipBuild = $true
     }
 
-    & $installer @arguments | Out-Null
+    $firstOutput = & $installer @arguments | Out-String
+    foreach ($expectedExample in @(
+            'twincat-gateway',
+            'twincat-gateway-mcp')) {
+        if (-not $firstOutput.Contains($expectedExample)) {
+            throw "Install output did not include the '$expectedExample' command example."
+        }
+    }
+
     $versionsAfterFirst = @(
         Get-ChildItem `
             -LiteralPath (Join-Path $testRoot 'versions') `

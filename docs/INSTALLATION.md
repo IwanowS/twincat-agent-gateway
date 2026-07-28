@@ -8,6 +8,18 @@ Run from the repository in a normal, non-elevated PowerShell:
 .\scripts\Install-Gateway.ps1
 ```
 
+All public installation scripts support standard PowerShell help, explicit
+full help, and verbose progress:
+
+```powershell
+Get-Help .\scripts\Install-Gateway.ps1
+Get-Help .\scripts\Install-Gateway.ps1 -Full
+Get-Help .\scripts\Install-Gateway.ps1 -Examples
+.\scripts\Install-Gateway.ps1 -?
+.\scripts\Install-Gateway.ps1 -Help
+.\scripts\Install-Gateway.ps1 -Verbose
+```
+
 The installer builds the solution in `Release`, creates a deterministic
 version directory below `%LOCALAPPDATA%\TwinCatAgentGateway\versions`, and
 updates quiet command shims in `%LOCALAPPDATA%\TwinCatAgentGateway\bin`.

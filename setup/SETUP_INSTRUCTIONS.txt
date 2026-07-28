@@ -9,6 +9,11 @@ TwinCAT Agent Gateway setup
    .\scripts\Install-Skills.ps1 -Scope User
    .\scripts\Install-Skills.ps1 -Scope Project -ProjectPath <project>
 
+Installed command examples:
+  twincat-gateway
+  twincat-gateway --config C:\path\to\twincat-gateway.json
+  codex mcp add twincat-gateway-mcp -- twincat-gateway-mcp
+
 The agent uses MCP only. If a normal TwinCAT tool returns
 GATEWAY_NOT_RUNNING, call gateway_start once, wait for Ready, and retry the
 original operation once. Do not close the gateway at the end of an agent task.
