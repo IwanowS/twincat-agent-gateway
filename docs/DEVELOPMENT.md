@@ -92,6 +92,29 @@ TwinCAT on the remote target, waits for read-only ADS state `Run`, and checks
 that XAE has no modal dialogs. Never set the opt-in variable for a local target
 or an unapproved bench.
 
+The linked TcUnit acceptance additionally launches its own XAE instance,
+waits for the single PLC configured by the profile, reads a fresh report
+through the operator-provided read-only path, queries `getTestResults`, and
+verifies that a subsequent Build ignores pre-existing TcUnit runtime entries
+in XAE Error List:
+
+```powershell
+$env:TWINCAT_GATEWAY_XAE_SOLUTION = 'C:\absolute\path\to\project.sln'
+$env:TWINCAT_GATEWAY_ALLOW_XAE_LAUNCH = '1'
+$env:TWINCAT_GATEWAY_ALLOW_REMOTE_ACTIVATION = '1'
+$env:TWINCAT_GATEWAY_REMOTE_AMS_NET_ID = '192.168.3.31.1.1'
+$env:TWINCAT_GATEWAY_TCUNIT_REPORT_PATH = '\\runtime-host\share\tcunit_xunit_testresults.xml'
+dotnet vstest `
+  'tests\TwinCatGateway.IntegrationTests\bin\Debug\net48\TwinCatGateway.IntegrationTests.dll' `
+  '/Platform:x86' `
+  '/TestCaseFilter:FullyQualifiedName~DesktopGatewayActivationTests.ActivationRunsLinkedTcUnitThroughIpc'
+```
+
+The MVP profile designates exactly one TcUnit PLC through `tcUnit.adsPort`.
+Other PLCs may exist in the solution, but must not publish to the configured
+report file. Multi-PLC aggregation is tracked as post-MVP scope in
+[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+
 State-changing scenarios run only on a dedicated remote test bench with:
 
 - an explicitly allow-listed solution and target;
