@@ -535,46 +535,52 @@ Operation window не различает запись XAE и параллель�
 ### 10.2 Последовательность
 
 1. Валидация profile, solution и action.
-2. Построение и fingerprint scan точного выбранного project graph.
-3. Сравнение с confirmed baseline; `changedPaths` проверяется как hint внутри
+2. Read-only ADS preflight текущего System Service state. Если доступный
+   runtime находится в `Exception`, не вызывать XAE Build/Clean/Rebuild и
+   вернуть `BUILD_BLOCKED_BY_RUNTIME_EXCEPTION` с требованием отдельной
+   операции `recover-to-config`. Gateway не восстанавливает runtime
+   автоматически и не уничтожает полезные для отладки артефакты предыдущей
+   компиляции.
+3. Построение и fingerprint scan точного выбранного project graph.
+4. Сравнение с confirmed baseline; `changedPaths` проверяется как hint внутри
    graph, но не заменяет scan.
-4. Применение `externalChangePolicy` и выбор минимального reload scope:
+5. Применение `externalChangePolicy` и выбор минимального reload scope:
    source documents либо selected TwinCAT project.
-5. Проверка dirty XAE documents. По умолчанию возвращается
+6. Проверка dirty XAE documents. По умолчанию возвращается
    `DIRTY_XAE_DOCUMENT`; gateway никогда не сохраняет buffer. Discard возможен
    только при `discardDirtyDocuments=true` и
    `allowDirtyDocumentDiscard=true`.
-6. XSD preflight изменённых PLC objects.
-7. Типизированный reload изменённых PLC source документов через VSSDK Running Document
+7. XSD preflight изменённых PLC objects.
+8. Типизированный reload изменённых PLC source документов через VSSDK Running Document
    Table и `IVsPersistDocData.ReloadDocData(...)`.
-8. Для structural/metadata changes — проверка candidate graph, reload
+9. Для structural/metadata changes — проверка candidate graph, reload
    выбранного TwinCAT project через `IVsSolution4.ReloadProject`, повторное
    получение COM objects и проверка точной identity.
-9. Повторный fingerprint scan после reload; concurrent change завершает
+10. Повторный fingerprint scan после reload; concurrent change завершает
    retryable error. Baseline обновляется только после postconditions.
-10. SHA-256 snapshot всех выбранных solution `.tsproj`, включая проекты вне
+11. SHA-256 snapshot всех выбранных solution `.tsproj`, включая проекты вне
    solution root, и временное подавление их file-change
    notifications через `SVsFileChangeEx` / `IVsFileChangeEx.IgnoreFile(...)`.
-11. Выбор и проверка configuration/platform.
-12. Snapshot текущих Output позиций.
-13. Подписка/проверка `BuildEvents`.
-14. Запуск Build/Clean через `SolutionBuild`; Rebuild через
+12. Выбор и проверка configuration/platform.
+13. Snapshot текущих Output позиций.
+14. Подписка/проверка `BuildEvents`.
+15. Запуск Build/Clean через `SolutionBuild`; Rebuild через
     `DTE.ExecuteCommand("Build.RebuildSolution")`.
-15. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
-16. Проверка `.tsproj` hashes, синхронизация XAE file notifications и
+16. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
+17. Проверка `.tsproj` hashes, синхронизация XAE file notifications и
     обязательное восстановление notifications.
-17. После terminal build event ожидание 500 ms тишины по
+18. После terminal build event ожидание 500 ms тишины по
     `FileSystemWatcher`. Новое событие перезапускает quiet period.
-18. Повторный авторитетный project-graph fingerprint scan. Watcher служит
+19. Повторный авторитетный project-graph fingerprint scan. Watcher служит
     только сигналом стабилизации; coalesced/missed events и buffer overflow не
     заменяют scan. При overflow результат scan принимается, а overflow
     записывается как warning.
-19. Все graph changes в operation window принимаются как XAE-owned,
+20. Все graph changes в operation window принимаются как XAE-owned,
     логируются и становятся confirmed baseline.
-20. Чтение `LastBuildInfo`, Error List snapshot и Output delta.
-21. Нормализация diagnostics и классификация `.tsproj` changes для отчёта.
-22. Сохранение полного Output delta как отдельного build-log resource.
-23. Возврат compact result.
+21. Чтение `LastBuildInfo`, Error List snapshot и Output delta.
+22. Нормализация diagnostics и классификация `.tsproj` changes для отчёта.
+23. Сохранение полного Output delta как отдельного build-log resource.
+24. Возврат compact result.
 
 Если terminal outcome не установлен из-за timeout, cancellation, COM loss или
 неизвестного modal dialog, gateway не подтверждает новый baseline и переводит
@@ -656,7 +662,9 @@ Gateway намеренно использует DTE command identity
 5. Снять baseline XAE Error List и прочитать runtime state через read-only ADS
    `TryReadState` на System Service port 10000; `unknown` завершает операцию до
    изменения состояния.
-6. Если runtime находится в `Exception`, выполнить `RecoverToConfig` и дождаться подтверждённого ADS-состояния `Config`.
+6. Если runtime находится в `Exception`, завершить activation с
+   `RUNTIME_RECOVERY_REQUIRED`. Не выполнять скрытый `RecoverToConfig`:
+   пользователь или агент должен отдельно запросить явный переход в Config.
 7. Повторно проверить solution и AMS NetId и один раз вызвать
    `DTE2.ExecuteCommand("TwinCAT.ActivateConfiguration")` при выключенном
    Silent Mode.
@@ -739,7 +747,8 @@ Automation Interface предоставляет `StartRestartTwinCAT()` для R
 не локализованную DTE command identity
 `TwinCAT.RestartTwinCATConfigMode`.
 
-Recovery выполняется на том же STA через типизированный `DTE2.ExecuteCommand`,
+Recovery выполняется только по отдельному явному запросу на том же STA через
+типизированный `DTE2.ExecuteCommand`,
 в Silent Mode и только после повторной проверки solution/AMS NetId.
 Возврат команды сам по себе не считается успехом: gateway опрашивает
 read-only ADS System Service port 10000 до состояния `Config`, cancellation
@@ -750,6 +759,7 @@ Recovery является самостоятельной serial operation и д�
 MCP/CLI как `twincat_recover_to_config`, а не только как внутренний шаг
 activation. Она использует тот же allow-listed profile, target verification,
 deadline и audit trail; произвольный ADS state control не добавляется.
+Build и activation никогда не запускают recovery автоматически.
 Recovery не требует recent successful build: в состоянии `Exception` XAE
 может успешно собрать отдельные PLC projects, но завершить solution build
 ошибкой на верхнем TwinCAT system project. Требование сначала обновить build
@@ -887,6 +897,15 @@ PLC `Exception` не является частью activation transaction. Ак�
 немедленно или в любой более поздний момент. Такой переход записывается как
 отдельное runtime event и сам по себе не меняет уже завершённый результат
 activation operation.
+
+Когда System Service уже находится в `Exception`, это штатное
+диагностическое состояние, а не повод для автоматического восстановления.
+TwinCAT 3.1.4024.17 сохраняет предыдущие PLC build artifacts и может завершить
+solution-level Build/Rebuild ошибкой, пока runtime остаётся в Exception.
+Gateway поэтому останавливает новую Build/Clean/Rebuild до XAE-команды,
+возвращает `BUILD_BLOCKED_BY_RUNTIME_EXCEPTION` и требует отдельный
+`recover-to-config`. После подтверждённого `Config` та же сборка может быть
+повторена явно.
 
 Continuous monitor использует единый background polling:
 

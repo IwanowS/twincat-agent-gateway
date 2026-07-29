@@ -191,16 +191,30 @@ internal sealed class XaeSessionCoordinator : IDisposable
             _profile.Platform,
             "platform");
 
-        TimeSpan timeout = TimeSpan.FromSeconds(
+        DateTimeOffset deadlineUtc = DateTimeOffset.UtcNow.AddSeconds(
             parameters.TimeoutSeconds ?? 120);
         XaeBuildExecutionResult execution;
         using XaeDialogOperationScope dialogScope =
             _session.BeginDialogOperation(
                 operationId,
                 parameters.Action.ToString().ToLowerInvariant(),
-                "xae.build");
+                "build.runtimePreflight");
         try
         {
+            XaeSessionSnapshot snapshot =
+                await dialogScope.ObserveAsync(
+                    _session.VerifyAttachedAsync(
+                        _profile.Solution,
+                        GetRemaining(
+                            deadlineUtc,
+                            "build.runtimePreflight"),
+                        cancellationToken)).ConfigureAwait(false);
+            AdsRuntimeStatusReadResult runtime =
+                ReadRuntimeStatus(snapshot);
+            RuntimeOperationPolicy.EnsureBuildAllowed(
+                runtime.Status.Mode);
+
+            dialogScope.SetStage("xae.build");
             execution = await dialogScope.ObserveAsync(
                 _session.ExecuteBuildAsync(
                     parameters.Action,
@@ -210,7 +224,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     _profile.ExternalChangePolicy,
                     parameters.DiscardDirtyDocuments,
                     _profile.AllowDirtyDocumentDiscard,
-                    timeout,
+                    GetRemaining(deadlineUtc, "xae.build"),
                     cancellationToken))
                 .ConfigureAwait(false);
         }
@@ -465,42 +479,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         RuntimeMode initialRuntimeMode = runtime.Status.Mode;
-        bool recoveryAttempted =
-            initialRuntimeMode == RuntimeMode.Exception;
-        if (recoveryAttempted)
-        {
-            dialogScope.SetStage("activation.recoverToConfig");
-            RecordActivationEvent(
-                operationId,
-                GatewayEventTypes.ActivationRecoveryStarted,
-                "activation.recoverToConfig",
-                "TwinCAT Config Mode recovery started.",
-                expectedAmsNetId);
-            await dialogScope.ObserveAsync(
-                _session.RestartTwinCatConfigModeAsync(
-                _profile.Solution,
-                expectedAmsNetId,
-                GetRemaining(
-                    deadlineUtc,
-                    "activation.recoverToConfig"),
-                cancellationToken)).ConfigureAwait(false);
-            runtime = await dialogScope.ObserveAsync(
-                WaitForRuntimeModeAsync(
-                expectedAmsNetId,
-                RuntimeMode.Config,
-                deadlineUtc,
-                ErrorCodes.ConfigModeRecoveryFailed,
-                "TwinCAT did not reach Config Mode after recovery.",
-                "activation.recoverToConfig",
-                cancellationToken)).ConfigureAwait(false);
-            PublishConnected(snapshot);
-            RecordActivationEvent(
-                operationId,
-                GatewayEventTypes.ActivationRecoverySucceeded,
-                "activation.recoverToConfig",
-                "TwinCAT reached Config Mode.",
-                expectedAmsNetId);
-        }
+        RuntimeOperationPolicy.EnsureActivationAllowed(
+            initialRuntimeMode);
+        const bool recoveryAttempted = false;
 
         dialogScope.SetStage("activation.activateConfiguration");
         RecordActivationEvent(
@@ -1496,7 +1477,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         {
             throw new GatewayOperationException(
                 ErrorCodes.OperationTimeout,
-                "The activation operation exceeded its deadline.",
+                "The gateway operation exceeded its deadline.",
                 retryable: true,
                 stage: stage);
         }

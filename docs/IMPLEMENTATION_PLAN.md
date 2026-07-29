@@ -322,6 +322,9 @@ docs/
   `TcPlcObject.xsd`;
 - typed reload изменённых PLC sources перед операцией;
 - Build/Rebuild/Clean implementation;
+- read-only runtime preflight: наблюдаемый `Exception` завершает операцию с
+  `BUILD_BLOCKED_BY_RUNTIME_EXCEPTION` до XAE build command; автоматический
+  переход в Config запрещён;
 - `Build.RebuildSolution` через `DTE.ExecuteCommand` с ожиданием
   `vsBuildActionRebuildAll`;
 - configuration/platform resolution;
@@ -347,6 +350,8 @@ docs/
 - compile error содержит файл/строку/сообщение;
 - warning-only build остаётся success;
 - infrastructure failure не выдаётся за compile error;
+- runtime `Exception` возвращается как штатный diagnostic blocker и требует
+  отдельного `recover-to-config`;
 - Clean отличается от Build/Rebuild;
 - внешнее изменение открытого или закрытого `.TcPOU` попадает в следующую
   сборку без modal dialog;
@@ -471,7 +476,8 @@ docs/
 - audit fields AMS NetId/optional target name/solution/profile;
 - preconditions;
 - optional recent-build policy;
-- recovery-to-Config adapter;
+- recovery-to-Config adapter только как отдельная явная operation; build и
+  activation не восстанавливают runtime автоматически;
 - отдельные CLI/MCP `recover-to-config` / `twincat_recover_to_config`;
 - DTE command `TwinCAT.ActivateConfiguration`;
 - `runAfterActivation` с default `true`;

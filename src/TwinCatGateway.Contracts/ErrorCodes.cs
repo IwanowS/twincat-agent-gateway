@@ -43,6 +43,8 @@ public static class ErrorCodes
     public const string ComCallRejected = "COM_CALL_REJECTED";
     public const string ComCallTimeout = "COM_CALL_TIMEOUT";
     public const string BuildFailed = "BUILD_FAILED";
+    public const string BuildBlockedByRuntimeException =
+        "BUILD_BLOCKED_BY_RUNTIME_EXCEPTION";
     public const string BuildConfigurationNotFound =
         "BUILD_CONFIGURATION_NOT_FOUND";
     public const string BuildConfigurationAmbiguous =
@@ -75,6 +77,8 @@ public static class ErrorCodes
     public const string ConfigModeRequired = "CONFIG_MODE_REQUIRED";
     public const string ConfigModeRecoveryFailed =
         "CONFIG_MODE_RECOVERY_FAILED";
+    public const string RuntimeRecoveryRequired =
+        "RUNTIME_RECOVERY_REQUIRED";
     public const string ActivateConfigurationFailed = "ACTIVATE_CONFIGURATION_FAILED";
     public const string ActivationDialogDetected =
         "ACTIVATION_DIALOG_DETECTED";
