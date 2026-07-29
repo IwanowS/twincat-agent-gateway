@@ -47,6 +47,108 @@ public sealed class XaeDialogSupervisorTests
     }
 
     [Fact]
+    public async Task IdleFatalDialogFailsAndIsDismissedByNextOperation()
+    {
+        if (!Environment.UserInteractive)
+        {
+            return;
+        }
+
+        const string dialogScript =
+            "Start-Sleep -Milliseconds 500; "
+            + "Add-Type -AssemblyName System.Windows.Forms; "
+            + "$owner = New-Object System.Windows.Forms.Form; "
+            + "$owner.ShowInTaskbar = $false; "
+            + "$owner.Opacity = 0; "
+            + "$owner.Show(); "
+            + "[System.Windows.Forms.MessageBox]::Show("
+            + "$owner, "
+            + "'Sending ams command >> Init44\\IO: Set State TComObj "
+            + "PREOP OP: Check for autostart >> AdsError: 1804 "
+            + "(0x70c, Sorry, no error description...) << failed!', "
+            + "'Target system reports a fatal error', "
+            + "[System.Windows.Forms.MessageBoxButtons]::OK, "
+            + "[System.Windows.Forms.MessageBoxIcon]::Error) "
+            + "| Out-Null; "
+            + "$owner.Close()";
+        using Process dialogProcess =
+            StartDialogProcess(dialogScript);
+        using XaeDialogSupervisor supervisor = new(
+            dialogProcess.Id);
+        List<XaeDialogObservation> observed = new();
+        supervisor.DialogObserved += (_, eventArgs) =>
+        {
+            lock (observed)
+            {
+                observed.Add(eventArgs.Observation);
+            }
+        };
+
+        await WaitUntilAsync(
+            () =>
+            {
+                lock (observed)
+                {
+                    return observed.Exists(
+                        observation =>
+                            observation.Kind == "FatalError"
+                            && observation.Action == "observe");
+                }
+            });
+
+        using XaeDialogOperationScope operation =
+            supervisor.BeginOperation(
+                "late-fatal-dialog-test",
+                "build",
+                "build.runtimePreflight",
+                runAfterActivation: null);
+        GatewayOperationException exception;
+        try
+        {
+            exception =
+                await Assert.ThrowsAsync<GatewayOperationException>(
+                    () => operation.ObserveAsync(
+                        Task.Delay(TimeSpan.FromSeconds(15))));
+        }
+        finally
+        {
+            if (!dialogProcess.HasExited)
+            {
+                dialogProcess.Kill();
+            }
+        }
+
+        Assert.True(
+            string.Equals(
+                ErrorCodes.XaeDialogReportedFailure,
+                exception.Code,
+                StringComparison.Ordinal),
+            exception.Message);
+        Assert.Contains(
+            "AdsError: 1804",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.True(
+            dialogProcess.WaitForExit(
+                milliseconds: (int)TimeSpan.FromSeconds(5)
+                    .TotalMilliseconds));
+        XaeDialogObservation dismissed;
+        lock (observed)
+        {
+            dismissed = Assert.Single(
+                observed,
+                observation =>
+                    observation.Action
+                        == "dismiss-fatal-error");
+        }
+
+        Assert.Equal("FatalError", dismissed.Kind);
+        Assert.True(dismissed.ActionRequested);
+        Assert.True(dismissed.ActionCompleted);
+        Assert.True(dismissed.Failure);
+    }
+
+    [Fact]
     public async Task UnknownModalDialogCancelsAndFailsActiveOperation()
     {
         if (!Environment.UserInteractive)
@@ -214,5 +316,23 @@ public sealed class XaeDialogSupervisorTests
             })
             ?? throw new InvalidOperationException(
                 "Could not start the modal dialog test process.");
+    }
+
+    private static async Task WaitUntilAsync(
+        Func<bool> condition)
+    {
+        DateTimeOffset deadline =
+            DateTimeOffset.UtcNow.AddSeconds(5);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (condition())
+            {
+                return;
+            }
+
+            await Task.Delay(25);
+        }
+
+        Assert.True(condition(), "Condition was not reached.");
     }
 }

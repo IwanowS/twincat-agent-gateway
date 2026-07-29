@@ -4,11 +4,11 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Automation;
-using System.Runtime.InteropServices;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 
@@ -531,6 +531,8 @@ internal sealed class XaeDialogSupervisor : IDisposable
         }
 
         ThrowIfDisposed();
+        XaeDialogOperationContext context;
+        int? blockingDialogHandle;
         lock (_sync)
         {
             if (_startupFailure is not null)
@@ -545,31 +547,32 @@ internal sealed class XaeDialogSupervisor : IDisposable
             }
 
             ClearClosedBlockingDialog();
-            if (_blockingDialogHandle.HasValue)
-            {
-                throw new GatewayOperationException(
-                    ErrorCodes.XaeBlockedByModalDialog,
-                    "XAE is blocked by an unresolved modal dialog. "
-                        + "Close the dialog before starting another "
-                        + "operation.",
-                    retryable: true,
-                    stage: "xae.dialog.preflight");
-            }
-
             if (_activeOperation is not null)
             {
                 throw new InvalidOperationException(
                     "An XAE dialog operation is already active.");
             }
 
-            XaeDialogOperationContext context = new(
+            context = new XaeDialogOperationContext(
                 operationId,
                 operationName,
                 stage,
                 runAfterActivation);
             _activeOperation = context;
-            return new XaeDialogOperationScope(this, context);
+            blockingDialogHandle = _blockingDialogHandle;
+            if (blockingDialogHandle.HasValue)
+            {
+                _seen.Clear();
+            }
         }
+
+        if (blockingDialogHandle.HasValue
+            && !_opened.IsAddingCompleted)
+        {
+            _opened.Add(blockingDialogHandle.Value);
+        }
+
+        return new XaeDialogOperationScope(this, context);
     }
 
     public void Dispose()
@@ -914,9 +917,8 @@ internal sealed class XaeDialogSupervisor : IDisposable
     {
         if (kind == XaeKnownDialogKind.FatalError)
         {
-            RequestAction(
+            RequestFatalDismissal(
                 dialog,
-                ButtonAutomationIdOk,
                 "dismiss-fatal-error",
                 observation);
             observation.Failure = true;
@@ -1148,6 +1150,44 @@ internal sealed class XaeDialogSupervisor : IDisposable
         {
             observation.Action = "none";
         }
+    }
+
+    private static void RequestFatalDismissal(
+        CapturedDialog dialog,
+        string action,
+        XaeDialogObservation observation)
+    {
+        if (dialog.Buttons.ContainsKey(ButtonAutomationIdOk))
+        {
+            RequestAction(
+                dialog,
+                ButtonAutomationIdOk,
+                action,
+                observation);
+            return;
+        }
+
+        string[] numericButtonIds = dialog.Buttons.Keys
+            .Where(automationId =>
+                int.TryParse(
+                    automationId,
+                    NumberStyles.None,
+                    CultureInfo.InvariantCulture,
+                    out _))
+            .ToArray();
+        if (numericButtonIds.Length == 1)
+        {
+            RequestAction(
+                dialog,
+                numericButtonIds[0],
+                action,
+                observation);
+            return;
+        }
+
+        observation.Action = action;
+        observation.ActionRequested = false;
+        observation.ActionCompleted = false;
     }
 
     private static void RequestAction(

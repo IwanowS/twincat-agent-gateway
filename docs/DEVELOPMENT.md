@@ -174,6 +174,13 @@ confirmed on other runtimes. A recovery timeout or failure must stop the
 pipeline without an automatic retry. After the operator restores Config Mode,
 confirm it through the gateway before continuing.
 
+The bench may also show `Target system reports a fatal error` after the fault
+operation has already completed, including `AdsError: 1804 (0x70c)` while
+setting a TCom object from PREOP to OP. Treat it as fatal evidence, not as a
+restart prompt. The next explicit gateway operation may dismiss only its `OK`
+button, must return `XAE_DIALOG_REPORTED_FAILURE`, and must not retry the
+runtime transition automatically.
+
 The linked TcUnit acceptance additionally launches its own XAE instance,
 waits for the single PLC configured by the profile, reads a fresh report
 through the operator-provided read-only path, queries `getTestResults`, and
