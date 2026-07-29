@@ -29,6 +29,10 @@ MVP завершён, когда Codex может выполнить следу�
 symbols выбранного target; произвольные reads/writes, caller-selected ports,
 RPC и runtime control через ADS не входят в MVP.
 
+Repository CLI не используется в agent workflow, остаётся непроверенным
+development-клиентом и не входит в acceptance MVP. Его исправление,
+CLI-specific проверки и проверка parity с MCP отложены до post-MVP.
+
 ## 3. Milestone 0 — технические spikes
 
 ### Цель
@@ -260,7 +264,7 @@ docs/
 ### Acceptance
 
 - gateway запускается один раз;
-- CLI test client получает status;
+- IPC test client получает status;
 - concurrent modifying requests сериализуются;
 - operation можно отменить до начала выполнения;
 - crash одной операции не завершает gateway без необходимости;
@@ -372,7 +376,7 @@ docs/
 - добавленный/удалённый source file до operation window завершается явной
   unsupported error при default `reloadModified`;
 - full output не попадает в compact response;
-- CLI exit code соответствует результату;
+- MCP result соответствует фактическому результату операции;
 - existing PowerShell helper больше не требуется для нормального workflow.
 
 ## 8. Milestone 5 — `.tsproj` noise classifier
@@ -739,7 +743,7 @@ twincat-doc://configuration
 - gateway другого проекта не закрывается и не переключается;
 - обычная compile-fix итерация не требует чтения raw Build Output;
 - MCP process можно перезапустить без потери XAE session;
-- CLI и MCP возвращают одинаковую domain semantics;
+- MCP возвращает gateway domain semantics; CLI parity отложен до post-MVP;
 - repository build остаётся warning-free с закреплённым stable MCP SDK;
 - ни один MCP handler не вызывает COM/XAE напрямую;
 - skills не содержат абсолютные пользовательские пути.
@@ -884,7 +888,7 @@ twincat-doc://configuration
 | TcUnit ADS completion | Да (fake ADS) | Да | Да |
 | ADS target/profile mismatch | Да | Да | Да |
 | TcUnit fresh report | Да | Да | Да |
-| MCP/CLI parity | Нет | Да | Smoke |
+| Repository CLI verification/parity | После MVP | После MVP | После MVP |
 | Config discovery/Git root | Да | Нет | Smoke |
 | MCP explicit gateway start | Да | Да | Smoke |
 | Per-user install/PATH idempotency | Script smoke | Нет | Smoke |
@@ -912,7 +916,7 @@ twincat-doc://configuration
 
 1. Gateway build сравнивается с текущим helper на test solutions.
 2. Результаты и diagnostics сопоставляются.
-3. После достижения parity новый skill переключается на CLI/MCP.
+3. После достижения parity новый skill переключается на MCP.
 4. Старый helper остаётся отдельным fallback до стабилизации activation/test workflow.
 5. Затем PowerShell helper может быть архивирован в отдельной ветке/репозитории, но не включается в новый продукт.
 

@@ -2,9 +2,10 @@
 
 ## 0.1.22
 
-- Added the read-only `twincat_get_xae_messages` MCP tool and
-  `xae-messages` CLI command for bounded error/warning snapshots from the
-  exact attached XAE solution.
+- Added the read-only `twincat_get_xae_messages` MCP tool for bounded
+  error/warning snapshots from the exact attached XAE solution.
+- A matching `xae-messages` development CLI command exists, but repository CLI
+  behavior and MCP parity are unverified for MVP and deferred until post-MVP.
 - Runtime `Exception Code` and `Page Fault` messages from the XAE Error List
   are retained in runtime-alert and operation-error `details`.
 - Reused the shared STA Error List reader for build diagnostics and added

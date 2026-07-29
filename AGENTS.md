@@ -64,6 +64,10 @@ Project versions are generated automatically by Nerdbank.GitVersioning from
 or generated artifacts for normal commits; change the base version in
 `version.json` only when explicitly requested.
 
+The repository CLI is an unverified development client and is outside MVP
+acceptance. Do not fix it or run CLI-specific checks during MVP work; defer
+those checks until post-MVP unless the user explicitly requests them.
+
 Real-XAE integration tests require the explicitly configured remote TwinCAT 3.1.4024.17 test bench described in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md). Do not report them as passed when that environment was unavailable. Report them as not run and state why.
 
 Real-XAE DTE/ROT checks must execute under the same interactive Windows account, session, and integrity level as XAE. A sandbox account may see the XAE PID while seeing an empty ROT and no main-window handle. Treat that combination as an execution-context mismatch; rerun the read-only discovery outside the agent sandbox before asking the user to reopen or terminate XAE. Use the x86 VSTest command documented in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
@@ -194,7 +198,7 @@ Before completing a task:
 
 - verify that the change stays within the requested scope;
 - build and test the affected area;
-- keep CLI/MCP behavior consistent with the gateway contract;
+- keep MCP behavior consistent with the gateway contract;
 - keep default output compact;
 - note any behavior not verified on TwinCAT 3.1.4024.17;
 - update only the documentation made inaccurate by the change.
