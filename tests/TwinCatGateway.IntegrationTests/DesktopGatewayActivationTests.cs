@@ -161,7 +161,7 @@ public sealed class DesktopGatewayActivationTests
             XaeWindowProbe.FindModalDialogs(processId));
     }
 
-    [RemoteActivationFact]
+    [RemoteActivationLaunchFact]
     public async Task ActivationBuildsWithoutRunTransitionThroughIpc()
     {
         using TemporaryDirectory temporary = new();
@@ -175,13 +175,14 @@ public sealed class DesktopGatewayActivationTests
             pipeName,
             solutionPath,
             expectedAmsNetId,
-            requireRecentBuild: true);
+            requireRecentBuild: true,
+            allowXaeLaunch: true);
         using GatewayDesktopHost host = StartHost(
             configurationPath);
         await WaitForStateAsync(
             host,
             GatewayState.Ready,
-            TimeSpan.FromSeconds(15));
+            TimeSpan.FromSeconds(60));
         NamedPipeGatewayClient client = new(pipeName);
         await SynchronizeDiskAsync(host, client);
 
@@ -325,13 +326,14 @@ public sealed class DesktopGatewayActivationTests
             pipeName,
             solutionPath,
             expectedAmsNetId,
-            requireRecentBuild: true);
+            requireRecentBuild: true,
+            allowXaeLaunch: true);
         using GatewayDesktopHost host = StartHost(
             configurationPath);
         await WaitForStateAsync(
             host,
             GatewayState.Ready,
-            TimeSpan.FromSeconds(15));
+            TimeSpan.FromSeconds(60));
         NamedPipeGatewayClient client = new(pipeName);
         await SynchronizeDiskAsync(host, client);
         await WaitForRuntimeModeAsync(

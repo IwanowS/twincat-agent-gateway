@@ -125,11 +125,13 @@ TwinCAT on the remote target, waits for read-only ADS state `Run`, and checks
 that XAE has no modal dialogs. Never set the opt-in variable for a local target
 or an unapproved bench.
 
-The companion no-Run acceptance uses the same explicit remote opt-in, rebuilds
-the solution, activates the configuration, and cancels only XAE's final
-`Restart TwinCAT System in Run Mode` dialog:
+The companion no-Run acceptance uses the same explicit remote opt-in plus
+`TWINCAT_GATEWAY_ALLOW_XAE_LAUNCH=1`. It launches and owns an exact-solution
+XAE instance, rebuilds the solution, activates the configuration, and cancels
+only XAE's final `Restart TwinCAT System in Run Mode` dialog:
 
 ```powershell
+$env:TWINCAT_GATEWAY_ALLOW_XAE_LAUNCH = '1'
 dotnet vstest `
   'tests\TwinCatGateway.IntegrationTests\bin\Debug\net48\TwinCatGateway.IntegrationTests.dll' `
   '/Platform:x86' `
@@ -142,8 +144,9 @@ runtime mode. The test does not require or imply that the newly transferred
 configuration is active.
 
 The runtime fault/recovery acceptance is a separate destructive opt-in for the
-repository fixture and the dedicated remote bench. In addition to the remote
-activation variables above, it requires:
+repository fixture and the dedicated remote bench. It also launches and owns
+its exact-solution XAE instance. In addition to the no-Run variables above, it
+requires:
 
 ```powershell
 $env:TWINCAT_GATEWAY_ALLOW_REMOTE_FAULT_INJECTION = '1'

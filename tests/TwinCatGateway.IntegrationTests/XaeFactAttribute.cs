@@ -64,6 +64,37 @@ public sealed class RemoteActivationFactAttribute : FactAttribute
 }
 
 [AttributeUsage(AttributeTargets.Method)]
+public sealed class RemoteActivationLaunchFactAttribute : FactAttribute
+{
+    public RemoteActivationLaunchFactAttribute()
+    {
+        if (string.IsNullOrWhiteSpace(
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_XAE_SOLUTION"))
+            || !string.Equals(
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_ALLOW_REMOTE_ACTIVATION"),
+                "1",
+                StringComparison.Ordinal)
+            || !string.Equals(
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_ALLOW_XAE_LAUNCH"),
+                "1",
+                StringComparison.Ordinal)
+            || string.IsNullOrWhiteSpace(
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_REMOTE_AMS_NET_ID")))
+        {
+            Skip =
+                "Requires TWINCAT_GATEWAY_XAE_SOLUTION, "
+                + "TWINCAT_GATEWAY_ALLOW_REMOTE_ACTIVATION=1, "
+                + "TWINCAT_GATEWAY_ALLOW_XAE_LAUNCH=1, and "
+                + "TWINCAT_GATEWAY_REMOTE_AMS_NET_ID.";
+        }
+    }
+}
+
+[AttributeUsage(AttributeTargets.Method)]
 public sealed class RemoteTcUnitFactAttribute : FactAttribute
 {
     public RemoteTcUnitFactAttribute()
@@ -116,6 +147,11 @@ public sealed class RemoteFaultRecoveryFactAttribute : FactAttribute
                     "TWINCAT_GATEWAY_ALLOW_REMOTE_FAULT_INJECTION"),
                 "1",
                 StringComparison.Ordinal)
+            || !string.Equals(
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_ALLOW_XAE_LAUNCH"),
+                "1",
+                StringComparison.Ordinal)
             || string.IsNullOrWhiteSpace(
                 Environment.GetEnvironmentVariable(
                     "TWINCAT_GATEWAY_REMOTE_AMS_NET_ID")))
@@ -124,7 +160,8 @@ public sealed class RemoteFaultRecoveryFactAttribute : FactAttribute
                 "Requires TWINCAT_GATEWAY_XAE_SOLUTION, "
                 + "TWINCAT_GATEWAY_ALLOW_REMOTE_ACTIVATION=1, "
                 + "TWINCAT_GATEWAY_ALLOW_REMOTE_FAULT_INJECTION=1, "
-                + "and TWINCAT_GATEWAY_REMOTE_AMS_NET_ID.";
+                + "TWINCAT_GATEWAY_ALLOW_XAE_LAUNCH=1, and "
+                + "TWINCAT_GATEWAY_REMOTE_AMS_NET_ID.";
         }
     }
 }
