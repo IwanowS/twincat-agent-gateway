@@ -35,6 +35,3 @@ solution references that TwinCAT project outside its own directory.
 Trust `ExpectedReorderOnly` for `.tsproj` noise. Do not load the full project
 file, rewrite it, or revert it merely to restore ordering. Inspect only the
 focused diff resource when the classifier reports another result.
-
-Use the CLI only when MCP is unavailable; preserve the same compact-first
-workflow with `twincat-gateway build`.
