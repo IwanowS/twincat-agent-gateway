@@ -379,6 +379,19 @@ OperationStore хранит structured metadata. LogStore хранит боль�
 - TcUnit xUnit XML;
 - summary `.tsproj` noise.
 
+Desktop-компоненты пишут через `Microsoft.Extensions.Logging.ILogger<T>`.
+Serilog является файловым provider и сериализует события
+`CompactJsonFormatter`, сохраняя `EventName`, `OperationId`, `SourceContext`,
+structured properties, Unicode и полный exception/stack trace.
+
+Каждый запуск создаёт отдельный набор
+`gateway-<UTC timestamp>-p<PID>.ndjson`. File sink использует
+`RollingInterval.Infinite`, rollover по настраиваемому размеру и ограничение
+числа сегментов одного запуска. `FileLifecycleHooks.OnFileOpened` обновляет
+потокобезопасный tracker при первом открытии и каждом rollover. Age retention
+обрабатывает только строгие session-имена, legacy `gateway.ndjson` и operation
+directories; активный session-набор и посторонние файлы сохраняются.
+
 ## 8. IPC
 
 ### 8.1 Transport
@@ -1302,12 +1315,16 @@ twincat-test://<operation-id>/xunit
 twincat-diff://<operation-id>/project-noise
 twincat-doc://setup
 twincat-doc://configuration
+twincat-log://gateway/current
 ```
 
 Tool result должен быть достаточен для обычного исправления compile error.
 Operation resource читается только для нестандартной диагностики. Статические
 `twincat-doc` resources доступны без запущенного desktop gateway и возвращают
 установленные канонические setup instructions и configuration reference.
+Фиксированный `twincat-log://gateway/current` проходит через существующий
+bounded `getResource` IPC и возвращает только абсолютный путь из live
+file-lifecycle tracker. Он не читает файл и не вычисляет путь из config.
 
 ## 17. Пользовательский интерфейс
 
@@ -1397,7 +1414,9 @@ IPC_VERSION_MISMATCH
 - MCP не получает произвольный COM invoke tool.
 - Нет инструмента «выполнить DTE command по строке».
 - Нет произвольного чтения файлов через MCP resource.
-- Log resource принимает только существующий operationId и известный artifact kind.
+- Operation log resource принимает только существующий operationId и известный
+  artifact kind. Единственный gateway-wide log resource имеет фиксированный
+  URI `twincat-log://gateway/current` и возвращает только tracked path.
 
 ## 20. Наблюдаемость
 

@@ -41,6 +41,9 @@ disabled until the operator deliberately changes `allowActivation`.
   "pipeName": "TwinCatAgentGateway",
   "defaultProfile": "default",
   "logDirectory": ".gateway-logs",
+  "logMinimumLevel": "information",
+  "logFileSizeLimitBytes": 1048576,
+  "logRetainedFileCountLimit": 10,
   "logRetentionDays": 14,
   "ui": {
     "mode": "auto"
@@ -113,11 +116,25 @@ when passed through `--config`.
 | `pipeName` | string, `"TwinCatAgentGateway"` | Per-user Named Pipe name. Must be non-empty and contain no `/` or `\`. |
 | `defaultProfile` | string or `null`, `null` | Profile selected when the caller does not specify one. Optional for exactly one profile and required for multiple profiles. Matching is case-insensitive. |
 | `logDirectory` | path or `null`, `null` | Structured and raw log root. Relative paths are resolved from the config directory. When omitted, `%LOCALAPPDATA%\TwinCatAgentGateway\Logs` is used. |
-| `logRetentionDays` | integer, `14` | Retention window. Valid range: 1 through 3650 days. |
+| `logMinimumLevel` | `verbose`, `debug`, `information`, `warning`, `error`, or `fatal`; `information` | Minimum severity written to the gateway session log. |
+| `logFileSizeLimitBytes` | integer, `1048576` | Maximum size of one gateway session segment before rollover. Valid range: 65536 through 1073741824 bytes. |
+| `logRetainedFileCountLimit` | integer, `10` | Maximum number of segments retained for one application run. Valid range: 1 through 1000. |
+| `logRetentionDays` | integer, `14` | Age retention for previous gateway session files and operation-log directories. Valid range: 1 through 3650 days. |
 | `ui` | object, default object | UI configuration. Must not be `null`. |
 | `agentProcessControl` | object, default object | Agent lifecycle policy. Must not be `null`. |
 | `runtimeMonitoring` | object, default object | Read-only ADS runtime polling. Must not be `null`. |
 | `profiles` | array, empty by default | One or more unique project profiles are required for a configured gateway. |
+
+Each application run writes compact NDJSON to a separate file named like
+`gateway-20260729T063245123Z-p1234.ndjson`. Size rollover adds `_001`, `_002`,
+and later segments. Age retention recognizes only these strict session names
+and the legacy `gateway.ndjson`; it does not remove the active session or
+unrelated files.
+
+Agents must read MCP resource `twincat-log://gateway/current` to discover the
+exact segment currently open after any rollover. They must not infer that path
+from `logDirectory` or scan all session files. The default directory above is
+reference information for manual operator diagnostics.
 
 ## `ui` options
 

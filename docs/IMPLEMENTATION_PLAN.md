@@ -253,8 +253,9 @@ docs/
 - immutable status snapshot;
 - operation queue;
 - operation store;
-- structured logging;
-- raw log store и retention;
+- standard `ILogger<T>`/Serilog compact structured logging;
+- per-session size/count rotation, current-path tracking, raw log store и age
+  retention;
 - Named Pipe server с ACL;
 - health/status IPC;
 - basic UI recent operations;
@@ -693,6 +694,7 @@ twincat-test://<operation-id>/xunit
 twincat-diff://<operation-id>/project-noise
 twincat-doc://setup
 twincat-doc://configuration
+twincat-log://gateway/current
 ```
 
 ### Skills
@@ -765,12 +767,11 @@ twincat-doc://configuration
   context от MCP process;
 - first-run environment diagnostics;
 - config migration;
-- log retention settings;
-- заменить текущий `StructuredFileLogger` на стандартный logging pipeline
-  (`Microsoft.Extensions.Logging` или Serilog после отдельного выбора),
-  добавить настраиваемый minimum level
-  `Verbose/Debug/Information/Warning/Error/Fatal` и сохранить operationId,
-  structured properties и существующий local retention contract;
+- standard `Microsoft.Extensions.Logging.ILogger<T>` pipeline с Serilog compact
+  file provider, настраиваемым minimum level и сохранением operationId,
+  structured properties, Unicode и полного exception context;
+- отдельные session log sets, size/count rollover, age retention и фиксированный
+  MCP resource для discovery текущего реально открытого segment;
 - проверить shutdown lifecycle: отличить реально оставшийся desktop process
   от устаревшей tray icon, подтвердить удаление icon при штатном и аварийном
   завершении;

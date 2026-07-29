@@ -2,6 +2,9 @@
   "schemaVersion": 1,
   "pipeName": "TwinCatAgentGateway",
   "defaultProfile": "default",
+  "logMinimumLevel": "information",
+  "logFileSizeLimitBytes": 1048576,
+  "logRetainedFileCountLimit": 10,
   "logRetentionDays": 14,
   "ui": {
     "mode": "auto"

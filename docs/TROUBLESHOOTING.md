@@ -2,8 +2,11 @@
 
 Start with the MCP `twincat_status` tool, then read
 `twincat_get_diagnostics` with a cursor. Fetch one raw resource only when those
-results are insufficient. The globally installed `twincat-gateway` command is
-the WPF host, not the repository development CLI.
+results are insufficient. For a remaining gateway-wide, unknown, or
+undocumented error, read `twincat-log://gateway/current` and inspect only a
+bounded tail of the exact path it returns. Do not infer the active path, scan
+the log directory, or read every session file. The globally installed
+`twincat-gateway` command is the WPF host, not the repository development CLI.
 
 ## Gateway does not start
 
@@ -32,9 +35,12 @@ the WPF host, not the repository development CLI.
 - A missing .NET runtime prevents the process from starting. Install .NET
   Framework 4.8 and the .NET 8 Desktop Runtime x64 listed in the README.
 
-Logs default to
-`%LOCALAPPDATA%\TwinCatAgentGateway\Logs`. `logRetentionDays` controls
-operation-log pruning and must be between 1 and 3650.
+For manual operator reference, logs default to
+`%LOCALAPPDATA%\TwinCatAgentGateway\Logs`. `logRetentionDays` controls age
+retention for previous gateway session files and operation-log directories and
+must be between 1 and 3650. When the gateway is stopped,
+`twincat-log://gateway/current` returns `GATEWAY_NOT_RUNNING`; it does not
+guess a path from configuration or the default directory.
 
 ## XAE process is visible but gateway reports none
 
