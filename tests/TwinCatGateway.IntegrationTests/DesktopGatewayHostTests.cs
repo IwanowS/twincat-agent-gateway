@@ -224,7 +224,7 @@ public sealed class DesktopGatewayHostTests
     }
 
     [Fact]
-    public void RecentOperationRefreshPreservesExistingRows()
+    public void RecentOperationRefreshPreservesRowsAndAppendsNewestLast()
     {
         OperationStore store = new();
         DateTimeOffset queuedAt =
@@ -253,8 +253,8 @@ public sealed class DesktopGatewayHostTests
             store.GetRecent(20));
 
         Assert.Equal(2, rows.Count);
-        Assert.Equal("operation-2", rows[0].OperationId);
-        Assert.Same(selectedRow, rows[1]);
+        Assert.Same(selectedRow, rows[0]);
+        Assert.Equal("operation-2", rows[1].OperationId);
         Assert.Equal("Running", selectedRow.State);
     }
 

@@ -535,11 +535,16 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ObservableCollection<OperationRow> rows,
         IReadOnlyList<StoredOperation> operations)
     {
+        StoredOperation[] chronologicalOperations =
+            operations.Reverse().ToArray();
         HashSet<string> currentOperationIds =
             new(StringComparer.Ordinal);
-        for (int index = 0; index < operations.Count; index++)
+        for (int index = 0;
+             index < chronologicalOperations.Length;
+             index++)
         {
-            StoredOperation operation = operations[index];
+            StoredOperation operation =
+                chronologicalOperations[index];
             string operationId =
                 operation.Summary.OperationId;
             currentOperationIds.Add(operationId);
