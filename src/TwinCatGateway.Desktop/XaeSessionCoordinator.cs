@@ -1067,6 +1067,15 @@ internal sealed class XaeSessionCoordinator : IDisposable
             GatewayJson.CreateSerializerOptions());
     }
 
+    internal Task<bool> CloseGatewayLaunchedXaeAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        return _session.CloseGatewayLaunchedAsync(
+            timeout,
+            cancellationToken);
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)

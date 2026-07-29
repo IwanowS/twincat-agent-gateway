@@ -385,6 +385,16 @@ public sealed class GatewayDesktopHost : IDisposable
         _logging.Dispose();
     }
 
+    internal Task<bool> CloseGatewayLaunchedXaeAsync(
+        TimeSpan timeout)
+    {
+        return _xaeCoordinator is null
+            ? Task.FromResult(false)
+            : _xaeCoordinator.CloseGatewayLaunchedXaeAsync(
+                timeout,
+                CancellationToken.None);
+    }
+
     public void Dispose()
     {
         StopAsync().GetAwaiter().GetResult();

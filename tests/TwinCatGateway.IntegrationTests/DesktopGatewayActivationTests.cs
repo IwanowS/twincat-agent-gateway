@@ -179,6 +179,7 @@ public sealed class DesktopGatewayActivationTests
             allowXaeLaunch: true);
         using GatewayDesktopHost host = StartHost(
             configurationPath);
+        using GatewayOwnedXaeCleanup cleanup = new(host);
         await WaitForStateAsync(
             host,
             GatewayState.Ready,
@@ -223,8 +224,9 @@ public sealed class DesktopGatewayActivationTests
         GatewayDiagnosticsResult diagnostics =
             host.ApplicationService.GetDiagnostics();
         int processId = GetSelectedProcessId(diagnostics);
-
-        await host.StopAsync();
+        Assert.Empty(
+            XaeWindowProbe.FindModalDialogs(processId));
+        await cleanup.CloseAsync();
 
         Assert.Equal(
             OperationState.Succeeded,
@@ -299,8 +301,6 @@ public sealed class DesktopGatewayActivationTests
         Assert.DoesNotContain(
             GatewayEventTypes.ActivationRestartRequested,
             eventTypes);
-        Assert.Empty(
-            XaeWindowProbe.FindModalDialogs(processId));
     }
 
     [RemoteFaultRecoveryFact]
@@ -330,6 +330,7 @@ public sealed class DesktopGatewayActivationTests
             allowXaeLaunch: true);
         using GatewayDesktopHost host = StartHost(
             configurationPath);
+        using GatewayOwnedXaeCleanup cleanup = new(host);
         await WaitForStateAsync(
             host,
             GatewayState.Ready,
@@ -488,7 +489,7 @@ public sealed class DesktopGatewayActivationTests
             }
         }
 
-        await host.StopAsync();
+        await cleanup.CloseAsync();
     }
 
     [RemoteTcUnitFact]
@@ -513,6 +514,7 @@ public sealed class DesktopGatewayActivationTests
             allowXaeLaunch: true);
         using GatewayDesktopHost host = StartHost(
             configurationPath);
+        using GatewayOwnedXaeCleanup cleanup = new(host);
         await WaitForStateAsync(
             host,
             GatewayState.Ready,
@@ -602,8 +604,9 @@ public sealed class DesktopGatewayActivationTests
         GatewayDiagnosticsResult diagnostics =
             host.ApplicationService.GetDiagnostics();
         int processId = GetSelectedProcessId(diagnostics);
-
-        await host.StopAsync();
+        Assert.Empty(
+            XaeWindowProbe.FindModalDialogs(processId));
+        await cleanup.CloseAsync();
 
         Assert.Equal(
             OperationState.Succeeded,
@@ -638,8 +641,6 @@ public sealed class DesktopGatewayActivationTests
             GetOperationEventTypes(
                 diagnostics,
                 testOperationId));
-        Assert.Empty(
-            XaeWindowProbe.FindModalDialogs(processId));
     }
 
     private static GatewayDesktopHost StartHost(
@@ -1064,6 +1065,66 @@ public sealed class DesktopGatewayActivationTests
             if (Directory.Exists(Path))
             {
                 Directory.Delete(Path, recursive: true);
+            }
+        }
+    }
+
+    private sealed class GatewayOwnedXaeCleanup : IDisposable
+    {
+        private readonly GatewayDesktopHost _host;
+        private bool _closed;
+
+        public GatewayOwnedXaeCleanup(
+            GatewayDesktopHost host)
+        {
+            _host = host;
+        }
+
+        public async Task CloseAsync()
+        {
+            if (_closed)
+            {
+                return;
+            }
+
+            bool xaeClosed = false;
+            try
+            {
+                xaeClosed =
+                    await _host.CloseGatewayLaunchedXaeAsync(
+                        TimeSpan.FromSeconds(15));
+            }
+            finally
+            {
+                await _host.StopAsync();
+                _closed = true;
+            }
+
+            Assert.True(
+                xaeClosed,
+                "The gateway-owned XAE instance did not close.");
+        }
+
+        public void Dispose()
+        {
+            if (_closed)
+            {
+                return;
+            }
+
+            try
+            {
+                _host.CloseGatewayLaunchedXaeAsync(
+                        TimeSpan.FromSeconds(15))
+                    .GetAwaiter()
+                    .GetResult();
+            }
+            finally
+            {
+                _host.StopAsync()
+                    .GetAwaiter()
+                    .GetResult();
+                _closed = true;
             }
         }
     }
