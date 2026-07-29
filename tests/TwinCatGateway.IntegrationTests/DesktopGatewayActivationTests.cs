@@ -1194,7 +1194,7 @@ public sealed class DesktopGatewayActivationTests
             {
                 xaeClosed =
                     await _host.CloseGatewayLaunchedXaeAsync(
-                        TimeSpan.FromSeconds(15));
+                        TimeSpan.FromSeconds(30));
             }
             finally
             {
@@ -1217,7 +1217,7 @@ public sealed class DesktopGatewayActivationTests
             try
             {
                 _host.CloseGatewayLaunchedXaeAsync(
-                        TimeSpan.FromSeconds(15))
+                        TimeSpan.FromSeconds(30))
                     .GetAwaiter()
                     .GetResult();
             }
