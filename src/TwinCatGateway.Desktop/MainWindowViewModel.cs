@@ -13,6 +13,7 @@ namespace TwinCatGateway.Desktop;
 
 public sealed class MainWindowViewModel : INotifyPropertyChanged
 {
+    private const string AllFilter = "All";
     private static readonly IReadOnlyList<BuildAction>
         AvailableBuildActions =
             new[]
@@ -21,6 +22,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 BuildAction.Build,
                 BuildAction.Clean,
             };
+    private static readonly IReadOnlyList<string>
+        AvailableOperationKinds =
+            new[] { AllFilter }
+                .Concat(
+                    Enum.GetNames(typeof(OperationKind)))
+                .ToArray();
+    private static readonly IReadOnlyList<string>
+        AvailableOperationStates =
+            new[] { AllFilter }
+                .Concat(
+                    Enum.GetNames(typeof(OperationState)))
+                .ToArray();
 
     private readonly GatewayDesktopHost _host;
     private string _gatewayState = string.Empty;
@@ -45,6 +58,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _canSynchronize;
     private bool _canReconnect;
     private bool _isVerboseEvents;
+    private string _selectedOperationKind = AllFilter;
+    private string _selectedOperationState = AllFilter;
 
     public MainWindowViewModel(GatewayDesktopHost host)
     {
@@ -53,6 +68,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         StartupError = host.StartupError;
         RecentOperationsView =
             CollectionViewSource.GetDefaultView(RecentOperations);
+        RecentOperationsView.Filter = IncludeOperation;
+        if (RecentOperationsView is ICollectionViewLiveShaping liveView
+            && liveView.CanChangeLiveFiltering == true)
+        {
+            liveView.LiveFilteringProperties.Add(
+                nameof(OperationRow.Kind));
+            liveView.LiveFilteringProperties.Add(
+                nameof(OperationRow.State));
+            liveView.IsLiveFiltering = true;
+        }
+
         EventsView = CollectionViewSource.GetDefaultView(Events);
         EventsView.Filter = IncludeEvent;
         Refresh();
@@ -70,6 +96,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public IReadOnlyList<BuildAction> BuildActions { get; } =
         AvailableBuildActions;
+
+    public IReadOnlyList<string> OperationKindFilters { get; } =
+        AvailableOperationKinds;
+
+    public IReadOnlyList<string> OperationStateFilters { get; } =
+        AvailableOperationStates;
 
     public string GatewayState
     {
@@ -207,6 +239,30 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             if (SetField(ref _isVerboseEvents, value))
             {
                 EventsView.Refresh();
+            }
+        }
+    }
+
+    public string SelectedOperationKind
+    {
+        get => _selectedOperationKind;
+        set
+        {
+            if (SetField(ref _selectedOperationKind, value))
+            {
+                RecentOperationsView.Refresh();
+            }
+        }
+    }
+
+    public string SelectedOperationState
+    {
+        get => _selectedOperationState;
+        set
+        {
+            if (SetField(ref _selectedOperationState, value))
+            {
+                RecentOperationsView.Refresh();
             }
         }
     }
@@ -638,6 +694,38 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             && (IsVerboseEvents
                 || row.SeverityValue
                     >= DiagnosticSeverity.Warning);
+    }
+
+    private bool IncludeOperation(object item)
+    {
+        return item is OperationRow row
+            && MatchesOperationFilters(
+                row,
+                SelectedOperationKind,
+                SelectedOperationState);
+    }
+
+    internal static bool MatchesOperationFilters(
+        OperationRow row,
+        string kind,
+        string state)
+    {
+        return (string.Equals(
+                    kind,
+                    AllFilter,
+                    StringComparison.Ordinal)
+                || string.Equals(
+                    row.Kind,
+                    kind,
+                    StringComparison.Ordinal))
+            && (string.Equals(
+                    state,
+                    AllFilter,
+                    StringComparison.Ordinal)
+                || string.Equals(
+                    row.State,
+                    state,
+                    StringComparison.Ordinal));
     }
 
     private ProjectProfile RequireActiveProfile()

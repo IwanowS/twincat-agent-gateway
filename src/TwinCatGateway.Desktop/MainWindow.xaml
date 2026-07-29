@@ -216,26 +216,43 @@
             <TabControl Background="Transparent"
                         BorderThickness="0">
                 <TabItem Header="Operations">
-                    <ListView x:Name="RecentOperationsList"
-                              Margin="0,10,0,0"
-                              ItemsSource="{Binding RecentOperationsView}">
-                        <ListView.View>
-                            <GridView>
-                                <GridViewColumn Width="150"
-                                                DisplayMemberBinding="{Binding QueuedAt}"
-                                                Header="Queued" />
-                                <GridViewColumn Width="130"
-                                                DisplayMemberBinding="{Binding Kind}"
-                                                Header="Operation" />
-                                <GridViewColumn Width="120"
-                                                DisplayMemberBinding="{Binding State}"
-                                                Header="State" />
-                                <GridViewColumn Width="360"
-                                                DisplayMemberBinding="{Binding OperationId}"
-                                                Header="Operation ID" />
-                            </GridView>
-                        </ListView.View>
-                    </ListView>
+                    <DockPanel Margin="0,10,0,0">
+                        <StackPanel DockPanel.Dock="Top"
+                                    Margin="0,0,0,10"
+                                    Orientation="Horizontal">
+                            <TextBlock Margin="4,0,6,0"
+                                       VerticalAlignment="Center"
+                                       Text="Operation" />
+                            <ComboBox Width="150"
+                                      ItemsSource="{Binding OperationKindFilters}"
+                                      SelectedItem="{Binding SelectedOperationKind}" />
+                            <TextBlock Margin="16,0,6,0"
+                                       VerticalAlignment="Center"
+                                       Text="State" />
+                            <ComboBox Width="150"
+                                      ItemsSource="{Binding OperationStateFilters}"
+                                      SelectedItem="{Binding SelectedOperationState}" />
+                        </StackPanel>
+                        <ListView x:Name="RecentOperationsList"
+                                  ItemsSource="{Binding RecentOperationsView}">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Width="150"
+                                                    DisplayMemberBinding="{Binding QueuedAt}"
+                                                    Header="Queued" />
+                                    <GridViewColumn Width="130"
+                                                    DisplayMemberBinding="{Binding Kind}"
+                                                    Header="Operation" />
+                                    <GridViewColumn Width="120"
+                                                    DisplayMemberBinding="{Binding State}"
+                                                    Header="State" />
+                                    <GridViewColumn Width="360"
+                                                    DisplayMemberBinding="{Binding OperationId}"
+                                                    Header="Operation ID" />
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
                 </TabItem>
                 <TabItem Header="Event journal">
                     <DockPanel Margin="0,10,0,0">

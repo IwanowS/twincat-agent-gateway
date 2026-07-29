@@ -313,6 +313,37 @@ public sealed class DesktopGatewayHostTests
     }
 
     [Fact]
+    public void OperationFiltersMatchKindAndStateIndependently()
+    {
+        OperationRow row = new(
+            "operation-1",
+            OperationKind.Build.ToString(),
+            OperationState.Failed.ToString(),
+            "2026-07-29 10:00");
+
+        Assert.True(
+            MainWindowViewModel.MatchesOperationFilters(
+                row,
+                "All",
+                "All"));
+        Assert.True(
+            MainWindowViewModel.MatchesOperationFilters(
+                row,
+                OperationKind.Build.ToString(),
+                OperationState.Failed.ToString()));
+        Assert.False(
+            MainWindowViewModel.MatchesOperationFilters(
+                row,
+                OperationKind.Activate.ToString(),
+                "All"));
+        Assert.False(
+            MainWindowViewModel.MatchesOperationFilters(
+                row,
+                "All",
+                OperationState.Succeeded.ToString()));
+    }
+
+    [Fact]
     public void ManualReconnectIsPublishedWithoutCallingCom()
     {
         using TemporaryDirectory temporary = new();
