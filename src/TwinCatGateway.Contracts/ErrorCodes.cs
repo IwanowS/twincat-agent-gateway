@@ -58,6 +58,8 @@ public static class ErrorCodes
         "EXTERNAL_EDIT_UNSUPPORTED";
     public const string ExternalEditSyncFailed =
         "EXTERNAL_EDIT_SYNC_FAILED";
+    public const string XaeFileChangeGuardFailed =
+        "XAE_FILE_CHANGE_GUARD_FAILED";
     public const string ExternalChangeDetected =
         "EXTERNAL_CHANGE_DETECTED";
     public const string XaeSyncRequired =

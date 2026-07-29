@@ -45,23 +45,27 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
     private readonly EnvDTE80.DTE2 _dte;
     private readonly string _solutionPath;
     private readonly IReadOnlyList<ProjectFileState> _files;
+    private readonly IXaeProjectFileChangeGuard? _workspaceGuard;
     private bool _disposed;
 
     private XaeProjectFileChangeLease(
         IVsFileChangeEx fileChange,
         EnvDTE80.DTE2 dte,
         string solutionPath,
-        IReadOnlyList<ProjectFileState> files)
+        IReadOnlyList<ProjectFileState> files,
+        IXaeProjectFileChangeGuard? workspaceGuard)
     {
         _fileChange = fileChange;
         _dte = dte;
         _solutionPath = solutionPath;
         _files = files;
+        _workspaceGuard = workspaceGuard;
     }
 
     public static XaeProjectFileChangeLease Acquire(
         EnvDTE80.DTE2 dte,
-        string solutionPath)
+        string solutionPath,
+        IXaeProjectFileChangeGuard? workspaceGuard = null)
     {
         string normalizedSolution = Path.GetFullPath(solutionPath);
         string[] paths = EnumerateProjectFiles(
@@ -77,15 +81,23 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
             foreach (string path in paths)
             {
                 byte[] content = ReadAllBytes(path);
+                bool guardedByWorkspace =
+                    workspaceGuard?.IsProjectFileGuarded(path)
+                    == true;
                 ProjectFileState state = new(
                     path,
                     content,
-                    ComputeSha256(content));
-                Marshal.ThrowExceptionForHR(
-                    fileChange.IgnoreFile(
-                        0,
-                        path,
-                        1));
+                    ComputeSha256(content),
+                    guardedByWorkspace);
+                if (!guardedByWorkspace)
+                {
+                    Marshal.ThrowExceptionForHR(
+                        fileChange.IgnoreFile(
+                            0,
+                            path,
+                            1));
+                }
+
                 files.Add(state);
             }
 
@@ -94,7 +106,8 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                     fileChange,
                     dte,
                     normalizedSolution,
-                    files);
+                    files,
+                    workspaceGuard);
             fileChange = null;
             return lease;
         }
@@ -104,7 +117,8 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
             {
                 RestoreNotifications(
                     fileChange,
-                    files);
+                    files,
+                    workspaceGuard);
             }
 
             throw;
@@ -267,7 +281,8 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
         {
             RestoreNotifications(
                 _fileChange,
-                _files);
+                _files,
+                _workspaceGuard);
         }
         finally
         {
@@ -423,7 +438,8 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
 
     private static void RestoreNotifications(
         IVsFileChangeEx fileChange,
-        IEnumerable<ProjectFileState> files)
+        IEnumerable<ProjectFileState> files,
+        IXaeProjectFileChangeGuard? workspaceGuard)
     {
         Exception? failure = null;
         foreach (ProjectFileState file in files.Reverse())
@@ -439,18 +455,25 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
                 if (exists
                     && (unchanged || file.AcknowledgeWhileIgnored))
                 {
-                    Marshal.ThrowExceptionForHR(
-                        fileChange.SyncFile(file.Path));
+                    SyncFile(
+                        fileChange,
+                        workspaceGuard,
+                        file);
                 }
 
-                Marshal.ThrowExceptionForHR(
-                    fileChange.IgnoreFile(
-                        0,
-                        file.Path,
-                        0));
+                if (!file.GuardedByWorkspace)
+                {
+                    Marshal.ThrowExceptionForHR(
+                        fileChange.IgnoreFile(
+                            0,
+                            file.Path,
+                            0));
+                }
+
                 if (exists
                     && !unchanged
-                    && !file.AcknowledgeWhileIgnored)
+                    && !file.AcknowledgeWhileIgnored
+                    && !file.GuardedByWorkspace)
                 {
                     Marshal.ThrowExceptionForHR(
                         fileChange.SyncFile(file.Path));
@@ -470,6 +493,21 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
         {
             throw failure;
         }
+    }
+
+    private static void SyncFile(
+        IVsFileChangeEx fileChange,
+        IXaeProjectFileChangeGuard? workspaceGuard,
+        ProjectFileState file)
+    {
+        if (file.GuardedByWorkspace)
+        {
+            workspaceGuard!.SyncProjectFile(file.Path);
+            return;
+        }
+
+        Marshal.ThrowExceptionForHR(
+            fileChange.SyncFile(file.Path));
     }
 
     private static T QueryService<T>(
@@ -535,11 +573,13 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
         public ProjectFileState(
             string path,
             byte[] baselineContent,
-            string sha256)
+            string sha256,
+            bool guardedByWorkspace)
         {
             Path = path;
             BaselineContent = baselineContent;
             Sha256 = sha256;
+            GuardedByWorkspace = guardedByWorkspace;
         }
 
         public string Path { get; }
@@ -547,6 +587,8 @@ internal sealed class XaeProjectFileChangeLease : IDisposable
         public byte[] BaselineContent { get; }
 
         public string Sha256 { get; }
+
+        public bool GuardedByWorkspace { get; }
 
         public bool AcknowledgeWhileIgnored { get; set; }
     }

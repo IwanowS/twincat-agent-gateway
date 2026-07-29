@@ -57,7 +57,8 @@ internal static class ExternalChangeSynchronizer
         DTE2 dte,
         IEnumerable<string> changedPaths,
         IEnumerable<string> projectGraphPaths,
-        bool discardDirtyDocuments)
+        bool discardDirtyDocuments,
+        IXaeProjectFileChangeGuard? fileChangeGuard = null)
     {
         if (dte is null)
         {
@@ -95,6 +96,11 @@ internal static class ExternalChangeSynchronizer
                 {
                     document = documents.Open(path);
                     ReloadDocumentData(table, path);
+                    fileChangeGuard?.SyncProjectFile(path);
+                }
+                catch (GatewayOperationException)
+                {
+                    throw;
                 }
                 catch (Exception exception)
                 {

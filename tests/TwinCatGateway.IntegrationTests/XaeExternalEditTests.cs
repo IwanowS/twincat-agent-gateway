@@ -317,11 +317,6 @@ public sealed class XaeExternalEditTests
                 processId,
                 documentPath,
                 openIfMissing: true);
-            await IgnoreDocumentFileChangesAsync(
-                dispatcher,
-                processId,
-                documentPath,
-                ignore: true);
             string source = File.ReadAllText(documentPath);
             Assert.Contains(
                 "bToggle := NOT bToggle;",
@@ -461,28 +456,6 @@ public sealed class XaeExternalEditTests
             document =>
             {
                 document.Saved = saved;
-                return true;
-            });
-    }
-
-    private static Task<bool> IgnoreDocumentFileChangesAsync(
-        ComStaDispatcher dispatcher,
-        int processId,
-        string documentPath,
-        bool ignore)
-    {
-        return WithDocumentDataAsync(
-            dispatcher,
-            processId,
-            documentPath,
-            (persist, control) =>
-            {
-                Marshal.ThrowExceptionForHR(
-                    persist.IsDocDataDirty(out int dirty));
-                Assert.Equal(0, dirty);
-                Marshal.ThrowExceptionForHR(
-                    control.IgnoreFileChanges(
-                        ignore ? 1 : 0));
                 return true;
             });
     }

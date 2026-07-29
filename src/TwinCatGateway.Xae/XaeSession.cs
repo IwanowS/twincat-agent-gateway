@@ -49,6 +49,7 @@ public sealed class XaeSession : IDisposable
     private string? _fingerprintTwinCatProjectPath;
     private ITcSysManager? _sysManager;
     private TwinCatSilentModeLease? _silentModeLease;
+    private XaeWorkspaceFileChangeGuard? _workspaceFileChangeGuard;
     private string? _twinCatProjectPath;
     private string[] _projectGraphPaths = Array.Empty<string>();
     private XaeSessionSnapshot _snapshot = new();
@@ -676,6 +677,16 @@ public sealed class XaeSession : IDisposable
                 stage: "xae.workspace.verify");
         }
 
+        await _dispatcher.InvokeAsync(
+            () =>
+            {
+                UpdateWorkspaceFileChangeGuardOnSta(verified);
+                return true;
+            },
+            GetRemaining(
+                deadlineUtc,
+                "xae.workspace.guard"),
+            cancellationToken).ConfigureAwait(false);
         GetRemaining(
             deadlineUtc,
             "xae.workspace.verify");
@@ -1233,6 +1244,16 @@ public sealed class XaeSession : IDisposable
         ComObject.Release(_sysManager);
         _sysManager = sysManager;
         _twinCatProjectPath = twinCatProjectPath;
+        try
+        {
+            AcquireWorkspaceFileChangeGuardOnSta(graph);
+        }
+        catch
+        {
+            ReleaseSessionOnSta();
+            throw;
+        }
+
         info.Selected = true;
         info.SelectionReason =
             "Gateway-launched XAE opened the exact normalized solution path.";
@@ -1242,7 +1263,8 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(info),
             SysManagerAvailable = true,
             LaunchedByGateway = true,
-            AgentWorkspaceOwned = false,
+            AgentWorkspaceOwned =
+                _workspaceFileChangeGuard?.IsActive == true,
             ClosedDocumentCount = 0,
             DiscardedDocumentCount = 0,
             SynchronizationState = SynchronizationState.Confirmed,
@@ -1335,6 +1357,21 @@ public sealed class XaeSession : IDisposable
         _sysManager = selectedSysManager;
         _twinCatProjectPath = twinCatProjectPath;
         _projectGraphPaths = projectGraphPaths;
+        try
+        {
+            AcquireWorkspaceFileChangeGuardOnSta(
+                capturedGraph
+                    ?? throw new GatewayOperationException(
+                        ErrorCodes.ProjectGraphInvalid,
+                        "The attached XAE project graph is unavailable.",
+                        stage: "xae.workspace.guard"));
+        }
+        catch
+        {
+            ReleaseSessionOnSta();
+            throw;
+        }
+
         bool retainBaseline = CanRetainFingerprintBaseline(
             instances[selectedIndex].ProcessId,
             instances[selectedIndex].Moniker,
@@ -1356,7 +1393,8 @@ public sealed class XaeSession : IDisposable
             LaunchedByGateway =
                 retainBaseline
                 && _fingerprintLaunchedByGateway,
-            AgentWorkspaceOwned = false,
+            AgentWorkspaceOwned =
+                _workspaceFileChangeGuard?.IsActive == true,
             ClosedDocumentCount = 0,
             DiscardedDocumentCount = 0,
             SynchronizationState = initialSynchronizationState,
@@ -1416,6 +1454,8 @@ public sealed class XaeSession : IDisposable
                 stage: "xae.health");
         }
 
+        _workspaceFileChangeGuard?.ThrowIfFaulted();
+
         DteInstanceInfo info;
         using (CreateUserSilentModeLease())
         {
@@ -1449,7 +1489,8 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(info),
             SysManagerAvailable = true,
             LaunchedByGateway = _snapshot.LaunchedByGateway,
-            AgentWorkspaceOwned = _snapshot.AgentWorkspaceOwned,
+            AgentWorkspaceOwned =
+                _workspaceFileChangeGuard?.IsActive == true,
             ClosedDocumentCount = _snapshot.ClosedDocumentCount,
             DiscardedDocumentCount = _snapshot.DiscardedDocumentCount,
             SynchronizationState =
@@ -1913,8 +1954,10 @@ public sealed class XaeSession : IDisposable
                     dte,
                     changedPaths,
                     projectGraphPaths,
-                    discardDirtyDocuments);
-            _snapshot.AgentWorkspaceOwned = false;
+                    discardDirtyDocuments,
+                    _workspaceFileChangeGuard);
+            _snapshot.AgentWorkspaceOwned =
+                _workspaceFileChangeGuard?.IsActive == true;
             _snapshot.ClosedDocumentCount = 0;
             _snapshot.DiscardedDocumentCount =
                 result.DiscardedDocuments.Count;
@@ -1965,7 +2008,8 @@ public sealed class XaeSession : IDisposable
                 stage: "xae.build.start");
         _activeBuild = XaeBuildEventLease.Start(
             dte,
-            action);
+            action,
+            _workspaceFileChangeGuard);
         return _activeBuild.Completion;
     }
 
@@ -2608,7 +2652,8 @@ public sealed class XaeSession : IDisposable
         {
             fileChanges = XaeProjectFileChangeLease.Acquire(
                 dte,
-                solutionPath);
+                solutionPath,
+                _workspaceFileChangeGuard);
             solution = dte.Solution;
             projects = solution.Projects;
             for (int index = 1; index <= projects.Count; index++)
@@ -2758,6 +2803,47 @@ public sealed class XaeSession : IDisposable
         }
     }
 
+    private void AcquireWorkspaceFileChangeGuardOnSta(
+        ProjectFileFingerprintSnapshot graph)
+    {
+        if (_workspaceFileChangeGuard is not null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeFileChangeGuardFailed,
+                "An XAE workspace file-change guard is already active.",
+                stage: "xae.workspace.guard");
+        }
+
+        DTE2 dte = _dte
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: "xae.workspace.guard");
+        _workspaceFileChangeGuard =
+            XaeWorkspaceFileChangeGuard.Acquire(
+                dte,
+                graph.Files);
+        _projectGraphPaths =
+            graph.Files.Select(file => file.Path).ToArray();
+    }
+
+    private void UpdateWorkspaceFileChangeGuardOnSta(
+        ProjectFileFingerprintSnapshot graph)
+    {
+        XaeWorkspaceFileChangeGuard guard =
+            _workspaceFileChangeGuard
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeFileChangeGuardFailed,
+                "The attached XAE session has no active file-change guard.",
+                retryable: true,
+                stage: "xae.workspace.guard");
+        guard.UpdatePaths(graph.Files);
+        _projectGraphPaths =
+            graph.Files.Select(file => file.Path).ToArray();
+        _snapshot.AgentWorkspaceOwned = guard.IsActive;
+    }
+
     private void EnsurePendingLaunchedProcess(int processId)
     {
         if (_dte is null
@@ -2840,8 +2926,22 @@ public sealed class XaeSession : IDisposable
                     cleanupException,
                     exception);
         }
+
+        try
+        {
+            _workspaceFileChangeGuard?.Dispose();
+        }
+        catch (Exception exception)
+        {
+            cleanupException = cleanupException is null
+                ? exception
+                : new AggregateException(
+                    cleanupException,
+                    exception);
+        }
         finally
         {
+            _workspaceFileChangeGuard = null;
             ComObject.Release(_sysManager);
             ComObject.Release(_dte);
             _sysManager = null;

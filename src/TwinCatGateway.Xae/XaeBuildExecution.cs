@@ -86,7 +86,8 @@ internal sealed class XaeBuildEventLease : IDisposable
 
     private XaeBuildEventLease(
         DTE2 dte,
-        BuildAction requestedAction)
+        BuildAction requestedAction,
+        IXaeProjectFileChangeGuard? workspaceGuard)
     {
         _dte = dte;
         _requestedAction = requestedAction;
@@ -102,7 +103,8 @@ internal sealed class XaeBuildEventLease : IDisposable
             projectFileLease =
                 XaeProjectFileChangeLease.Acquire(
                     dte,
-                    _solution.FullName);
+                    _solution.FullName,
+                    workspaceGuard);
             _projectFileLease = projectFileLease;
             _outputSnapshot =
                 XaeOutputCollector.Capture(dte);
@@ -132,12 +134,16 @@ internal sealed class XaeBuildEventLease : IDisposable
 
     public static XaeBuildEventLease Start(
         DTE2 dte,
-        BuildAction action)
+        BuildAction action,
+        IXaeProjectFileChangeGuard? workspaceGuard = null)
     {
         XaeBuildEventLease? lease = null;
         try
         {
-            lease = new XaeBuildEventLease(dte, action);
+            lease = new XaeBuildEventLease(
+                dte,
+                action,
+                workspaceGuard);
             lease.StartFirstPhase();
             return lease;
         }
