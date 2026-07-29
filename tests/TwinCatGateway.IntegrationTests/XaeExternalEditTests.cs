@@ -318,18 +318,17 @@ public sealed class XaeExternalEditTests
                 documentPath,
                 openIfMissing: true);
             string source = File.ReadAllText(documentPath);
+            const string implementationMarker =
+                "<ST><![CDATA[";
             Assert.Contains(
-                "bToggle := NOT bToggle;",
+                implementationMarker,
                 source);
             File.WriteAllText(
                 documentPath,
                 source.Replace(
-                    "bToggle := NOT bToggle;",
-                    "bToggle := ;"));
-            await ReloadDocumentAsync(
-                dispatcher,
-                processId,
-                documentPath);
+                    implementationMarker,
+                    implementationMarker
+                        + "gatewayGuardInvalid := ;\r\n"));
             DateTimeOffset observationDeadline =
                 DateTimeOffset.UtcNow.AddSeconds(2);
             while (DateTimeOffset.UtcNow < observationDeadline)
@@ -341,14 +340,24 @@ public sealed class XaeExternalEditTests
 
             string[] dialogs =
                 XaeWindowProbe.FindModalDialogs(processId);
-            int externalEditBuildErrors =
-                await BuildSolutionAsync(
-                    dispatcher,
-                    processId);
+            XaeBuildExecutionResult build =
+                await session.ExecuteBuildAsync(
+                    BuildAction.Build,
+                    changedPaths: null,
+                    TimeSpan.FromSeconds(60),
+                    CancellationToken.None);
 
             Assert.True(initiallySaved);
             Assert.Empty(dialogs);
-            Assert.True(externalEditBuildErrors > 0);
+            Assert.True(build.FailedProjects > 0);
+            Assert.Contains(
+                build.Synchronization.SynchronizedDocuments,
+                path => string.Equals(
+                    path,
+                    documentPath,
+                    StringComparison.OrdinalIgnoreCase));
+            Assert.Empty(
+                XaeWindowProbe.FindModalDialogs(processId));
         }
         finally
         {
@@ -405,13 +414,28 @@ public sealed class XaeExternalEditTests
                     CancellationToken.None);
 
             Assert.True(dirty);
-            Assert.False(attached.AgentWorkspaceOwned);
+            Assert.True(attached.AgentWorkspaceOwned);
             Assert.Equal(0, attached.ClosedDocumentCount);
             Assert.Equal(0, attached.DiscardedDocumentCount);
             Assert.Equal(1, attached.DirtyDocumentCount);
             Assert.Equal(
                 SynchronizationState.SyncRequired,
                 attached.SynchronizationState);
+            GatewayOperationException blocked =
+                await Assert.ThrowsAsync<GatewayOperationException>(
+                    () => attachedSession.ExecuteBuildAsync(
+                        BuildAction.Build,
+                        changedPaths: null,
+                        TimeSpan.FromSeconds(60),
+                        CancellationToken.None));
+            Assert.Equal(
+                ErrorCodes.DirtyXaeDocument,
+                blocked.Code);
+            Assert.True(
+                await ReadDocumentDirtyAsync(
+                    dispatcher,
+                    processId,
+                    documentPath));
             Assert.True(
                 await IsDocumentOpenAsync(
                     dispatcher,
@@ -457,34 +481,6 @@ public sealed class XaeExternalEditTests
             {
                 document.Saved = saved;
                 return true;
-            });
-    }
-
-    private static Task<bool> ReloadDocumentAsync(
-        ComStaDispatcher dispatcher,
-        int processId,
-        string documentPath)
-    {
-        return WithDocumentDataAsync(
-            dispatcher,
-            processId,
-            documentPath,
-            (persist, control) =>
-            {
-                try
-                {
-                    uint reloadFlags = (uint)(
-                        _VSRELOADDOCDATA.RDD_IgnoreNextFileChange
-                        | _VSRELOADDOCDATA.RDD_RemoveUndoStack);
-                    Marshal.ThrowExceptionForHR(
-                        persist.ReloadDocData(reloadFlags));
-                    return true;
-                }
-                finally
-                {
-                    Marshal.ThrowExceptionForHR(
-                        control.IgnoreFileChanges(0));
-                }
             });
     }
 
@@ -633,42 +629,6 @@ public sealed class XaeExternalEditTests
                 Marshal.Release(unknownPointer);
             }
         }
-    }
-
-    private static Task<int> BuildSolutionAsync(
-        ComStaDispatcher dispatcher,
-        int processId)
-    {
-        return dispatcher.InvokeAsync(
-            () =>
-            {
-                using RotScanResult scan =
-                    RunningObjectTableScanner.Scan(
-                        requiredProcessId: processId);
-                RunningXaeCandidate candidate =
-                    Assert.Single(
-                        scan.Candidates,
-                        item => item.Info.ProcessId == processId);
-                DTE2 dte = candidate.TakeDte();
-                Solution? solution = null;
-                SolutionBuild? solutionBuild = null;
-                try
-                {
-                    solution = dte.Solution;
-                    solutionBuild = solution.SolutionBuild;
-                    solutionBuild.Build(
-                        WaitForBuildToFinish: true);
-                    return solutionBuild.LastBuildInfo;
-                }
-                finally
-                {
-                    ComObject.Release(solutionBuild);
-                    ComObject.Release(solution);
-                    ComObject.Release(dte);
-                }
-            },
-            TimeSpan.FromSeconds(60),
-            CancellationToken.None);
     }
 
     private static Task<bool> ReadDocumentSavedAsync(
