@@ -198,10 +198,19 @@ try {
     $configurationReferenceTarget = Join-Path `
         $applicationRoot `
         'gateway\CONFIGURATION.md'
+    $mcpSetupTarget = Join-Path `
+        $applicationRoot `
+        'mcp\SETUP_INSTRUCTIONS.txt'
+    $mcpConfigurationTarget = Join-Path `
+        $applicationRoot `
+        'mcp\CONFIGURATION.md'
     if (-not (Test-Path -LiteralPath $desktopTarget) `
         -or -not (Test-Path -LiteralPath $mcpTarget) `
         -or -not (Test-Path `
-            -LiteralPath $configurationReferenceTarget)) {
+            -LiteralPath $configurationReferenceTarget) `
+        -or -not (Test-Path -LiteralPath $mcpSetupTarget) `
+        -or -not (Test-Path `
+            -LiteralPath $mcpConfigurationTarget)) {
         throw 'Installed application artifacts are incomplete.'
     }
 

@@ -40,6 +40,12 @@ public sealed class McpAdapterTests
         "twincat-test://{operationId}/xunit",
     };
 
+    private static readonly string[] ExpectedResourceUris =
+    {
+        "twincat-doc://configuration",
+        "twincat-doc://setup",
+    };
+
     private static readonly string[] ExpectedChangedPaths =
     {
         @"C:\Project\MAIN.TcPOU",
@@ -78,6 +84,9 @@ public sealed class McpAdapterTests
         var resources =
             await client.ListResourceTemplatesAsync(
                 cancellationToken: timeout.Token);
+        var staticResources =
+            await client.ListResourcesAsync(
+                cancellationToken: timeout.Token);
 
         Assert.Equal(
             ExpectedToolNames,
@@ -90,6 +99,13 @@ public sealed class McpAdapterTests
             ExpectedResourceTemplates,
             resources
                 .Select(resource => resource.UriTemplate)
+                .OrderBy(
+                    uri => uri,
+                    StringComparer.Ordinal));
+        Assert.Equal(
+            ExpectedResourceUris,
+            staticResources
+                .Select(resource => resource.Uri)
                 .OrderBy(
                     uri => uri,
                     StringComparer.Ordinal));
@@ -280,7 +296,11 @@ public sealed class McpAdapterTests
                 .ToArray();
 
         Assert.Equal(
-            ExpectedResourceTemplates,
+            ExpectedResourceTemplates
+                .Concat(ExpectedResourceUris)
+                .OrderBy(
+                    uri => uri,
+                    StringComparer.Ordinal),
             templates);
     }
 
@@ -443,6 +463,36 @@ public sealed class McpAdapterTests
             12,
             result.Meta["gatewayNextOffset"]
                 ?.GetValue<long>());
+    }
+
+    [Fact]
+    public async Task DocumentationResourcesReadInstalledCanonicalFiles()
+    {
+        TwinCatResources resources = new(
+            new FakeGatewayClient());
+
+        TextResourceContents setup =
+            await resources.GetSetupDocumentationAsync();
+        TextResourceContents configuration =
+            await resources
+                .GetConfigurationDocumentationAsync();
+
+        Assert.Equal("twincat-doc://setup", setup.Uri);
+        Assert.Equal("text/plain", setup.MimeType);
+        Assert.Contains(
+            "twincat-gateway.json",
+            setup.Text,
+            StringComparison.Ordinal);
+        Assert.Equal(
+            "twincat-doc://configuration",
+            configuration.Uri);
+        Assert.Equal(
+            "text/markdown",
+            configuration.MimeType);
+        Assert.Contains(
+            "# Gateway configuration reference",
+            configuration.Text,
+            StringComparison.Ordinal);
     }
 
     [Fact]

@@ -18,4 +18,15 @@
     <ProjectReference Include="..\TwinCatGateway.Core\TwinCatGateway.Core.csproj" />
     <ProjectReference Include="..\TwinCatGateway.Ipc\TwinCatGateway.Ipc.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\setup\SETUP_INSTRUCTIONS.txt"
+          Link="SETUP_INSTRUCTIONS.txt"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\docs\CONFIGURATION.md"
+          Link="CONFIGURATION.md"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

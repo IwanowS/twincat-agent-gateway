@@ -1283,9 +1283,14 @@ twincat-log://<operation-id>/build
 twincat-log://<operation-id>/xae
 twincat-test://<operation-id>/xunit
 twincat-diff://<operation-id>/project-noise
+twincat-doc://setup
+twincat-doc://configuration
 ```
 
-Tool result должен быть достаточен для обычного исправления compile error. Resource читается только для нестандартной диагностики.
+Tool result должен быть достаточен для обычного исправления compile error.
+Operation resource читается только для нестандартной диагностики. Статические
+`twincat-doc` resources доступны без запущенного desktop gateway и возвращают
+установленные канонические setup instructions и configuration reference.
 
 ## 17. Пользовательский интерфейс
 

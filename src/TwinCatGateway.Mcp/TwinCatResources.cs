@@ -1,5 +1,6 @@
 using System;
 using System.ComponentModel;
+using System.IO;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,21 +18,34 @@ public sealed class TwinCatResources
 {
     private const int MaximumResourceCharacters =
         1024 * 1024;
+    private const string SetupDocumentationUri =
+        "twincat-doc://setup";
+    private const string ConfigurationDocumentationUri =
+        "twincat-doc://configuration";
+    private const string SetupDocumentationFileName =
+        "SETUP_INSTRUCTIONS.txt";
+    private const string ConfigurationDocumentationFileName =
+        "CONFIGURATION.md";
 
     private readonly GatewayMcpRuntime? _runtime;
     private readonly ITwinCatGatewayClient? _fixedClient;
+    private readonly string _documentationDirectory;
 
     [ActivatorUtilitiesConstructor]
     public TwinCatResources(GatewayMcpRuntime runtime)
     {
         _runtime = runtime
             ?? throw new ArgumentNullException(nameof(runtime));
+        _documentationDirectory =
+            AppContext.BaseDirectory;
     }
 
     public TwinCatResources(ITwinCatGatewayClient client)
     {
         _fixedClient = client
             ?? throw new ArgumentNullException(nameof(client));
+        _documentationDirectory =
+            AppContext.BaseDirectory;
     }
 
     [McpServerResource(
@@ -113,6 +127,84 @@ public sealed class TwinCatResources
             "project-noise",
             server,
             cancellationToken);
+    }
+
+    [McpServerResource(
+        UriTemplate = SetupDocumentationUri,
+        Name = "TwinCAT Agent Gateway setup instructions",
+        MimeType = "text/plain")]
+    [Description(
+        "Read the installed setup and agent workflow instructions.")]
+    public Task<TextResourceContents> GetSetupDocumentationAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return ReadDocumentationAsync(
+            _documentationDirectory,
+            SetupDocumentationUri,
+            SetupDocumentationFileName,
+            "text/plain",
+            cancellationToken);
+    }
+
+    [McpServerResource(
+        UriTemplate = ConfigurationDocumentationUri,
+        Name = "TwinCAT Agent Gateway configuration reference",
+        MimeType = "text/markdown")]
+    [Description(
+        "Read the complete twincat-gateway.json option reference "
+        + "and examples.")]
+    public Task<TextResourceContents>
+        GetConfigurationDocumentationAsync(
+            CancellationToken cancellationToken = default)
+    {
+        return ReadDocumentationAsync(
+            _documentationDirectory,
+            ConfigurationDocumentationUri,
+            ConfigurationDocumentationFileName,
+            "text/markdown",
+            cancellationToken);
+    }
+
+    private static Task<TextResourceContents>
+        ReadDocumentationAsync(
+            string documentationDirectory,
+            string uri,
+            string fileName,
+            string mimeType,
+            CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        string path = Path.Combine(
+            documentationDirectory,
+            fileName);
+        try
+        {
+            if (!File.Exists(path))
+            {
+                throw new FileNotFoundException(
+                    "Installed MCP documentation was not found.",
+                    path);
+            }
+
+            return Task.FromResult(
+                new TextResourceContents
+                {
+                    Uri = uri,
+                    MimeType = mimeType,
+                    Text = File.ReadAllText(path),
+                });
+        }
+        catch (Exception exception)
+            when (exception is IOException
+                || exception
+                    is UnauthorizedAccessException)
+        {
+            throw new McpException(
+                "MCP documentation resource '"
+                + uri
+                + "' is unavailable: "
+                + exception.Message);
+        }
     }
 
     private async Task<TextResourceContents> ReadAsync(

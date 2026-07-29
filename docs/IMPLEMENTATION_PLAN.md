@@ -681,6 +681,8 @@ twincat-log://<operation-id>/build
 twincat-log://<operation-id>/xae
 twincat-test://<operation-id>/xunit
 twincat-diff://<operation-id>/project-noise
+twincat-doc://setup
+twincat-doc://configuration
 ```
 
 ### Skills

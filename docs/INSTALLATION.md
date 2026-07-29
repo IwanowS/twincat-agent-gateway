@@ -112,6 +112,17 @@ console subcommands; its root options are `--config`, `--pipe`, and
 `--gateway-command`. In normal no-argument server mode, stdout remains reserved
 for the MCP protocol.
 
+The MCP server also exposes the installed canonical documentation without
+starting or connecting to the desktop gateway:
+
+```text
+twincat-doc://setup
+twincat-doc://configuration
+```
+
+Use the configuration resource before creating or changing a project-owned
+`twincat-gateway.json`.
+
 ## Install skills separately
 
 ```powershell

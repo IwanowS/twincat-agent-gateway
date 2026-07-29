@@ -22,9 +22,11 @@ gateway that reports `GATEWAY_RUNNING_DIFFERENT_PROJECT`.
 ## Project configuration
 
 The project-owned `twincat-gateway.json` selects the exact solution and safety
-profile. The complete option reference and examples are available from the
-desktop application's `Setup instructions` view and from
-`docs/CONFIGURATION.md` in the TwinCAT Agent Gateway repository.
+profile. Read MCP resource `twincat-doc://configuration` for the complete
+option reference and examples before creating or changing this file. Read
+`twincat-doc://setup` for installation and agent workflow instructions. The
+desktop application's `Setup instructions` view uses the same installed
+documentation.
 
 Do not enable `allowActivation`, change `expectedTarget.amsNetId`, replace
 TcUnit symbols/ADS port, or enable `allowDeleteExistingReport` without an
