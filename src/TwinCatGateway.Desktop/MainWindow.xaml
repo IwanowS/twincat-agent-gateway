@@ -325,9 +325,9 @@
                        Foreground="#6A7681"
                        TextTrimming="CharacterEllipsis"
                        Text="{Binding LogDirectory}" />
-            <StackPanel Grid.Row="1"
-                        HorizontalAlignment="Right"
-                        Orientation="Horizontal">
+            <WrapPanel Grid.Row="1"
+                       HorizontalAlignment="Right"
+                       Orientation="Horizontal">
                 <Button MinWidth="92"
                         Padding="12,7"
                         IsEnabled="{Binding CanReconnect}"
@@ -365,6 +365,12 @@
                         IsEnabled="{Binding CanActivate}"
                         Click="ActivateButton_Click"
                         Content="Activate…" />
+                <Button MinWidth="92"
+                        Margin="6,0,0,0"
+                        Padding="12,7"
+                        IsEnabled="{Binding CanRecoverToConfig}"
+                        Click="ConfigModeButton_Click"
+                        Content="Config…" />
                 <Button MinWidth="104"
                         Margin="6,0,0,0"
                         Padding="12,7"
@@ -375,7 +381,7 @@
                         Padding="12,7"
                         Click="OpenLogsButton_Click"
                         Content="Open logs" />
-            </StackPanel>
+            </WrapPanel>
         </Grid>
     </Grid>
 </Window>

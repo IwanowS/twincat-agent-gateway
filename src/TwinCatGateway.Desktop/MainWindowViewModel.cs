@@ -56,11 +56,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         BuildAction.Rebuild;
     private bool _canStartOperation;
     private bool _canActivate;
+    private bool _canRecoverToConfig;
     private bool _canSynchronize;
     private bool _canReconnect;
     private bool _isVerboseEvents;
     private string _selectedOperationKind = AllFilter;
     private string _selectedOperationState = AllFilter;
+    private RuntimeMode _runtimeMode = RuntimeMode.Unknown;
 
     public MainWindowViewModel(GatewayDesktopHost host)
     {
@@ -230,6 +232,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetField(ref _canActivate, value);
     }
 
+    public bool CanRecoverToConfig
+    {
+        get => _canRecoverToConfig;
+        private set =>
+            SetField(ref _canRecoverToConfig, value);
+    }
+
     public bool CanSynchronize
     {
         get => _canSynchronize;
@@ -293,6 +302,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    public string RecoveryConfirmation
+    {
+        get
+        {
+            ProjectProfile? profile = _host.ActiveProfile;
+            string target = FormatTarget(
+                profile?.ExpectedTarget);
+            return "Restart the configured remote TwinCAT runtime "
+                + "in Config Mode?\n\n"
+                + $"Profile: {profile?.Name ?? "unknown"}\n"
+                + $"Target: {target}\n"
+                + $"Current runtime state: {_runtimeMode}\n\n"
+                + "This is an explicit state-changing recovery "
+                + "operation. It does not activate a configuration.";
+        }
+    }
+
     public static string SynchronizationConfirmation =>
         "Reload the selected TwinCAT project from disk?\n\n"
         + "The current disk state will become the confirmed XAE "
@@ -323,6 +349,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             CanStartOperation = false;
             CanSynchronize = false;
             CanActivate = false;
+            CanRecoverToConfig = false;
             CanReconnect = _host.CanReconnectXae;
         }
     }
@@ -385,6 +412,28 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return accepted;
     }
 
+    public OperationAccepted StartRecoverToConfig()
+    {
+        ProjectProfile profile =
+            RequireActiveProfile();
+        if (!profile.AllowActivation)
+        {
+            throw new InvalidOperationException(
+                "Runtime recovery is disabled for the active profile.");
+        }
+
+        EnsureNoActiveOperation();
+        OperationAccepted accepted =
+            _host.ApplicationService.StartRecoverToConfig(
+                new RecoverToConfigParameters
+                {
+                    Profile = profile.Name,
+                    TimeoutSeconds = 60,
+                });
+        Refresh();
+        return accepted;
+    }
+
     public void RequestReconnect()
     {
         EnsureNoActiveOperation();
@@ -431,6 +480,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             diagnostics.Events);
         RuntimeState = FormatRuntimeState(status.TwinCat);
         RuntimeAlert = FormatRuntimeAlert(status.TwinCat.Alert);
+        _runtimeMode = status.TwinCat.Mode;
         UnsynchronizedFilesSummary =
             FormatUnsynchronizedFilesSummary(
                 status.Xae.SynchronizationState,
@@ -459,6 +509,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         CanActivate =
             CanStartOperation
             && profile?.AllowActivation == true;
+        CanRecoverToConfig =
+            IsRecoveryAvailable(
+                operationActive,
+                status.Xae.Connected,
+                profile?.AllowActivation == true,
+                status.TwinCat.Mode);
         CanReconnect =
             !operationActive
             && _host.CanReconnectXae;
@@ -804,6 +860,19 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     row.State,
                     state,
                     StringComparison.Ordinal));
+    }
+
+    internal static bool IsRecoveryAvailable(
+        bool operationActive,
+        bool xaeConnected,
+        bool recoveryAllowed,
+        RuntimeMode runtimeMode)
+    {
+        return !operationActive
+            && xaeConnected
+            && recoveryAllowed
+            && runtimeMode != RuntimeMode.Unknown
+            && runtimeMode != RuntimeMode.Config;
     }
 
     private ProjectProfile RequireActiveProfile()

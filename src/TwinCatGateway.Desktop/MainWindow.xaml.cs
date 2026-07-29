@@ -97,6 +97,27 @@ public partial class MainWindow : Window
             "The activation operation could not be queued.");
     }
 
+    private void ConfigModeButton_Click(
+        object sender,
+        RoutedEventArgs e)
+    {
+        MessageBoxResult confirmation =
+            MessageBox.Show(
+                _viewModel.RecoveryConfirmation,
+                "Confirm TwinCAT Config Mode",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning,
+                MessageBoxResult.No);
+        if (confirmation != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        ExecuteUiAction(
+            () => _viewModel.StartRecoverToConfig(),
+            "The Config Mode recovery operation could not be queued.");
+    }
+
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
     {
         try

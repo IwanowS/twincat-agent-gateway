@@ -208,6 +208,7 @@ public sealed class DesktopGatewayHostTests
 
         Assert.False(viewModel.CanStartOperation);
         Assert.False(viewModel.CanActivate);
+        Assert.False(viewModel.CanRecoverToConfig);
         Assert.True(viewModel.CanReconnect);
         Assert.Equal(
             BuildAction.Rebuild,
@@ -373,6 +374,29 @@ public sealed class DesktopGatewayHostTests
         Assert.Same(existing, Assert.Single(rows));
         Assert.Equal("Deleted", existing.ChangeKind);
         Assert.Equal("PlcSource", existing.Role);
+    }
+
+    [Theory]
+    [InlineData(false, true, true, RuntimeMode.Exception, true)]
+    [InlineData(true, true, true, RuntimeMode.Exception, false)]
+    [InlineData(false, false, true, RuntimeMode.Exception, false)]
+    [InlineData(false, true, false, RuntimeMode.Exception, false)]
+    [InlineData(false, true, true, RuntimeMode.Unknown, false)]
+    [InlineData(false, true, true, RuntimeMode.Config, false)]
+    public void ConfigModeButtonAvailabilityFailsClosed(
+        bool operationActive,
+        bool xaeConnected,
+        bool recoveryAllowed,
+        RuntimeMode runtimeMode,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            MainWindowViewModel.IsRecoveryAvailable(
+                operationActive,
+                xaeConnected,
+                recoveryAllowed,
+                runtimeMode));
     }
 
     [Fact]
