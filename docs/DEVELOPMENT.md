@@ -165,6 +165,15 @@ The source bytes are also restored in `finally`. An unexpected dialog, target
 identity, or transition stops further runtime commands; inspect the bench
 before any manual recovery.
 
+Never add this destructive test to routine automated validation. Run it only
+after an explicit change to the runtime test pipeline or recovery workflow,
+with an operator available to log in to the remote system and restore Config
+Mode. On `WIN-T077ADA`, several repeated Exception transitions have sometimes
+prevented the automated Config transition from completing; this has not been
+confirmed on other runtimes. A recovery timeout or failure must stop the
+pipeline without an automatic retry. After the operator restores Config Mode,
+confirm it through the gateway before continuing.
+
 The linked TcUnit acceptance additionally launches its own XAE instance,
 waits for the single PLC configured by the profile, reads a fresh report
 through the operator-provided read-only path, queries `getTestResults`, and
