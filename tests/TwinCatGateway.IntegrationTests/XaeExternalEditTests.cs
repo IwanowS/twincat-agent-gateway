@@ -156,6 +156,67 @@ public sealed class XaeExternalEditTests
         }
     }
 
+    [XaeLaunchFact]
+    public async Task ExternalEditIsReportedUntilDiskMatchesBaseline()
+    {
+        string sourceSolution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        using TemporarySolution copy =
+            TemporarySolution.Create(sourceSolution);
+        string documentPath = Path.Combine(
+            Path.GetDirectoryName(copy.SolutionPath)!,
+            "TC3_SimpleProject",
+            "PlcProject1",
+            "POUs",
+            "MAIN.TcPOU");
+        XaeSession session = new();
+        try
+        {
+            await session.LaunchAsync(
+                copy.SolutionPath,
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_XAE_PROGID"),
+                TimeSpan.FromSeconds(60),
+                CancellationToken.None);
+            string source = File.ReadAllText(documentPath);
+            File.WriteAllText(
+                documentPath,
+                source + Environment.NewLine);
+
+            XaeSessionSnapshot changed =
+                session.RefreshSynchronizationStatus(
+                    CancellationToken.None);
+
+            Assert.Equal(
+                SynchronizationState.SyncRequired,
+                changed.SynchronizationState);
+            ProjectFileChange change = Assert.Single(
+                changed.UnsynchronizedFiles);
+            Assert.Equal(
+                ProjectFileChangeKind.Modified,
+                change.Kind);
+            Assert.Equal(
+                ProjectGraphFileRole.PlcSource,
+                change.Role);
+            Assert.Equal(documentPath, change.Path);
+
+            File.WriteAllText(documentPath, source);
+            XaeSessionSnapshot restored =
+                session.RefreshSynchronizationStatus(
+                    CancellationToken.None);
+
+            Assert.Equal(
+                SynchronizationState.Confirmed,
+                restored.SynchronizationState);
+            Assert.Empty(restored.UnsynchronizedFiles);
+        }
+        finally
+        {
+            await CloseSessionAsync(session, copy);
+        }
+    }
+
     private static async Task CloseSessionAsync(
         XaeSession session,
         TemporarySolution copy)
