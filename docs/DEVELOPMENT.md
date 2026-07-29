@@ -125,6 +125,22 @@ TwinCAT on the remote target, waits for read-only ADS state `Run`, and checks
 that XAE has no modal dialogs. Never set the opt-in variable for a local target
 or an unapproved bench.
 
+The companion no-Run acceptance uses the same explicit remote opt-in, rebuilds
+the solution, activates the configuration, and cancels only XAE's final
+`Restart TwinCAT System in Run Mode` dialog:
+
+```powershell
+dotnet vstest `
+  'tests\TwinCatGateway.IntegrationTests\bin\Debug\net48\TwinCatGateway.IntegrationTests.dll' `
+  '/Platform:x86' `
+  '/TestCaseFilter:FullyQualifiedName~DesktopGatewayActivationTests.ActivationBuildsWithoutRunTransitionThroughIpc'
+```
+
+Success requires the recorded `cancel-run` dialog action, completion
+`RestartSkipped`, `activeConfigurationVerified=false`, and a readable observed
+runtime mode. The test does not require or imply that the newly transferred
+configuration is active.
+
 The linked TcUnit acceptance additionally launches its own XAE instance,
 waits for the single PLC configured by the profile, reads a fresh report
 through the operator-provided read-only path, queries `getTestResults`, and

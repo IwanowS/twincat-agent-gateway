@@ -161,6 +161,147 @@ public sealed class DesktopGatewayActivationTests
             XaeWindowProbe.FindModalDialogs(processId));
     }
 
+    [RemoteActivationFact]
+    public async Task ActivationBuildsWithoutRunTransitionThroughIpc()
+    {
+        using TemporaryDirectory temporary = new();
+        string solutionPath = GetSolutionPath();
+        string expectedAmsNetId =
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_REMOTE_AMS_NET_ID")!;
+        string pipeName = CreatePipeName();
+        string configurationPath = WriteConfiguration(
+            temporary.Path,
+            pipeName,
+            solutionPath,
+            expectedAmsNetId,
+            requireRecentBuild: true);
+        using GatewayDesktopHost host = StartHost(
+            configurationPath);
+        await WaitForStateAsync(
+            host,
+            GatewayState.Ready,
+            TimeSpan.FromSeconds(15));
+        NamedPipeGatewayClient client = new(pipeName);
+        await SynchronizeDiskAsync(host, client);
+
+        GatewayResponse<OperationAccepted> buildAccepted =
+            await client.SendAsync<
+                BuildParameters,
+                OperationAccepted>(
+                GatewayMethods.Build,
+                new BuildParameters
+                {
+                    Profile = "fixture",
+                    Action = BuildAction.Rebuild,
+                    TimeoutSeconds = 90,
+                },
+                wait: false,
+                CancellationToken.None);
+        Assert.True(buildAccepted.Ok);
+        OperationDetails<BuildResult> build =
+            await WaitForOperationAsync<BuildResult>(
+                client,
+                Assert.IsType<OperationAccepted>(
+                    buildAccepted.Result).OperationId,
+                TimeSpan.FromSeconds(105));
+        Assert.Equal(
+            OperationState.Succeeded,
+            build.Operation.State);
+        Assert.True(build.Result?.Ok);
+
+        OperationAccepted accepted = await StartActivationAsync(
+            client,
+            TimeSpan.FromSeconds(180),
+            runAfterActivation: false);
+        OperationDetails<ActivationResult> completed =
+            await WaitForOperationAsync<ActivationResult>(
+                client,
+                accepted.OperationId,
+                TimeSpan.FromSeconds(195));
+        GatewayDiagnosticsResult diagnostics =
+            host.ApplicationService.GetDiagnostics();
+        int processId = GetSelectedProcessId(diagnostics);
+
+        await host.StopAsync();
+
+        Assert.Equal(
+            OperationState.Succeeded,
+            completed.Operation.State);
+        ActivationResult result = Assert.IsType<ActivationResult>(
+            completed.Result);
+        Assert.True(result.Ok);
+        Assert.Equal(expectedAmsNetId, result.Target.AmsNetId);
+        Assert.False(result.RunAfterActivation);
+        Assert.Equal(
+            ActivationCompletion.RestartSkipped,
+            result.Completion);
+        Assert.False(result.ActiveConfigurationVerified);
+        Assert.Contains(
+            result.ObservedRuntimeMode,
+            new[]
+            {
+                RuntimeMode.Run,
+                RuntimeMode.Config,
+            });
+        Assert.Null(result.TestOperationId);
+        Assert.Equal(
+            ResourceKind.ActivationLog,
+            Assert.Single(result.Resources).Kind);
+
+        GatewayEvent runDialog = Assert.Single(
+            diagnostics.Events,
+            gatewayEvent =>
+                string.Equals(
+                    gatewayEvent.OperationId,
+                    accepted.OperationId,
+                    StringComparison.Ordinal)
+                && string.Equals(
+                    gatewayEvent.Type,
+                    GatewayEventTypes.XaeDialogObserved,
+                    StringComparison.Ordinal)
+                && gatewayEvent.Properties.TryGetValue(
+                    "kind",
+                    out string? kind)
+                && string.Equals(
+                    kind,
+                    "RunConfirmation",
+                    StringComparison.Ordinal));
+        Assert.Equal(
+            "cancel-run",
+            runDialog.Properties["action"]);
+        Assert.Equal(
+            bool.TrueString,
+            runDialog.Properties["actionCompleted"]);
+
+        string[] eventTypes = GetOperationEventTypes(
+            diagnostics,
+            accepted.OperationId);
+        Assert.Contains(
+            GatewayEventTypes.ActivationConfigurationStarted,
+            eventTypes);
+        Assert.Contains(
+            GatewayEventTypes.ActivationRestartSkipped,
+            eventTypes);
+        Assert.Contains(
+            GatewayEventTypes.ActivationRuntimeReady,
+            eventTypes);
+        Assert.Contains(
+            GatewayEventTypes.ActivationSucceeded,
+            eventTypes);
+        Assert.DoesNotContain(
+            GatewayEventTypes.ActivationConfigurationActivated,
+            eventTypes);
+        Assert.DoesNotContain(
+            GatewayEventTypes.ActivationRestartStarted,
+            eventTypes);
+        Assert.DoesNotContain(
+            GatewayEventTypes.ActivationRestartRequested,
+            eventTypes);
+        Assert.Empty(
+            XaeWindowProbe.FindModalDialogs(processId));
+    }
+
     [RemoteTcUnitFact]
     public async Task ActivationRunsLinkedTcUnitThroughIpc()
     {
@@ -328,7 +469,8 @@ public sealed class DesktopGatewayActivationTests
         StartActivationAsync(
             NamedPipeGatewayClient client,
             TimeSpan timeout,
-            bool waitForTcUnit = false)
+            bool waitForTcUnit = false,
+            bool runAfterActivation = true)
     {
         GatewayResponse<OperationAccepted> response =
             await client.SendAsync<
@@ -339,6 +481,7 @@ public sealed class DesktopGatewayActivationTests
                 {
                     Profile = "fixture",
                     WaitForTcUnit = waitForTcUnit,
+                    RunAfterActivation = runAfterActivation,
                     TimeoutSeconds =
                         checked((int)timeout.TotalSeconds),
                 },
