@@ -21,7 +21,10 @@ public static class RuntimeOperationPolicy
             stage: "build.runtimePreflight");
     }
 
-    public static void EnsureActivationAllowed(RuntimeMode runtimeMode)
+    public static void EnsureActivationAllowed(
+        RuntimeMode runtimeMode,
+        string stage = "activation.runtimePreflight",
+        string? message = null)
     {
         if (runtimeMode != RuntimeMode.Exception)
         {
@@ -30,10 +33,11 @@ public static class RuntimeOperationPolicy
 
         throw new GatewayOperationException(
             ErrorCodes.RuntimeRecoveryRequired,
-            "Activation was not started because the TwinCAT runtime is "
-                + "in Exception. Explicitly recover the runtime to Config "
-                + "before activating a new configuration.",
+            message
+                ?? "Activation was not started because the TwinCAT runtime "
+                    + "is in Exception. Explicitly recover the runtime to "
+                    + "Config before activating a new configuration.",
             retryable: true,
-            stage: "activation.runtimePreflight");
+            stage: stage);
     }
 }

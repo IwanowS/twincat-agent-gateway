@@ -857,7 +857,7 @@ twincat-diff://<operation-id>/project-noise
 | PLC `.tmc` generated artifact | Да | Да | Да |
 | XAE-owned arbitrary graph rewrite | Да | Нет | Да |
 | Activation allowed/denied | Да | Да | Да |
-| Recovery after exception | Нет | Да | Да |
+| Recovery after exception | Да | Да | Да |
 | Public recover-to-Config tool | Да | Да | Да |
 | Run-to-Exception short-circuit | Да | Да | Да |
 | Auto Boot PLC readiness | Да | Да | Да |

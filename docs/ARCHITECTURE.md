@@ -658,17 +658,21 @@ Gateway намеренно использует DTE command identity
 1. Проверить `allowActivation` profile.
 2. Проверить выбранные solution и AMS NetId.
 3. Проверить, что gateway не выполняет build.
-4. Проверить policy актуальности последней успешной сборки.
-5. Снять baseline XAE Error List и прочитать runtime state через read-only ADS
+4. Если continuous monitor уже подтверждает `Exception`, вернуть
+   `RUNTIME_RECOVERY_REQUIRED` до recent-build policy: диагностически
+   заблокированная build operation не должна маскировать необходимость
+   явного recovery.
+5. Проверить policy актуальности последней успешной сборки.
+6. Снять baseline XAE Error List и прочитать runtime state через read-only ADS
    `TryReadState` на System Service port 10000; `unknown` завершает операцию до
    изменения состояния.
-6. Если runtime находится в `Exception`, завершить activation с
+7. Если runtime находится в `Exception`, завершить activation с
    `RUNTIME_RECOVERY_REQUIRED`. Не выполнять скрытый `RecoverToConfig`:
    пользователь или агент должен отдельно запросить явный переход в Config.
-7. Повторно проверить solution и AMS NetId и один раз вызвать
+8. Повторно проверить solution и AMS NetId и один раз вызвать
    `DTE2.ExecuteCommand("TwinCAT.ActivateConfiguration")` при выключенном
    Silent Mode.
-8. Обработать только известную последовательность dialogs точного XAE PID:
+9. Обработать только известную последовательность dialogs точного XAE PID:
    - platform mismatch: нажать Cancel и вернуть подробную ошибку;
    - `Activate Configuration`: прочитать tri-state Autostart, не менять его
      и нажать OK;
@@ -677,24 +681,24 @@ Gateway намеренно использует DTE command identity
    - fatal dialog: безопасно закрыть и вернуть ошибку;
    - неизвестный dialog: ничего не подтверждать и завершить operation
      fail-closed.
-9. Не выполнять отдельный `StartRestartTwinCAT()`. При
+10. Не выполнять отдельный `StartRestartTwinCAT()`. При
    `runAfterActivation=true` наблюдать переход, не считая сохранённое до
    команды состояние `Run` доказательством нового запуска. При `false`
    отменить только финальный запрос перехода в Run, не выполнять
    принудительный переход в Config и вернуть фактически наблюдаемое runtime
    state вместе с `activeConfigurationVerified=false`. Состояние `Exception`
    является немедленным terminal failure, а не причиной ждать общий timeout.
-10. При `runAfterActivation=true` определить через XAE PLC projects с
+11. При `runAfterActivation=true` определить через XAE PLC projects с
     `BootProjectAutostart=true` и проверить
     online state каждого такого PLC. Успех требует стабильного `Run` System
     Service и отсутствия `Exception` у всех обязательных Auto Boot PLC.
-11. Прочитать дельту XAE Error List и `GetLastErrorMessages()`. Runtime
+12. Прочитать дельту XAE Error List и `GetLastErrorMessages()`. Runtime
     exception/page fault и связанные ошибки портов являются fatal; warnings
     возвращаются в diagnostics, но сами по себе не делают activation
     неуспешной.
-12. Повторно проверить solution и AMS NetId и обновить XAE/runtime diagnostics.
-13. Записать activation resource и stage events в общую event stream.
-14. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
+13. Повторно проверить solution и AMS NetId и обновить XAE/runtime diagnostics.
+14. Записать activation resource и stage events в общую event stream.
+15. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
 
 Gateway не вызывает `SaveAll` перед activation: при agent-owned workspace
 источником истины являются внешние файлы, синхронизированные и собранные
@@ -1392,13 +1396,12 @@ Metrics не обязательны для MVP, но structured events долж�
 
 До фиксации реализации провести spikes:
 
-1. End-to-end recovery из реального PLC `Exception` через подтверждённую команду `TwinCAT.RestartTwinCATConfigMode`.
-2. Поддержка structural sync для добавленных и удалённых PLC source files.
-3. Полнота Error List по сравнению с Build Output на реальных PLC compile errors.
-4. Точный lifecycle `BuildEvents` в нескольких открытых XAE instances.
-5. Silent Mode и поведение confirmation dialogs при ошибочных activation paths на тестовом стенде.
-6. Reconnect ADS client после restart и доступность TcUnit completion symbols на реальном стенде.
-7. Закреплённая версия TcUnit, стабильность внутренних completion symbol paths и поведение `xUnitEnablePublish/xUnitFilePath` на 4024.17.
+1. Поддержка structural sync для добавленных и удалённых PLC source files.
+2. Полнота Error List по сравнению с Build Output на реальных PLC compile errors.
+3. Точный lifecycle `BuildEvents` в нескольких открытых XAE instances.
+4. Silent Mode и поведение confirmation dialogs при ошибочных activation paths на тестовом стенде.
+5. Reconnect ADS client после restart и доступность TcUnit completion symbols на реальном стенде.
+6. Закреплённая версия TcUnit, стабильность внутренних completion symbol paths и поведение `xUnitEnablePublish/xUnitFilePath` на 4024.17.
 
 ## 22. Источники
 

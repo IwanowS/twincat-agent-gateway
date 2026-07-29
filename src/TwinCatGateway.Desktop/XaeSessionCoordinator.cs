@@ -556,7 +556,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     ErrorCodes.TwinCatRestartFailed,
                     "TwinCAT did not reach Run after activation.",
                     "activation.verify",
-                    cancellationToken)).ConfigureAwait(false);
+                    cancellationToken,
+                    failOnException: true)).ConfigureAwait(false);
         }
         else
         {
@@ -1537,7 +1538,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             string errorCode,
             string errorMessage,
             string stage,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool failOnException = false)
     {
         while (DateTimeOffset.UtcNow < deadlineUtc)
         {
@@ -1558,6 +1560,18 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     && runtime.Status.Mode == expectedMode)
                 {
                     return runtime;
+                }
+
+                if (runtime.Diagnostics.ErrorCode is null
+                    && failOnException)
+                {
+                    RuntimeOperationPolicy.EnsureActivationAllowed(
+                        runtime.Status.Mode,
+                        stage,
+                        "Activation did not reach Run because the TwinCAT "
+                            + "runtime entered Exception. Explicitly "
+                            + "recover the runtime to Config before "
+                            + "building or activating again.");
                 }
             }
 

@@ -49,4 +49,25 @@ public sealed class RuntimeOperationPolicyTests
             "activation.runtimePreflight",
             exception.Stage);
     }
+
+    [Fact]
+    public void ActivationWaitPreservesVerificationStage()
+    {
+        GatewayOperationException exception = Assert.Throws<
+            GatewayOperationException>(
+            () => RuntimeOperationPolicy.EnsureActivationAllowed(
+                RuntimeMode.Exception,
+                "activation.verify",
+                "Runtime entered Exception."));
+
+        Assert.Equal(
+            ErrorCodes.RuntimeRecoveryRequired,
+            exception.Code);
+        Assert.Equal(
+            "activation.verify",
+            exception.Stage);
+        Assert.Equal(
+            "Runtime entered Exception.",
+            exception.Message);
+    }
 }

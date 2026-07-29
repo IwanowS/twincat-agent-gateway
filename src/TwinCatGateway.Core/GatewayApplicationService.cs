@@ -333,6 +333,8 @@ public sealed class GatewayApplicationService
                 stage: "activation.tcunit");
         }
 
+        RuntimeOperationPolicy.EnsureActivationAllowed(
+            _status.Read().TwinCat.Mode);
         ValidateRecentBuild(_activeProfile);
         ActivateParameters captured =
             CloneActivateParameters(parameters);

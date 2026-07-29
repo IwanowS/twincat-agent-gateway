@@ -441,6 +441,37 @@ public sealed class GatewayApplicationServiceTests
     }
 
     [Fact]
+    public void RuntimeExceptionPrecedesRecentBuildValidation()
+    {
+        ProjectProfile profile = CreateActivationProfile();
+        using ServiceFixture fixture = new(
+            activationExecutor: SuccessfulActivation,
+            activeProfile: profile);
+        fixture.Status.Update(status =>
+        {
+            status.TwinCat.Mode = RuntimeMode.Exception;
+            status.TwinCat.SystemMode = RuntimeMode.Exception;
+            return status;
+        });
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.StartActivation(
+                    new ActivateParameters
+                    {
+                        Profile = profile.Name,
+                    }));
+
+        Assert.Equal(
+            ErrorCodes.RuntimeRecoveryRequired,
+            exception.Code);
+        Assert.Equal(
+            "activation.runtimePreflight",
+            exception.Stage);
+        Assert.Empty(fixture.Operations.GetRecent(10));
+    }
+
+    [Fact]
     public async Task RecoveryIsExplicitAndDoesNotRequireRecentBuild()
     {
         ProjectProfile profile = CreateActivationProfile();
