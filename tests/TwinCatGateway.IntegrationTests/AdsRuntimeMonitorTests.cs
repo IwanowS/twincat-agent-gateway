@@ -39,9 +39,11 @@ public sealed class AdsRuntimeMonitorTests
                         "Page Fault in PlcProject2 on ADS port 852.",
                 },
             });
+        using GatewayLoggingSession logging =
+            GatewayLoggingSession.Create(temporary.Path);
         using AdsRuntimeMonitor monitor = new(
             status,
-            new StructuredFileLogger(temporary.Path),
+            logging.CreateLogger<AdsRuntimeMonitor>(),
             events,
             CreateConfiguration(),
             probe,
@@ -130,9 +132,11 @@ public sealed class AdsRuntimeMonitorTests
         probe.SetFailure(
             10000,
             "TargetUnreachable");
+        using GatewayLoggingSession logging =
+            GatewayLoggingSession.Create(temporary.Path);
         using AdsRuntimeMonitor monitor = new(
             status,
-            new StructuredFileLogger(temporary.Path),
+            logging.CreateLogger<AdsRuntimeMonitor>(),
             events,
             CreateConfiguration(),
             probe);

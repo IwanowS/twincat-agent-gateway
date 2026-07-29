@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using TwinCatGateway.Ads;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
@@ -36,7 +37,7 @@ internal sealed class TcUnitRunExecutor
         TimeSpan.FromSeconds(3);
     private readonly ProjectProfile _profile;
     private readonly LocalLogStore _logs;
-    private readonly StructuredFileLogger _logger;
+    private readonly ILogger<TcUnitRunExecutor> _logger;
     private readonly IGatewayEventSink _events;
     private readonly ITcUnitCompletionEvidenceReader
         _completionReader;
@@ -45,7 +46,7 @@ internal sealed class TcUnitRunExecutor
     public TcUnitRunExecutor(
         ProjectProfile profile,
         LocalLogStore logs,
-        StructuredFileLogger logger,
+        ILogger<TcUnitRunExecutor> logger,
         IGatewayEventSink events,
         ITcUnitCompletionEvidenceReader?
             completionReader = null,
@@ -95,7 +96,7 @@ internal sealed class TcUnitRunExecutor
             ReportBaseline = baseline,
         };
         _logger.Write(
-            StructuredLogLevel.Information,
+            LogLevel.Information,
             "tcunit.prepared",
             "TcUnit report baseline captured.",
             activationOperationId,
@@ -263,7 +264,7 @@ internal sealed class TcUnitRunExecutor
         GatewayOperationException exception =
             CreateCompletionFailure(last);
         _logger.Write(
-            StructuredLogLevel.Error,
+            LogLevel.Error,
             "tcunit.completionFailed",
             exception.Message,
             operationId,
@@ -511,8 +512,8 @@ internal sealed class TcUnitRunExecutor
 
         _logger.Write(
             severity == DiagnosticSeverity.Warning
-                ? StructuredLogLevel.Warning
-                : StructuredLogLevel.Information,
+                ? LogLevel.Warning
+                : LogLevel.Information,
             type,
             message,
             operationId,

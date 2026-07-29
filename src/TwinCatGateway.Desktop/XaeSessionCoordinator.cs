@@ -7,6 +7,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using TwinCatGateway.Ads;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
@@ -26,7 +27,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly object _sync = new();
     private readonly ProjectProfile _profile;
     private readonly GatewayStatusSnapshotStore _status;
-    private readonly StructuredFileLogger _logger;
+    private readonly ILogger<XaeSessionCoordinator> _logger;
     private readonly LocalLogStore _logs;
     private readonly IGatewayEventSink _events;
     private readonly AdsRuntimeMonitor _runtimeMonitor;
@@ -47,7 +48,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
     public XaeSessionCoordinator(
         ProjectProfile profile,
         GatewayStatusSnapshotStore status,
-        StructuredFileLogger logger,
+        ILogger<XaeSessionCoordinator> logger,
+        ILogger<TcUnitRunExecutor> tcUnitLogger,
         LocalLogStore logs,
         IGatewayEventSink events,
         AdsRuntimeMonitor runtimeMonitor,
@@ -59,6 +61,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ?? throw new ArgumentNullException(nameof(status));
         _logger = logger
             ?? throw new ArgumentNullException(nameof(logger));
+        if (tcUnitLogger is null)
+        {
+            throw new ArgumentNullException(nameof(tcUnitLogger));
+        }
+
         _logs = logs
             ?? throw new ArgumentNullException(nameof(logs));
         _events = events
@@ -72,7 +79,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         _tcUnit = new TcUnitRunExecutor(
             _profile,
             _logs,
-            _logger,
+            tcUnitLogger,
             _events);
         _session.DialogObserved += OnDialogObserved;
     }
@@ -412,8 +419,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         };
         _logger.Write(
             result.Ok
-                ? StructuredLogLevel.Information
-                : StructuredLogLevel.Warning,
+                ? LogLevel.Information
+                : LogLevel.Warning,
             "xae.build.completed",
             result.Ok
                 ? "XAE build completed successfully."
@@ -759,7 +766,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             },
         };
         _logger.Write(
-            StructuredLogLevel.Information,
+            LogLevel.Information,
             "activation.completed",
             "TwinCAT activation completed successfully.",
             operationId,
@@ -877,7 +884,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             (long)(DateTimeOffset.UtcNow - startedAtUtc)
                 .TotalMilliseconds);
         _logger.Write(
-            StructuredLogLevel.Information,
+            LogLevel.Information,
             "runtime.recoverToConfig.completed",
             transitionRequested
                 ? "TwinCAT reached Config Mode after an explicit "
@@ -940,7 +947,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         _logger.Write(
-            StructuredLogLevel.Information,
+            LogLevel.Information,
             "xae.reconnect.requested",
             "Manual XAE reconnect requested.");
         _events.Record(
@@ -1142,7 +1149,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         CultureInfo.InvariantCulture),
             };
             _logger.Write(
-                StructuredLogLevel.Information,
+                LogLevel.Information,
                 "xae.connected",
                 "Connected to the configured XAE solution.",
                 properties: properties);
@@ -1227,7 +1234,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         if (newFailure)
         {
             _logger.Write(
-                StructuredLogLevel.Warning,
+                LogLevel.Warning,
                 "xae.connection.failed",
                 "Could not establish or verify the configured XAE session.",
                 properties: new Dictionary<string, string>
@@ -1297,7 +1304,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         catch (Exception exception)
         {
             _logger.Write(
-                StructuredLogLevel.Warning,
+                LogLevel.Warning,
                 "xae.snapshot.failed",
                 "Could not read the XAE snapshot after a session failure.",
                 exception: exception);
@@ -1319,7 +1326,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         catch (Exception exception)
         {
             _logger.Write(
-                StructuredLogLevel.Warning,
+                LogLevel.Warning,
                 "xae.disconnect.failed",
                 "Could not release the failed XAE session.",
                 exception: exception);
@@ -1500,7 +1507,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             properties["targetName"] = targetName!;
         }
         _logger.Write(
-            StructuredLogLevel.Information,
+            LogLevel.Information,
             type,
             message,
             operationId,
@@ -1560,8 +1567,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
         _logger.Write(
             dialog.Failure
-                ? StructuredLogLevel.Warning
-                : StructuredLogLevel.Information,
+                ? LogLevel.Warning
+                : LogLevel.Information,
             GatewayEventTypes.XaeDialogObserved,
             $"XAE modal dialog '{dialog.Kind}' was observed"
                 + (string.IsNullOrWhiteSpace(dialog.Action)
@@ -1616,8 +1623,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         };
         _logger.Write(
             accepted.WatcherOverflow
-                ? StructuredLogLevel.Warning
-                : StructuredLogLevel.Information,
+                ? LogLevel.Warning
+                : LogLevel.Information,
             GatewayEventTypes.XaeProjectChangesAccepted,
             accepted.Changes.Count == 0
                 ? "XAE project files became quiet without graph changes."
@@ -1628,7 +1635,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         foreach (ProjectFileChange change in accepted.Changes)
         {
             _logger.Write(
-                StructuredLogLevel.Information,
+                LogLevel.Information,
                 "xae.projectFile.accepted",
                 "A project graph file change made during the XAE "
                     + "operation was accepted.",
@@ -1810,7 +1817,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         catch (Exception exception)
         {
             _logger.Write(
-                StructuredLogLevel.Warning,
+                LogLevel.Warning,
                 "xae.error_list.read_failed",
                 "Could not read XAE Error List after the runtime entered Exception.",
                 exception: exception);

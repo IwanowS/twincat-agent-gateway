@@ -287,6 +287,7 @@ public sealed class TcUnitRunExecutorTests
     private sealed class ExecutorFixture : IDisposable
     {
         private readonly string _directory;
+        private readonly GatewayLoggingSession _logging;
 
         public ExecutorFixture()
         {
@@ -330,12 +331,11 @@ public sealed class TcUnitRunExecutorTests
                     0,
                     0,
                     TimeSpan.Zero));
+            _logging = GatewayLoggingSession.Create(_directory);
             Executor = new TcUnitRunExecutor(
                 Profile,
                 Logs,
-                new StructuredFileLogger(
-                    _directory,
-                    Clock),
+                _logging.CreateLogger<TcUnitRunExecutor>(),
                 Events,
                 Reader,
                 Clock);
@@ -359,6 +359,7 @@ public sealed class TcUnitRunExecutorTests
 
         public void Dispose()
         {
+            _logging.Dispose();
             if (Directory.Exists(_directory))
             {
                 Directory.Delete(

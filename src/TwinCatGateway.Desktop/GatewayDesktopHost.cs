@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using TwinCatGateway.Ipc;
@@ -13,7 +14,8 @@ public sealed class GatewayDesktopHost : IDisposable
 {
     private const string DefaultPipeName = "TwinCatAgentGateway";
     private readonly CancellationTokenSource _shutdown = new();
-    private readonly StructuredFileLogger _logger;
+    private readonly GatewayLoggingSession _logging;
+    private readonly ILogger<GatewayDesktopHost> _logger;
     private readonly OperationQueue _queue;
     private readonly NamedPipeGatewayServer _server;
     private readonly GatewayStatusSnapshotStore _status;
@@ -51,7 +53,8 @@ public sealed class GatewayDesktopHost : IDisposable
                 ?? GatewayUiMode.Auto,
             LaunchSource);
         LogDirectory = ResolveLogDirectory(Configuration);
-        _logger = new StructuredFileLogger(LogDirectory);
+        _logging = GatewayLoggingSession.Create(LogDirectory);
+        _logger = _logging.CreateLogger<GatewayDesktopHost>();
         LocalLogStore logs = new(
             Path.Combine(LogDirectory, "operations"));
         TryPruneLogs(logs, Configuration.LogRetentionDays);
@@ -65,21 +68,23 @@ public sealed class GatewayDesktopHost : IDisposable
             ? null
             : new AdsRuntimeMonitor(
                 _status,
-                _logger,
+                _logging.CreateLogger<AdsRuntimeMonitor>(),
                 _events,
                 Configuration.RuntimeMonitoring,
                 errorListSnapshots: errorListSnapshots);
         OperationStore operations = new();
         _queue = new OperationQueue(
             operations,
-            exceptionSink: _logger,
+            exceptionSink: new OperationExceptionLoggingSink(
+                _logging.CreateLogger<OperationQueue>()),
             gatewayEventSink: _events);
         _xaeCoordinator = ActiveProfile is null
             ? null
             : new XaeSessionCoordinator(
                 ActiveProfile,
                 _status,
-                _logger,
+                _logging.CreateLogger<XaeSessionCoordinator>(),
+                _logging.CreateLogger<TcUnitRunExecutor>(),
                 logs,
                 _events,
                 _runtimeMonitor!,
@@ -142,7 +147,7 @@ public sealed class GatewayDesktopHost : IDisposable
         GatewayProtocolHandler protocol = new(
             dispatcher.DispatchAsync,
             (operationId, exception) =>
-                _logger.Record(
+                _logger.RecordException(
                     string.IsNullOrWhiteSpace(operationId)
                         ? "ipc"
                         : operationId,
@@ -151,7 +156,7 @@ public sealed class GatewayDesktopHost : IDisposable
             PipeName,
             protocol,
             (operationId, exception) =>
-                _logger.Record(operationId, exception));
+                _logger.RecordException(operationId, exception));
 
         GatewayStatusResult initial = _status.Read();
         initial.Gateway.State = StartupError is null
@@ -200,7 +205,7 @@ public sealed class GatewayDesktopHost : IDisposable
         }
 
         _logger.Write(
-            StructuredLogLevel.Information,
+            LogLevel.Information,
             "gateway.start",
             StartupError is null
                 ? "Gateway host started."
@@ -213,7 +218,7 @@ public sealed class GatewayDesktopHost : IDisposable
         if (StartupError is not null)
         {
             _logger.Write(
-                StructuredLogLevel.Error,
+                LogLevel.Error,
                 "configuration.invalid",
                 StartupError);
             GatewayError error = new()
@@ -263,7 +268,7 @@ public sealed class GatewayDesktopHost : IDisposable
         }
 
         _logger.Write(
-            StructuredLogLevel.Information,
+            LogLevel.Information,
             "gateway.shutdown.requested",
             "Gateway shutdown was requested through IPC.");
         ShutdownRequested?.Invoke(this, EventArgs.Empty);
@@ -274,7 +279,7 @@ public sealed class GatewayDesktopHost : IDisposable
         Exception exception)
     {
         _logger.Write(
-            StructuredLogLevel.Error,
+            LogLevel.Error,
             "ui.failure",
             $"Desktop UI stage '{stage}' failed.",
             exception: exception);
@@ -362,7 +367,7 @@ public sealed class GatewayDesktopHost : IDisposable
         _server.Dispose();
         _shutdown.Dispose();
         _logger.Write(
-            StructuredLogLevel.Information,
+            LogLevel.Information,
             "gateway.stop",
             "Gateway host stopped.");
         _events.Record(
@@ -370,6 +375,7 @@ public sealed class GatewayDesktopHost : IDisposable
                 GatewayEventTypes.GatewayStopped,
                 "Gateway host stopped."),
             DateTimeOffset.UtcNow);
+        _logging.Dispose();
     }
 
     public void Dispose()
@@ -385,7 +391,7 @@ public sealed class GatewayDesktopHost : IDisposable
         }
         catch (Exception exception)
         {
-            _logger.Record("ipc-server", exception);
+            _logger.RecordException("ipc-server", exception);
             _status.Update(status =>
             {
                 status.Gateway.State = GatewayState.Faulted;
@@ -445,7 +451,7 @@ public sealed class GatewayDesktopHost : IDisposable
         }
         catch (Exception exception)
         {
-            _logger.Record("log-retention", exception);
+            _logger.RecordException("log-retention", exception);
         }
     }
 

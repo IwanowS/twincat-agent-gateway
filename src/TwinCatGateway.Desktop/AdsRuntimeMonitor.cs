@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 using TwinCatGateway.Ads;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
@@ -16,7 +17,7 @@ internal sealed class AdsRuntimeMonitor : IDisposable
     private const string SystemRuntimeName = "TwinCAT System";
     private readonly object _sync = new();
     private readonly GatewayStatusSnapshotStore _status;
-    private readonly StructuredFileLogger _logger;
+    private readonly ILogger<AdsRuntimeMonitor> _logger;
     private readonly IGatewayEventSink _events;
     private readonly IAdsRuntimeStatusProbe _probe;
     private readonly XaeErrorListSnapshotStore
@@ -36,7 +37,7 @@ internal sealed class AdsRuntimeMonitor : IDisposable
 
     public AdsRuntimeMonitor(
         GatewayStatusSnapshotStore status,
-        StructuredFileLogger logger,
+        ILogger<AdsRuntimeMonitor> logger,
         IGatewayEventSink events,
         RuntimeMonitoringConfiguration configuration,
         IAdsRuntimeStatusProbe? probe = null,
@@ -582,8 +583,8 @@ internal sealed class AdsRuntimeMonitor : IDisposable
             failed
                 || observation.Result.Status.Mode
                     == RuntimeMode.Exception
-                ? StructuredLogLevel.Warning
-                : StructuredLogLevel.Information,
+                ? LogLevel.Warning
+                : LogLevel.Information,
             failed
                 ? "ads.runtime_status.failed"
                 : "ads.runtime_state.changed",
@@ -641,7 +642,7 @@ internal sealed class AdsRuntimeMonitor : IDisposable
             || exception is System.Xml.XmlException)
         {
             _logger.Write(
-                StructuredLogLevel.Warning,
+                LogLevel.Warning,
                 "ads.runtime_targets.failed",
                 "Could not discover PLC runtime ports from the selected TwinCAT project.",
                 properties: new Dictionary<string, string>

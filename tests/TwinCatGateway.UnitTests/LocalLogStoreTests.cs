@@ -91,38 +91,6 @@ public sealed class LocalLogStoreTests
         Assert.True(Directory.Exists(unrelated));
     }
 
-    [Fact]
-    public void StructuredLoggerKeepsDetailedExceptionInLocalLog()
-    {
-        using TemporaryDirectory temporary = new();
-        StructuredFileLogger logger = new(temporary.Path);
-        InvalidOperationException exception = new("detailed failure");
-
-        logger.Record("operation-1", exception);
-
-        string content = File.ReadAllText(logger.Path);
-        Assert.Contains("\"eventName\":\"operation.exception\"", content);
-        Assert.Contains("\"operationId\":\"operation-1\"", content);
-        Assert.Contains("System.InvalidOperationException", content);
-        Assert.Contains("detailed failure", content);
-    }
-
-    [Fact]
-    public void StructuredLoggerWritesUnicodeAsReadableUtf8()
-    {
-        using TemporaryDirectory temporary = new();
-        StructuredFileLogger logger = new(temporary.Path);
-
-        logger.Write(
-            StructuredLogLevel.Warning,
-            "build.message",
-            "Ошибка сборки");
-
-        string content = File.ReadAllText(logger.Path);
-        Assert.Contains("Ошибка сборки", content);
-        Assert.DoesNotContain("\\u", content);
-    }
-
     private sealed class TemporaryDirectory : IDisposable
     {
         public TemporaryDirectory()
