@@ -147,6 +147,34 @@ public sealed class XaeWorkspaceFileChangeGuardTests
         Assert.False(guard.IsProjectFileGuarded(MainPath));
     }
 
+    [Theory]
+    [InlineData("RDT_PROJ_MK::{A2FE74E1-B743-11D0-AE1A-00A0C90FFFC3}")]
+    [InlineData("solution-items")]
+    [InlineData("")]
+    public void NonFileRunningDocumentMonikerIsIgnored(
+        string moniker)
+    {
+        bool recognized =
+            XaeWorkspaceFileChangeBackend.TryNormalizeFileMoniker(
+                moniker,
+                out string path);
+
+        Assert.False(recognized);
+        Assert.Equal(string.Empty, path);
+    }
+
+    [Fact]
+    public void AbsoluteRunningDocumentMonikerIsNormalized()
+    {
+        bool recognized =
+            XaeWorkspaceFileChangeBackend.TryNormalizeFileMoniker(
+                MainPath,
+                out string path);
+
+        Assert.True(recognized);
+        Assert.Equal(MainPath, path);
+    }
+
     private static XaeWorkspaceGuardPath[] CreatePaths()
     {
         return new[]

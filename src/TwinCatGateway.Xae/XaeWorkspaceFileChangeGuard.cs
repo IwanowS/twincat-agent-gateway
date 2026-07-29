@@ -604,9 +604,11 @@ internal sealed class XaeWorkspaceFileChangeBackend :
                 try
                 {
                     document = documents.Item(index);
-                    if (!string.IsNullOrWhiteSpace(document.FullName))
+                    if (TryNormalizeFileMoniker(
+                            document.FullName,
+                            out string path))
                     {
-                        paths.Add(Path.GetFullPath(document.FullName));
+                        paths.Add(path);
                     }
                 }
                 finally
@@ -623,6 +625,36 @@ internal sealed class XaeWorkspaceFileChangeBackend :
         return paths
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();
+    }
+
+    internal static bool TryNormalizeFileMoniker(
+        string? moniker,
+        out string path)
+    {
+        path = string.Empty;
+        if (string.IsNullOrWhiteSpace(moniker))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!Path.IsPathRooted(moniker))
+            {
+                return false;
+            }
+
+            path = Path.GetFullPath(moniker);
+            return true;
+        }
+        catch (Exception exception) when (
+            exception is ArgumentException
+            || exception is NotSupportedException
+            || exception is PathTooLongException
+            || exception is System.Security.SecurityException)
+        {
+            return false;
+        }
     }
 
     public void IgnoreProjectFile(string path, bool ignore)
@@ -876,9 +908,11 @@ internal sealed class XaeWorkspaceFileChangeBackend :
                     out _,
                     out documentDataPointer);
                 if (result >= 0
-                    && !string.IsNullOrWhiteSpace(moniker))
+                    && TryNormalizeFileMoniker(
+                        moniker,
+                        out string path))
                 {
-                    callback(Path.GetFullPath(moniker));
+                    callback(path);
                 }
             }
             catch (Exception exception)
