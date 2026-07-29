@@ -34,7 +34,15 @@
       "platform": "TwinCAT RT (x64)",
       "requireRecentSuccessfulBuild": true,
       "recentBuildMaxAgeSeconds": 600,
-      "autoWaitForTcUnit": false
+      "autoWaitForTcUnit": true,
+      "tcUnit": {
+        "adsPort": 851,
+        "finishedSymbol": "GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished",
+        "suiteCountSymbol": "GVL_TcUnit.NumberOfInitializedTestSuites",
+        "reportPath": "\\\\WIN-T077ADA\\c\\TwinCAT\\3.1\\Boot\\tcunit_xunit_testresults.xml",
+        "completionTimeoutSeconds": 120,
+        "zeroTests": "fail"
+      }
     }
   ]
 }

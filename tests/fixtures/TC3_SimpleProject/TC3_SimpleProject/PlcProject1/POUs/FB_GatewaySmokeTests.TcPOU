@@ -5,6 +5,7 @@
 ]]></Declaration>
     <Implementation>
       <ST><![CDATA[GatewayCanExecuteTcUnit();
+GatewayReportsFailedTcUnit();
 ]]></ST>
     </Implementation>
     <Method Name="GatewayCanExecuteTcUnit" Id="{fededc5f-649e-4cf5-a82c-0bb8d8ea29f8}">
@@ -15,6 +16,18 @@
 AssertTrue(
     Condition := TRUE,
     Message := 'Gateway TcUnit smoke test should pass');
+TEST_FINISHED();
+]]></ST>
+      </Implementation>
+    </Method>
+    <Method Name="GatewayReportsFailedTcUnit" Id="{fb286950-5673-4e6e-b82d-69d6d8a1ae51}">
+      <Declaration><![CDATA[METHOD PRIVATE GatewayReportsFailedTcUnit
+]]></Declaration>
+      <Implementation>
+        <ST><![CDATA[TEST('GatewayReportsFailedTcUnit');
+AssertTrue(
+    Condition := FALSE,
+    Message := 'Intentional gateway TcUnit failure scenario');
 TEST_FINISHED();
 ]]></ST>
       </Implementation>

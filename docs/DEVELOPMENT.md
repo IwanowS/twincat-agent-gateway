@@ -201,8 +201,14 @@ The production discovery name is `twincat-gateway.json`. This repository
 intentionally commits a root debug configuration for
 `tests/fixtures/TC3_SimpleProject/TC3_SimpleProject.sln`. It enables MCP
 process control and activation only for the allow-listed remote AMS NetId
-`192.168.3.31.1.1`, requires a recent successful build, and keeps TcUnit
-disabled.
+`192.168.3.31.1.1`, requires a recent successful build, and automatically
+waits for the single TcUnit PLC on ADS port 851. The report is read through
+`\\WIN-T077ADA\c\TwinCAT\3.1\Boot\tcunit_xunit_testresults.xml`.
+
+The committed fixture intentionally contains one passing test and one failing
+test named `GatewayReportsFailedTcUnit`. Its expected linked result is
+`TEST_FAILED` with the runtime remaining in `Run`; this verifies that a TcUnit
+failure is not misclassified as a PLC runtime exception.
 
 For the lightweight exception fixture, use an activation request timeout of
 30 seconds. The timeout is an upper bound, not success evidence; increase it
