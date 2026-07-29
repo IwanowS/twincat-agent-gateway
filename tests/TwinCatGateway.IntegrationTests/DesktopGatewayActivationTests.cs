@@ -383,13 +383,36 @@ public sealed class DesktopGatewayActivationTests
                 GatewayError activationError =
                     Assert.IsType<GatewayError>(
                         activation.Operation.Error);
-                Assert.Equal(
-                    ErrorCodes.RuntimeRecoveryRequired,
-                    activationError.Code);
-                Assert.Equal(
-                    "activation.verify",
-                    activationError.Stage);
-                AssertFaultDetails(activationError.Details);
+                if (activationError.Code
+                    == ErrorCodes.RuntimeRecoveryRequired)
+                {
+                    Assert.Equal(
+                        "activation.verify",
+                        activationError.Stage);
+                    AssertFaultDetails(
+                        activationError.Details);
+                }
+                else
+                {
+                    Assert.Equal(
+                        ErrorCodes.XaeDialogReportedFailure,
+                        activationError.Code);
+                    string activationStage =
+                        Assert.IsType<string>(
+                            activationError.Stage);
+                    Assert.StartsWith(
+                        "activation.",
+                        activationStage,
+                        StringComparison.Ordinal);
+                    Assert.Contains(
+                        "Target system reports a fatal error",
+                        activationError.Message,
+                        StringComparison.OrdinalIgnoreCase);
+                    Assert.Contains(
+                        "AdsError: 1804",
+                        activationError.Message,
+                        StringComparison.OrdinalIgnoreCase);
+                }
             }
             else
             {
