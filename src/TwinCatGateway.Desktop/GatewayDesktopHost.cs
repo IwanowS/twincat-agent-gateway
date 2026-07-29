@@ -395,6 +395,8 @@ public sealed class GatewayDesktopHost : IDisposable
             {
                 Code = ErrorCodes.OperationFailed,
                 Message = "The IPC server stopped unexpectedly.",
+                Details =
+                    $"{exception.GetType().FullName}: {exception.Message}",
                 Stage = "ipc.server",
             };
             _events.Record(
@@ -402,7 +404,14 @@ public sealed class GatewayDesktopHost : IDisposable
                     GatewayEventTypes.GatewayFaulted,
                     error.Message,
                     DiagnosticSeverity.Error,
-                    error),
+                    error,
+                    new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        ["exceptionType"] =
+                            exception.GetType().FullName
+                            ?? exception.GetType().Name,
+                        ["hresult"] = $"0x{exception.HResult:X8}",
+                    }),
                 DateTimeOffset.UtcNow);
         }
     }
@@ -412,7 +421,9 @@ public sealed class GatewayDesktopHost : IDisposable
         string message,
         DiagnosticSeverity severity =
             DiagnosticSeverity.Info,
-        GatewayError? error = null)
+        GatewayError? error = null,
+        System.Collections.Generic.Dictionary<string, string>?
+            properties = null)
     {
         return new GatewayEvent
         {
@@ -421,6 +432,8 @@ public sealed class GatewayDesktopHost : IDisposable
             Stage = error?.Stage,
             Message = message,
             Error = error,
+            Properties = properties
+                ?? new System.Collections.Generic.Dictionary<string, string>(),
         };
     }
 

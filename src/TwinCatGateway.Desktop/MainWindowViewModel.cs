@@ -825,9 +825,17 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool IncludeEvent(object item)
     {
         return item is EventRow row
-            && (IsVerboseEvents
-                || row.SeverityValue
-                    >= DiagnosticSeverity.Warning);
+            && IsEventVisible(
+                row.SeverityValue,
+                IsVerboseEvents);
+    }
+
+    internal static bool IsEventVisible(
+        DiagnosticSeverity severity,
+        bool verbose)
+    {
+        return verbose
+            || severity >= DiagnosticSeverity.Warning;
     }
 
     private bool IncludeOperation(object item)
@@ -1062,9 +1070,17 @@ public sealed class EventRow : INotifyPropertyChanged
         }
 
         int separator = details!.IndexOf(':');
-        return separator > 0
-            ? details.Substring(0, separator)
-            : string.Empty;
+        if (separator <= 0)
+        {
+            return string.Empty;
+        }
+
+        string candidate = details.Substring(0, separator);
+        return candidate.EndsWith(
+            "Exception",
+            StringComparison.Ordinal)
+                ? candidate
+                : string.Empty;
     }
 
     private void SetField(

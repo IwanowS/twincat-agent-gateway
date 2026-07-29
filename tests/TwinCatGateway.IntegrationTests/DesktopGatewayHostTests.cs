@@ -313,6 +313,23 @@ public sealed class DesktopGatewayHostTests
             rows[1].Exception);
     }
 
+    [Theory]
+    [InlineData(DiagnosticSeverity.Info, false, false)]
+    [InlineData(DiagnosticSeverity.Warning, false, true)]
+    [InlineData(DiagnosticSeverity.Error, false, true)]
+    [InlineData(DiagnosticSeverity.Info, true, true)]
+    public void VerboseEventFilterControlsInformationalEvents(
+        DiagnosticSeverity severity,
+        bool verbose,
+        bool expected)
+    {
+        Assert.Equal(
+            expected,
+            MainWindowViewModel.IsEventVisible(
+                severity,
+                verbose));
+    }
+
     [Fact]
     public void OperationFiltersMatchKindAndStateIndependently()
     {

@@ -93,7 +93,12 @@ public sealed class OperationQueueTests
     public async Task OperationFailureDoesNotStopTheQueue()
     {
         OperationStore store = new();
-        using OperationQueue queue = new(store);
+        GatewayStatusSnapshotStore status =
+            new(GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
+        GatewayEventJournal events = new(status);
+        using OperationQueue queue = new(
+            store,
+            gatewayEventSink: events);
 
         OperationAccepted failed = queue.Enqueue(
             OperationKind.Build,
@@ -113,6 +118,14 @@ public sealed class OperationQueueTests
         Assert.Equal(
             "System.InvalidOperationException: boom",
             failedOperation.Summary.Error?.Details);
+        GatewayEvent failure = Assert.Single(
+            events.ReadAfter(null, 0, 100).Events,
+            gatewayEvent =>
+                gatewayEvent.Error?.Code
+                    == ErrorCodes.OperationFailed);
+        Assert.Equal(
+            "System.InvalidOperationException",
+            failure.Properties["exceptionType"]);
         Assert.Equal("complete", succeededOperation.Result);
     }
 

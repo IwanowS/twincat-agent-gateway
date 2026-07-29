@@ -1255,7 +1255,16 @@ internal sealed class XaeSessionCoordinator : IDisposable
             _events.Record(
                 CreateErrorEvent(
                     GatewayEventTypes.XaeConnectionFailed,
-                    error),
+                    error,
+                    new Dictionary<string, string>
+                    {
+                        ["exceptionType"] =
+                            exception.GetType().FullName
+                            ?? exception.GetType().Name,
+                        ["hresult"] = hResult is null
+                            ? "unknown"
+                            : $"0x{hResult.Value:X8}",
+                    }),
                 DateTimeOffset.UtcNow);
         }
     }

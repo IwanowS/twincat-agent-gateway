@@ -324,7 +324,16 @@ public sealed class OperationQueue : IDisposable
                     item.Kind,
                     OperationState.Failed,
                     completedAtUtc,
-                    error);
+                    error,
+                    properties:
+                        new Dictionary<string, string>
+                        {
+                            ["exceptionType"] =
+                                exception.GetType().FullName
+                                ?? exception.GetType().Name,
+                            ["hresult"] =
+                                $"0x{exception.HResult:X8}",
+                        });
             }
         }
         catch (Exception exception)
@@ -350,7 +359,16 @@ public sealed class OperationQueue : IDisposable
                     item.Kind,
                     OperationState.Failed,
                     completedAtUtc,
-                    error);
+                    error,
+                    properties:
+                        new Dictionary<string, string>
+                        {
+                            ["exceptionType"] =
+                                exception.GetType().FullName
+                                ?? exception.GetType().Name,
+                            ["hresult"] =
+                                $"0x{exception.HResult:X8}",
+                        });
             }
         }
         finally
@@ -414,7 +432,8 @@ public sealed class OperationQueue : IDisposable
         OperationState state,
         DateTimeOffset occurredAtUtc,
         GatewayError? error = null,
-        IReadOnlyList<ResourceReference>? resources = null)
+        IReadOnlyList<ResourceReference>? resources = null,
+        Dictionary<string, string>? properties = null)
     {
         _gatewayEventSink?.Record(
             new GatewayEvent
@@ -429,6 +448,8 @@ public sealed class OperationQueue : IDisposable
                 Error = error,
                 Resources = resources?.ToList()
                     ?? new List<ResourceReference>(),
+                Properties = properties
+                    ?? new Dictionary<string, string>(),
             },
             occurredAtUtc);
     }
