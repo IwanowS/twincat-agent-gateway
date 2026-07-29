@@ -461,7 +461,15 @@ Starting
   -> Stopping
 ```
 
-`Faulted` не означает обязательное завершение процесса. Gateway может принять `reconnect` или автоматически восстановить session по ограниченной политике.
+`Faulted` не означает обязательное завершение процесса. Gateway может принять
+`reconnect` или автоматически восстановить session по ограниченной политике.
+Если `VerifyAttached` получает transient `COM_CALL_TIMEOUT`,
+`COM_CALL_REJECTED`, `RPC_E_CALL_REJECTED` или
+`RPC_E_SERVERCALL_RETRYLATER`, coordinator сохраняет выбранную exact XAE
+identity и attach-scoped guard, публикует `Faulted` с `xae.connected=true` и
+повторяет `VerifyAttached` без промежуточного `Attaching`. Session
+освобождается и reconnect начинается только после доказанного исчезновения
+ROT/process, `SOLUTION_MISMATCH` или явного запроса reconnect.
 
 ### 9.2 Operation state
 
@@ -572,16 +580,16 @@ Operation window не различает запись XAE и параллель�
 10. Повторный fingerprint scan после reload; concurrent change завершает
    retryable error. Baseline обновляется только после postconditions.
 11. SHA-256 snapshot всех выбранных solution `.tsproj`, включая проекты вне
-   solution root, и временное подавление их file-change
-   notifications через `SVsFileChangeEx` / `IVsFileChangeEx.IgnoreFile(...)`.
+   solution root; attach-scoped guard продолжает подавлять их file-change
+   notifications.
 12. Выбор и проверка configuration/platform.
 13. Snapshot текущих Output позиций.
 14. Подписка/проверка `BuildEvents`.
 15. Запуск Build/Clean через `SolutionBuild`; Rebuild через
     `DTE.ExecuteCommand("Build.RebuildSolution")`.
 16. Ожидание точного `OnBuildDone` action/scope и проверка `BuildState`.
-17. Проверка `.tsproj` hashes, синхронизация XAE file notifications и
-    обязательное восстановление notifications.
+17. Проверка `.tsproj` hashes и `SyncFile(...)` при продолжающем действовать
+    attach-scoped guard.
 18. После terminal build event ожидание 500 ms тишины по
     `FileSystemWatcher`. Новое событие перезапускает quiet period.
 19. Повторный авторитетный project-graph fingerprint scan. Watcher служит
@@ -1019,14 +1027,41 @@ Dirty XAE buffers всегда имеют приоритет как конфли
 `discardDirtyDocuments=true` и profile
 `allowDirtyDocumentDiscard=true`; результат сообщает paths/count.
 
-Проверка на TwinCAT 3.1.4024.17 уточнила границу:
+После проверки exact `Solution.FullName` и построения выбранного project graph
+gateway до публикации `Ready` захватывает attach-scoped file-change guard:
+
+- `IVsFileChangeEx.IgnoreFile(...)` подавляет project-level notifications для
+  файлов точного graph, кроме generated `.tmc`;
+- `IVsDocDataFileChangeControl.IgnoreFileChanges(...)` подавляет
+  editor-level notifications для открытых PLC documents;
+- Running Document Table sink включает editor-level защиту для документов,
+  открытых после attach;
+- path вне точного graph не получает защиту;
+- частичный acquire полностью откатывается и возвращает стабильную ошибку
+  `XAE_FILE_CHANGE_GUARD_FAILED`;
+- disconnect/Dispose отписывает RDT sink и восстанавливает notifications в
+  обратном порядке в `finally`.
+
+`xae.agentWorkspaceOwned=true` означает только владение file-change
+notifications и synchronization lifecycle выбранного graph. Это не ownership
+пользовательских buffers и не разрешение сохранять или отбрасывать их.
+
+Guard действует всё время attach, поэтому обычные внешние изменения выбранного
+graph, включая ручные, не вызывают XAE file-modification dialog. До следующего
+sync/build открытый editor может показывать старое сохранённое содержимое;
+источником истины остаётся диск. Изменение всё равно обнаруживается
+authoritative fingerprint scan, проверяется `externalChangePolicy` и
+типизированно синхронизируется перед операцией. `twincat_sync` остаётся
+принудительным полным synchronization workflow.
+
+Проверка на TwinCAT 3.1.4024.17 уточнила механизм reload:
 
 - после обычного внешнего edit открытого сохранённого `.TcPOU`
-  `EnvDTE.Document.Saved` остаётся `true`; при следующем build XAE может
-  показать project-level и editor-level reload dialogs;
-- внешний edit открытого несохранённого document без предварительного захвата
-  workspace создаёт file-modification conflict dialog; Silent Mode его не
-  подавляет;
+  `EnvDTE.Document.Saved` остаётся `true`; attach-scoped guard предотвращает
+  project-level и editor-level reload dialogs;
+- внешний edit открытого несохранённого document остаётся конфликтом:
+  fingerprint scan видит disk change, но build/sync возвращает
+  `DIRTY_XAE_DOCUMENT` без save/discard;
 - после обычного внешнего edit закрытого `.TcPOU` modal dialog не появляется,
   но build использует stale project model; одного `Documents.Open(...)`
   недостаточно;
@@ -1041,13 +1076,16 @@ Dirty XAE buffers всегда имеют приоритет как конфли
   версию до reload, поэтому используется только как явно разрешённое
   destructive действие.
 
-Перед build gateway проверяет dirty state, временно открывает каждый изменённый
-закрытый document, выполняет typed reload и снова закрывает editor. Изменения,
-обнаруженные до gateway-owned operation window, по-прежнему проходят
-`externalChangePolicy`. После запуска Build/Clean/Rebuild или activation сама
-XAE считается автором записей выбранного project graph: gateway ждёт 500 ms
-тишины, выполняет итоговый fingerprint scan, логирует и принимает любые
-`.tsproj`, `.plcproj`, PLC source и `.tmc` changes.
+Перед build gateway, не снимая attach-scoped guard, проверяет dirty state,
+временно открывает каждый изменённый закрытый document, выполняет validation,
+typed `ReloadDocData`, `SyncFile` и снова закрывает editor. Вложенный
+build-specific lease использует общий guard и не включает notifications
+преждевременно. Изменения, обнаруженные до gateway-owned operation window,
+по-прежнему проходят `externalChangePolicy`. После запуска
+Build/Clean/Rebuild или activation сама XAE считается автором записей
+выбранного project graph: gateway ждёт 500 ms тишины, выполняет итоговый
+fingerprint scan, логирует и принимает любые `.tsproj`, `.plcproj`, PLC source
+и `.tmc` changes.
 
 ## 14. `.tsproj` reorder-only noise
 
@@ -1055,21 +1093,22 @@ XAE считается автором записей выбранного projec
 
 TwinCAT 3.1.4024.17 может во время обычной Build/Clean/Rebuild перезаписать
 `.tsproj` теми же байтами, изменив только filesystem timestamp. XAE file
-watcher способен увидеть эту собственную запись и показать modal
+watcher без attach-scoped guard способен увидеть эту собственную запись и
+показать modal
 `File Modification Detected`; Silent Mode этого не предотвращает.
 
-Поэтому gateway перед запуском build operation вычисляет SHA-256 всех `.tsproj`,
-фактически включённых в выбранный solution, в том числе расположенных вне
-solution root, и временно вызывает
-`IVsFileChangeEx.IgnoreFile(0, path, 1)`. После `OnBuildDone`:
+Attach-scoped guard уже удерживает `IVsFileChangeEx.IgnoreFile(...)` для
+негенерируемых файлов выбранного graph. Поэтому build-specific lease не
+переключает notification state для уже защищённых `.tsproj`, включая проекты
+вне solution root. После `OnBuildDone`:
 
-- если файл существует и hash совпадает, gateway вызывает `SyncFile(path)`
-  при ещё подавленных notifications, затем возвращает
-  `IgnoreFile(0, path, 0)`;
+- если файл существует и hash совпадает, gateway вызывает `SyncFile(path)` при
+  всё ещё подавленных notifications;
 - если hash изменился, gateway запускает classifier для отчёта и вызывает
   `SyncFile(path)` при ещё подавленных notifications независимо от
   classification: запись находится внутри XAE-owned operation window;
-- восстановление notifications выполняется также при исключении и Dispose.
+- notification state восстанавливается только при завершении attach-scoped
+  guard; исключение или Dispose используют тот же обратный cleanup.
 
 Параллельно до запуска действия создаётся `FileSystemWatcher` для корней
 выбранного project graph. Он наблюдает все filesystem events, но используется

@@ -147,10 +147,14 @@ Acceptance:
 
 Acceptance:
 
-- выбран agent-owned workspace workflow с discard несохранённых XAE changes;
+- выбран attach-scoped notification/synchronization ownership для точного
+  project graph без automatic save/discard пользовательских XAE buffers;
 - изменения обнаруживаются fingerprint scan без предварительного объявления
   paths;
 - изменённые документы типизированно reload-ятся перед build;
+- project-level и editor-level file-change dialogs подавлены на всё время
+  attach, включая документы, открытые после attach;
+- открытый dirty editor блокирует build/sync с `DIRTY_XAE_DOCUMENT`;
 - нет обязательного полного reload после каждой сборки.
 
 #### 0.8 Read-only ADS completion для TcUnit
@@ -362,8 +366,8 @@ docs/
   сборку без modal dialog;
 - solution может собирать выбранный `.tsproj` из относительного пути за
   пределами solution root; его PLC sources входят в agent-owned workspace;
-- несохранённая XAE версия PLC source отбрасывается и не перезаписывает
-  agent edit;
+- несохранённая XAE версия PLC source блокирует операцию и не сохраняется и не
+  отбрасывается автоматически;
 - XSD-invalid PLC object отклоняется до typed reload/build;
 - same-content `.tsproj` rewrite самой XAE не вызывает modal dialog;
 - содержательное `.tsproj` изменение до operation window не скрывается и
@@ -826,13 +830,27 @@ twincat-log://gateway/current
 
 ### P1
 
+- точная причина и позиция exception из XAE/TcUnit logs; при недостаточной
+  structured evidence не перезапускать TcUnit вслепую;
+- MCP resource/command для полного TcUnit log или только failed tests с
+  возвратом файла и строки;
+- compact status/diagnostics по умолчанию с углублением через focused
+  resources;
 - полноценный WPF log viewer;
 - structural sync добавленных/удалённых PLC source files;
 - operation cancellation UI;
 - report run identifier;
-- optional automatic reconnect;
 - project-specific skill configuration;
 - multiple named project profiles.
+
+### P2
+
+- повторно использовать актуальную успешную сборку перед activation и не
+  запускать принудительную дублирующую build без изменения graph/configuration;
+- закрепить допустимые переходы `any -> config`, `config -> run`,
+  `run -> run`, `config -> activation`, `run -> activation`;
+- устранить необязательные DTE/UI-вызовы, из-за которых XAE перехватывает
+  фокус во время фоновой работы gateway.
 
 ### Позже, вне MVP
 

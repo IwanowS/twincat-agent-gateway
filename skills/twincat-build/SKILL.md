@@ -24,10 +24,20 @@ automatically. Report that the previous PLC artifacts are being preserved and
 require an explicit user decision before calling
 `twincat_recover_to_config`.
 
-Gateway owns the workspace while attached: it fingerprints project sources,
-discards conflicting dirty XAE documents, and reloads changed files before the
-operation. Added or removed PLC source files are unsupported by the MVP and
-must be surfaced instead of worked around.
+While attached, the gateway suppresses project-level file notifications for
+the exact selected graph and editor-level notifications for its open PLC
+documents. Normal external changes, including manual edits, therefore do not
+produce an XAE file-modification dialog. They remain visible to the
+authoritative fingerprint scan and are validated and reloaded from disk before
+the operation according to `externalChangePolicy`. Use `twincat_sync` when a
+full explicit synchronization is required.
+
+`xae.agentWorkspaceOwned=true` means the gateway owns notification suppression
+and synchronization, not user buffers. A dirty XAE document blocks the
+operation with `DIRTY_XAE_DOCUMENT`; never save or discard it automatically.
+An open saved editor can show stale content until sync/build, while disk
+remains authoritative. Added or removed PLC source files are unsupported by
+the MVP and must be surfaced instead of worked around.
 
 The verified workspace includes the selected `.tsproj` directory when the
 solution references that TwinCAT project outside its own directory.

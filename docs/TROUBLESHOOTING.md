@@ -70,6 +70,12 @@ substitute another solution.
   duplicate or select a single operator-owned session.
 - `SOLUTION_MISMATCH`: XAE changed solution after selection; reconnect.
 
+A transient COM timeout/rejection during health verification keeps the exact
+XAE identity and reports `Faulted` with `xae.connected=true`. The next health
+cycle repeats `VerifyAttached` without publishing `Attaching`. Do not restart
+XAE for this state; reconnect is required only after proven ROT/process loss,
+a solution mismatch, or an explicit operator request.
+
 ## Build configuration or platform fails
 
 Explicit request values override the profile. Otherwise the profile values
@@ -88,9 +94,18 @@ The gateway does not guess among mixed platforms.
 
 The gateway fingerprints only the selected TwinCAT project graph. Dirty XAE
 documents are reported and block build/sync; they are never saved or discarded
-automatically. Modified PLC sources may be reloaded according to
-`externalChangePolicy`, while `.tsproj` notifications are temporarily
-suppressed during a tracked operation.
+automatically. While attached, project-level notifications are suppressed for
+the exact selected graph (except generated `.tmc`) and editor-level
+notifications are suppressed for its open PLC documents, including documents
+opened after attach. Therefore normal external changes, including manual
+edits, do not produce a File Modification Detected dialog. They remain visible
+to the authoritative fingerprint scan and are reloaded according to
+`externalChangePolicy` before an operation.
+
+`xae.agentWorkspaceOwned=true` confirms ownership of notification suppression
+and synchronization only. It does not permit saving or discarding a user's
+dirty XAE buffer. Until sync/build, an open saved editor may show stale
+content; disk remains authoritative.
 
 If a dialog remains:
 
@@ -100,8 +115,13 @@ If a dialog remains:
    the disk version is the intended source of truth;
 4. if XAE has dirty documents, either save/close them manually or explicitly
    request discard when the profile permits it;
-5. inspect diagnostics for `EXTERNAL_EDIT_CONFLICT` or
-   `XAE_WORKSPACE_OWNERSHIP_FAILED`.
+5. inspect diagnostics for `DIRTY_XAE_DOCUMENT`,
+   `EXTERNAL_EDIT_CONFLICT`, or `XAE_FILE_CHANGE_GUARD_FAILED`.
+
+`XAE_FILE_CHANGE_GUARD_FAILED` means the attach-scoped guard was not acquired;
+the gateway rolls back any partial suppression and does not publish `Ready`.
+Do not continue editing through that session; inspect the focused diagnostics
+and reconnect only after the VSSDK/RDT cause is resolved.
 
 Added and removed PLC sources require `reloadAll` or an explicit force sync.
 The candidate project graph is validated before the selected TwinCAT project
