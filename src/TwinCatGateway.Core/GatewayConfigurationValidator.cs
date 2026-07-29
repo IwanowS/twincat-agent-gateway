@@ -59,6 +59,34 @@ public static class GatewayConfigurationValidator
                 "Log retention must be between 1 and 3650 days.");
         }
 
+        if (!Enum.IsDefined(
+                typeof(GatewayLogLevel),
+                configuration.LogMinimumLevel))
+        {
+            Add(
+                issues,
+                "logMinimumLevel",
+                "Log minimum level is invalid.");
+        }
+
+        if (configuration.LogFileSizeLimitBytes < 64 * 1024
+            || configuration.LogFileSizeLimitBytes > 1024L * 1024 * 1024)
+        {
+            Add(
+                issues,
+                "logFileSizeLimitBytes",
+                "Log file size limit must be between 65536 and 1073741824 bytes.");
+        }
+
+        if (configuration.LogRetainedFileCountLimit < 1
+            || configuration.LogRetainedFileCountLimit > 1000)
+        {
+            Add(
+                issues,
+                "logRetainedFileCountLimit",
+                "Retained log file count must be between 1 and 1000.");
+        }
+
         if (!string.IsNullOrWhiteSpace(configuration.LogDirectory)
             && !Path.IsPathRooted(configuration.LogDirectory))
         {

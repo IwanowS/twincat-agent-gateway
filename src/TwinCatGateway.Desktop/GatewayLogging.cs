@@ -1,10 +1,18 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading;
 using Microsoft.Extensions.Logging;
 using Serilog;
+using Serilog.Events;
 using Serilog.Formatting.Compact;
+using Serilog.Sinks.File;
+using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using MicrosoftLogger = Microsoft.Extensions.Logging.ILogger;
 using SerilogLogger = Serilog.Core.Logger;
@@ -15,21 +23,40 @@ internal sealed class GatewayLoggingSession : IDisposable
 {
     private readonly ILoggerFactory _loggerFactory;
     private readonly SerilogLogger _serilogLogger;
+    private readonly CurrentLogFileTracker _currentPath;
     private int _disposed;
 
     private GatewayLoggingSession(
-        string path,
+        string sessionBasePath,
+        CurrentLogFileTracker currentPath,
         ILoggerFactory loggerFactory,
         SerilogLogger serilogLogger)
     {
-        Path = path;
+        SessionBasePath = sessionBasePath;
+        _currentPath = currentPath;
         _loggerFactory = loggerFactory;
         _serilogLogger = serilogLogger;
     }
 
-    public string Path { get; }
+    public string Path =>
+        _currentPath.CurrentPath
+        ?? throw new InvalidOperationException(
+            "The gateway log file has not been opened.");
+
+    internal string SessionBasePath { get; }
 
     public static GatewayLoggingSession Create(string logDirectory)
+    {
+        return Create(
+            logDirectory,
+            new GatewayConfiguration());
+    }
+
+    public static GatewayLoggingSession Create(
+        string logDirectory,
+        GatewayConfiguration configuration,
+        IClock? clock = null,
+        int? processId = null)
     {
         if (string.IsNullOrWhiteSpace(logDirectory))
         {
@@ -38,20 +65,49 @@ internal sealed class GatewayLoggingSession : IDisposable
                 nameof(logDirectory));
         }
 
+        if (configuration is null)
+        {
+            throw new ArgumentNullException(nameof(configuration));
+        }
+
         string fullDirectory = System.IO.Path.GetFullPath(logDirectory);
         Directory.CreateDirectory(fullDirectory);
+        DateTimeOffset startedAtUtc =
+            (clock ?? SystemClock.Instance).UtcNow.ToUniversalTime();
+        int effectiveProcessId =
+            processId ?? Process.GetCurrentProcess().Id;
+        if (effectiveProcessId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(processId));
+        }
+
+        string sessionId = string.Format(
+            CultureInfo.InvariantCulture,
+            "gateway-{0}-p{1}",
+            startedAtUtc.ToString(
+                "yyyyMMdd'T'HHmmssfff'Z'",
+                CultureInfo.InvariantCulture),
+            effectiveProcessId);
         string path = System.IO.Path.Combine(
             fullDirectory,
-            "gateway.ndjson");
+            sessionId + ".ndjson");
+        CurrentLogFileTracker currentPath = new();
         SerilogLogger serilogLogger = new LoggerConfiguration()
-            .MinimumLevel.Information()
+            .MinimumLevel.Is(
+                ToSerilogLevel(configuration.LogMinimumLevel))
             .Enrich.FromLogContext()
             .WriteTo.File(
                 new CompactJsonFormatter(),
                 path,
                 rollingInterval: RollingInterval.Infinite,
+                fileSizeLimitBytes:
+                    configuration.LogFileSizeLimitBytes,
+                rollOnFileSizeLimit: true,
+                retainedFileCountLimit:
+                    configuration.LogRetainedFileCountLimit,
                 shared: false,
-                buffered: false)
+                buffered: false,
+                hooks: currentPath)
             .CreateLogger();
         ILoggerFactory loggerFactory = LoggerFactory.Create(
             builder =>
@@ -64,6 +120,7 @@ internal sealed class GatewayLoggingSession : IDisposable
             });
         return new GatewayLoggingSession(
             path,
+            currentPath,
             loggerFactory,
             serilogLogger);
     }
@@ -85,6 +142,121 @@ internal sealed class GatewayLoggingSession : IDisposable
 
         _loggerFactory.Dispose();
         _serilogLogger.Dispose();
+    }
+
+    private static LogEventLevel ToSerilogLevel(
+        GatewayLogLevel level)
+    {
+        return level switch
+        {
+            GatewayLogLevel.Verbose => LogEventLevel.Verbose,
+            GatewayLogLevel.Debug => LogEventLevel.Debug,
+            GatewayLogLevel.Information => LogEventLevel.Information,
+            GatewayLogLevel.Warning => LogEventLevel.Warning,
+            GatewayLogLevel.Error => LogEventLevel.Error,
+            GatewayLogLevel.Fatal => LogEventLevel.Fatal,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(level),
+                level,
+                "Unsupported gateway log level."),
+        };
+    }
+}
+
+internal sealed class CurrentLogFileTracker : FileLifecycleHooks
+{
+    private string? _currentPath;
+
+    public string? CurrentPath => Volatile.Read(ref _currentPath);
+
+    public override Stream OnFileOpened(
+        string path,
+        Stream underlyingStream,
+        Encoding encoding)
+    {
+        Interlocked.Exchange(
+            ref _currentPath,
+            System.IO.Path.GetFullPath(path));
+        return underlyingStream;
+    }
+}
+
+internal static class GatewaySessionLogRetention
+{
+    private static readonly Regex SessionFileName = new(
+        @"^gateway-\d{8}T\d{9}Z-p\d+(?:_\d{3})?\.ndjson$",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    public static int Prune(
+        string logDirectory,
+        string currentSessionBasePath,
+        DateTimeOffset olderThanUtc)
+    {
+        if (string.IsNullOrWhiteSpace(logDirectory))
+        {
+            throw new ArgumentException(
+                "Log directory is required.",
+                nameof(logDirectory));
+        }
+
+        if (string.IsNullOrWhiteSpace(currentSessionBasePath))
+        {
+            throw new ArgumentException(
+                "Current session path is required.",
+                nameof(currentSessionBasePath));
+        }
+
+        string fullDirectory = System.IO.Path.GetFullPath(logDirectory);
+        string currentSessionName =
+            System.IO.Path.GetFileNameWithoutExtension(
+                System.IO.Path.GetFullPath(currentSessionBasePath));
+        int removed = 0;
+        foreach (string candidate in Directory.EnumerateFiles(fullDirectory))
+        {
+            string fileName = System.IO.Path.GetFileName(candidate);
+            if (!IsRecognized(fileName)
+                || IsCurrentSession(fileName, currentSessionName))
+            {
+                continue;
+            }
+
+            FileAttributes attributes = File.GetAttributes(candidate);
+            if ((attributes & FileAttributes.ReparsePoint) != 0
+                || File.GetLastWriteTimeUtc(candidate)
+                    >= olderThanUtc.UtcDateTime)
+            {
+                continue;
+            }
+
+            File.Delete(candidate);
+            removed++;
+        }
+
+        return removed;
+    }
+
+    private static bool IsRecognized(string fileName)
+    {
+        return string.Equals(
+                   fileName,
+                   "gateway.ndjson",
+                   StringComparison.OrdinalIgnoreCase)
+               || SessionFileName.IsMatch(fileName);
+    }
+
+    private static bool IsCurrentSession(
+        string fileName,
+        string currentSessionName)
+    {
+        string fileStem =
+            System.IO.Path.GetFileNameWithoutExtension(fileName);
+        return string.Equals(
+                   fileStem,
+                   currentSessionName,
+                   StringComparison.OrdinalIgnoreCase)
+               || fileStem.StartsWith(
+                   currentSessionName + "_",
+                   StringComparison.OrdinalIgnoreCase);
     }
 }
 

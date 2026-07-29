@@ -33,6 +33,12 @@ public sealed class GatewayConfigurationTests
         Assert.False(
             configuration.AgentProcessControl.AllowShutdown);
         Assert.Equal(
+            GatewayLogLevel.Information,
+            configuration.LogMinimumLevel);
+        Assert.Equal(1024 * 1024, configuration.LogFileSizeLimitBytes);
+        Assert.Equal(10, configuration.LogRetainedFileCountLimit);
+        Assert.Equal(14, configuration.LogRetentionDays);
+        Assert.Equal(
             1000,
             configuration.RuntimeMonitoring
                 .PollIntervalMilliseconds);
@@ -50,6 +56,39 @@ public sealed class GatewayConfigurationTests
         Assert.True(profile.AssumeAttachedXaeSynchronized);
         Assert.Null(profile.ExpectedTarget);
         Assert.Null(profile.TcUnit);
+    }
+
+    [Fact]
+    public void LegacyConfigurationWithoutLoggingFieldsUsesDefaults()
+    {
+        string path = Path.GetTempFileName();
+        try
+        {
+            File.WriteAllText(
+                path,
+                """
+                {
+                  "schemaVersion": 1,
+                  "profiles": []
+                }
+                """);
+
+            GatewayConfiguration configuration =
+                new GatewayConfigurationLoader().Load(path);
+
+            Assert.Equal(
+                GatewayLogLevel.Information,
+                configuration.LogMinimumLevel);
+            Assert.Equal(
+                1024 * 1024,
+                configuration.LogFileSizeLimitBytes);
+            Assert.Equal(10, configuration.LogRetainedFileCountLimit);
+            Assert.Equal(14, configuration.LogRetentionDays);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 
     [Fact]
@@ -193,6 +232,9 @@ public sealed class GatewayConfigurationTests
             File.WriteAllText(path, "{}");
             GatewayConfiguration configuration =
                 CreateValidConfiguration();
+            configuration.LogMinimumLevel = GatewayLogLevel.Warning;
+            configuration.LogFileSizeLimitBytes = 2 * 1024 * 1024;
+            configuration.LogRetainedFileCountLimit = 7;
             GatewayConfigurationLoader loader = new();
 
             loader.Save(path, configuration);
@@ -200,8 +242,16 @@ public sealed class GatewayConfigurationTests
             string json = File.ReadAllText(path);
             GatewayConfiguration saved = loader.Load(path);
             Assert.Contains("\"defaultProfile\": \"bench\"", json);
+            Assert.Contains("\"logMinimumLevel\": \"warning\"", json);
             Assert.DoesNotContain("\"DefaultProfile\"", json);
             Assert.Equal("bench", saved.DefaultProfile);
+            Assert.Equal(
+                GatewayLogLevel.Warning,
+                saved.LogMinimumLevel);
+            Assert.Equal(
+                2 * 1024 * 1024,
+                saved.LogFileSizeLimitBytes);
+            Assert.Equal(7, saved.LogRetainedFileCountLimit);
             Assert.Empty(
                 Directory.GetFiles(directory, "*.tmp"));
         }
@@ -209,6 +259,45 @@ public sealed class GatewayConfigurationTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData(65535, 10, "logFileSizeLimitBytes")]
+    [InlineData(1073741825, 10, "logFileSizeLimitBytes")]
+    [InlineData(1048576, 0, "logRetainedFileCountLimit")]
+    [InlineData(1048576, 1001, "logRetainedFileCountLimit")]
+    public void LogRotationBoundsAreValidated(
+        long fileSizeLimitBytes,
+        int retainedFileCountLimit,
+        string expectedPath)
+    {
+        GatewayConfiguration configuration =
+            CreateValidConfiguration();
+        configuration.LogFileSizeLimitBytes = fileSizeLimitBytes;
+        configuration.LogRetainedFileCountLimit =
+            retainedFileCountLimit;
+
+        ConfigurationValidationResult validation =
+            GatewayConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(
+            validation.Issues,
+            issue => issue.Path == expectedPath);
+    }
+
+    [Fact]
+    public void UnknownLogLevelIsRejected()
+    {
+        GatewayConfiguration configuration =
+            CreateValidConfiguration();
+        configuration.LogMinimumLevel = (GatewayLogLevel)int.MaxValue;
+
+        ConfigurationValidationResult validation =
+            GatewayConfigurationValidator.Validate(configuration);
+
+        Assert.Contains(
+            validation.Issues,
+            issue => issue.Path == "logMinimumLevel");
     }
 
     [Fact]

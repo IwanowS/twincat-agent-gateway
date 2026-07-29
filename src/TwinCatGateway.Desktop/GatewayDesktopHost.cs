@@ -53,11 +53,17 @@ public sealed class GatewayDesktopHost : IDisposable
                 ?? GatewayUiMode.Auto,
             LaunchSource);
         LogDirectory = ResolveLogDirectory(Configuration);
-        _logging = GatewayLoggingSession.Create(LogDirectory);
+        _logging = GatewayLoggingSession.Create(
+            LogDirectory,
+            Configuration);
         _logger = _logging.CreateLogger<GatewayDesktopHost>();
         LocalLogStore logs = new(
             Path.Combine(LogDirectory, "operations"));
-        TryPruneLogs(logs, Configuration.LogRetentionDays);
+        TryPruneLogs(
+            logs,
+            LogDirectory,
+            _logging.SessionBasePath,
+            Configuration.LogRetentionDays);
 
         _status = new GatewayStatusSnapshotStore(
             GatewayStatusSnapshotStore.CreateInitial(version));
@@ -443,15 +449,37 @@ public sealed class GatewayDesktopHost : IDisposable
         };
     }
 
-    private void TryPruneLogs(LocalLogStore logs, int retentionDays)
+    private void TryPruneLogs(
+        LocalLogStore logs,
+        string logDirectory,
+        string currentSessionBasePath,
+        int retentionDays)
     {
+        DateTimeOffset olderThanUtc =
+            DateTimeOffset.UtcNow.AddDays(-retentionDays);
         try
         {
-            logs.Prune(DateTimeOffset.UtcNow.AddDays(-retentionDays));
+            logs.Prune(olderThanUtc);
         }
         catch (Exception exception)
         {
-            _logger.RecordException("log-retention", exception);
+            _logger.RecordException(
+                "operation-log-retention",
+                exception);
+        }
+
+        try
+        {
+            GatewaySessionLogRetention.Prune(
+                logDirectory,
+                currentSessionBasePath,
+                olderThanUtc);
+        }
+        catch (Exception exception)
+        {
+            _logger.RecordException(
+                "gateway-log-retention",
+                exception);
         }
     }
 

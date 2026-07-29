@@ -22,6 +22,16 @@ public enum GatewayLaunchSource
     Agent,
 }
 
+public enum GatewayLogLevel
+{
+    Verbose,
+    Debug,
+    Information,
+    Warning,
+    Error,
+    Fatal,
+}
+
 public enum ExternalChangePolicy
 {
     ReloadAll,
@@ -57,6 +67,13 @@ public sealed class GatewayConfiguration
     public string? DefaultProfile { get; set; }
 
     public string? LogDirectory { get; set; }
+
+    public GatewayLogLevel LogMinimumLevel { get; set; } =
+        GatewayLogLevel.Information;
+
+    public long LogFileSizeLimitBytes { get; set; } = 1024 * 1024;
+
+    public int LogRetainedFileCountLimit { get; set; } = 10;
 
     public int LogRetentionDays { get; set; } = 14;
 
