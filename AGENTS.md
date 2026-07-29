@@ -59,6 +59,11 @@ dotnet test tests/TwinCatGateway.ContractTests/TwinCatGateway.ContractTests.cspr
 
 The solution mixes .NET Framework 4.8 and .NET 8 projects, so Visual Studio 2019 `msbuild` is not a supported repository build driver. Use the pinned .NET SDK even for focused desktop/XAE project builds. Visual Studio 2019/XAE Shell is the automation target, not the build orchestrator for this repository.
 
+Project versions are generated automatically by Nerdbank.GitVersioning from
+`version.json` and Git history. Do not manually bump versions in project files
+or generated artifacts for normal commits; change the base version in
+`version.json` only when explicitly requested.
+
 Real-XAE integration tests require the explicitly configured remote TwinCAT 3.1.4024.17 test bench described in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md). Do not report them as passed when that environment was unavailable. Report them as not run and state why.
 
 Real-XAE DTE/ROT checks must execute under the same interactive Windows account, session, and integrity level as XAE. A sandbox account may see the XAE PID while seeing an empty ROT and no main-window handle. Treat that combination as an execution-context mismatch; rerun the read-only discovery outside the agent sandbox before asking the user to reopen or terminate XAE. Use the x86 VSTest command documented in [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md).
