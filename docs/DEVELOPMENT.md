@@ -141,6 +141,27 @@ Success requires the recorded `cancel-run` dialog action, completion
 runtime mode. The test does not require or imply that the newly transferred
 configuration is active.
 
+The runtime fault/recovery acceptance is a separate destructive opt-in for the
+repository fixture and the dedicated remote bench. In addition to the remote
+activation variables above, it requires:
+
+```powershell
+$env:TWINCAT_GATEWAY_ALLOW_REMOTE_FAULT_INJECTION = '1'
+dotnet vstest `
+  'tests\TwinCatGateway.IntegrationTests\bin\Debug\net48\TwinCatGateway.IntegrationTests.dll' `
+  '/Platform:x86' `
+  '/TestCaseFilter:FullyQualifiedName~DesktopGatewayActivationTests.RuntimeFaultRequiresExplicitRecoveryBeforeHealthyRebuildThroughIpc'
+```
+
+The test verifies the exact disabled fault sentinel before changing the
+repository-owned `MAIN.TcPOU`. It rebuilds and activates a deliberate NULL
+pointer Page Fault, preserves `Page Fault`/`0xc0000005` diagnostics, verifies
+that a subsequent Build is blocked, explicitly recovers to Config, restores
+the original source bytes, synchronizes XAE, and completes a healthy Rebuild.
+The source bytes are also restored in `finally`. An unexpected dialog, target
+identity, or transition stops further runtime commands; inspect the bench
+before any manual recovery.
+
 The linked TcUnit acceptance additionally launches its own XAE instance,
 waits for the single PLC configured by the profile, reads a fresh report
 through the operator-provided read-only path, queries `getTestResults`, and

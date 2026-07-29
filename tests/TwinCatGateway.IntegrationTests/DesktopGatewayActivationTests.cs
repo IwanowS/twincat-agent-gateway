@@ -302,6 +302,193 @@ public sealed class DesktopGatewayActivationTests
             XaeWindowProbe.FindModalDialogs(processId));
     }
 
+    [RemoteFaultRecoveryFact]
+    public async Task RuntimeFaultRequiresExplicitRecoveryBeforeHealthyRebuildThroughIpc()
+    {
+        using TemporaryDirectory temporary = new();
+        string solutionPath = GetSolutionPath();
+        string faultSourcePath =
+            GetFaultInjectionSourcePath(solutionPath);
+        byte[] originalSource =
+            File.ReadAllBytes(faultSourcePath);
+        byte[] faultEnabledSource =
+            ReplaceUniqueAsciiToken(
+                originalSource,
+                "cGatewayInjectPageFault : BOOL := FALSE;",
+                "cGatewayInjectPageFault : BOOL := TRUE ;");
+        string expectedAmsNetId =
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_REMOTE_AMS_NET_ID")!;
+        string pipeName = CreatePipeName();
+        string configurationPath = WriteConfiguration(
+            temporary.Path,
+            pipeName,
+            solutionPath,
+            expectedAmsNetId,
+            requireRecentBuild: true);
+        using GatewayDesktopHost host = StartHost(
+            configurationPath);
+        await WaitForStateAsync(
+            host,
+            GatewayState.Ready,
+            TimeSpan.FromSeconds(15));
+        NamedPipeGatewayClient client = new(pipeName);
+        await SynchronizeDiskAsync(host, client);
+        await WaitForRuntimeModeAsync(
+            host,
+            TimeSpan.FromSeconds(15),
+            RuntimeMode.Run,
+            RuntimeMode.Config);
+
+        OperationDetails<BuildResult> baselineBuild =
+            await RunBuildAsync(
+                client,
+                BuildAction.Rebuild,
+                TimeSpan.FromSeconds(105));
+        Assert.Equal(
+            OperationState.Succeeded,
+            baselineBuild.Operation.State);
+        Assert.True(baselineBuild.Result?.Ok);
+
+        try
+        {
+            File.WriteAllBytes(
+                faultSourcePath,
+                faultEnabledSource);
+            OperationDetails<BuildResult> faultBuild =
+                await RunBuildAsync(
+                    client,
+                    BuildAction.Rebuild,
+                    TimeSpan.FromSeconds(105));
+            Assert.Equal(
+                OperationState.Succeeded,
+                faultBuild.Operation.State);
+            Assert.True(faultBuild.Result?.Ok);
+
+            OperationAccepted activationAccepted =
+                await StartActivationAsync(
+                    client,
+                    TimeSpan.FromSeconds(180));
+            OperationDetails<ActivationResult> activation =
+                await WaitForOperationAsync<ActivationResult>(
+                    client,
+                    activationAccepted.OperationId,
+                    TimeSpan.FromSeconds(195));
+            Assert.Equal(
+                OperationState.Failed,
+                activation.Operation.State);
+            GatewayError activationError =
+                Assert.IsType<GatewayError>(
+                    activation.Operation.Error);
+            Assert.Equal(
+                ErrorCodes.RuntimeRecoveryRequired,
+                activationError.Code);
+            Assert.Equal(
+                "activation.verify",
+                activationError.Stage);
+            AssertFaultDetails(activationError.Details);
+
+            GatewayStatusResult faultStatus =
+                await WaitForRuntimeModeAsync(
+                    host,
+                    TimeSpan.FromSeconds(15),
+                    RuntimeMode.Exception);
+            RuntimeAlert alert = Assert.IsType<RuntimeAlert>(
+                faultStatus.TwinCat.Alert);
+            Assert.Equal(
+                DiagnosticSeverity.Error,
+                alert.Severity);
+            AssertFaultDetails(alert.Details);
+
+            OperationDetails<BuildResult> blockedBuild =
+                await RunBuildAsync(
+                    client,
+                    BuildAction.Build,
+                    TimeSpan.FromSeconds(45));
+            Assert.Equal(
+                OperationState.Failed,
+                blockedBuild.Operation.State);
+            GatewayError buildError =
+                Assert.IsType<GatewayError>(
+                    blockedBuild.Operation.Error);
+            Assert.Equal(
+                ErrorCodes.BuildBlockedByRuntimeException,
+                buildError.Code);
+            Assert.Equal(
+                "build.runtimePreflight",
+                buildError.Stage);
+            AssertFaultDetails(buildError.Details);
+
+            OperationDetails<RecoverToConfigResult> recovery =
+                await RunRecoveryAsync(
+                    client,
+                    TimeSpan.FromSeconds(135));
+            Assert.Equal(
+                OperationState.Succeeded,
+                recovery.Operation.State);
+            RecoverToConfigResult recoveryResult =
+                Assert.IsType<RecoverToConfigResult>(
+                    recovery.Result);
+            Assert.True(recoveryResult.Ok);
+            Assert.Equal(
+                expectedAmsNetId,
+                recoveryResult.Target.AmsNetId);
+            Assert.Equal(
+                RuntimeMode.Exception,
+                recoveryResult.InitialRuntimeMode);
+            Assert.Equal(
+                RuntimeMode.Config,
+                recoveryResult.ObservedRuntimeMode);
+            Assert.True(recoveryResult.TransitionRequested);
+
+            File.WriteAllBytes(
+                faultSourcePath,
+                originalSource);
+            await SynchronizeDiskAsync(host, client);
+            OperationDetails<BuildResult> healthyBuild =
+                await RunBuildAsync(
+                    client,
+                    BuildAction.Rebuild,
+                    TimeSpan.FromSeconds(105));
+            Assert.Equal(
+                OperationState.Succeeded,
+                healthyBuild.Operation.State);
+            Assert.True(healthyBuild.Result?.Ok);
+
+            File.WriteAllBytes(
+                faultSourcePath,
+                originalSource);
+            await SynchronizeDiskAsync(host, client);
+            GatewayStatusResult finalStatus =
+                await WaitForRuntimeModeAsync(
+                    host,
+                    TimeSpan.FromSeconds(15),
+                    RuntimeMode.Config);
+            Assert.Null(finalStatus.TwinCat.Alert);
+            Assert.True(
+                File.ReadAllBytes(faultSourcePath)
+                    .SequenceEqual(originalSource));
+
+            GatewayDiagnosticsResult diagnostics =
+                host.ApplicationService.GetDiagnostics();
+            int processId = GetSelectedProcessId(diagnostics);
+            Assert.Empty(
+                XaeWindowProbe.FindModalDialogs(processId));
+        }
+        finally
+        {
+            if (!File.ReadAllBytes(faultSourcePath)
+                    .SequenceEqual(originalSource))
+            {
+                File.WriteAllBytes(
+                    faultSourcePath,
+                    originalSource);
+            }
+        }
+
+        await host.StopAsync();
+    }
+
     [RemoteTcUnitFact]
     public async Task ActivationRunsLinkedTcUnitThroughIpc()
     {
@@ -530,6 +717,66 @@ public sealed class DesktopGatewayActivationTests
             $"Operation '{operationId}' did not complete.");
     }
 
+    private static async Task<OperationDetails<BuildResult>>
+        RunBuildAsync(
+            NamedPipeGatewayClient client,
+            BuildAction action,
+            TimeSpan timeout)
+    {
+        GatewayResponse<OperationAccepted> response =
+            await client.SendAsync<
+                BuildParameters,
+                OperationAccepted>(
+                GatewayMethods.Build,
+                new BuildParameters
+                {
+                    Profile = "fixture",
+                    Action = action,
+                    TimeoutSeconds =
+                        checked((int)Math.Max(
+                            1,
+                            timeout.TotalSeconds - 15)),
+                },
+                wait: false,
+                CancellationToken.None);
+        Assert.True(response.Ok);
+        return await WaitForOperationAsync<BuildResult>(
+            client,
+            Assert.IsType<OperationAccepted>(
+                response.Result).OperationId,
+            timeout);
+    }
+
+    private static async Task<
+        OperationDetails<RecoverToConfigResult>>
+        RunRecoveryAsync(
+            NamedPipeGatewayClient client,
+            TimeSpan timeout)
+    {
+        GatewayResponse<OperationAccepted> response =
+            await client.SendAsync<
+                RecoverToConfigParameters,
+                OperationAccepted>(
+                GatewayMethods.RecoverToConfig,
+                new RecoverToConfigParameters
+                {
+                    Profile = "fixture",
+                    TimeoutSeconds =
+                        checked((int)Math.Max(
+                            1,
+                            timeout.TotalSeconds - 15)),
+                },
+                wait: false,
+                CancellationToken.None);
+        Assert.True(response.Ok);
+        return await WaitForOperationAsync<
+            RecoverToConfigResult>(
+                client,
+                Assert.IsType<OperationAccepted>(
+                    response.Result).OperationId,
+                timeout);
+    }
+
     private static async Task SynchronizeDiskAsync(
         GatewayDesktopHost host,
         NamedPipeGatewayClient client)
@@ -550,6 +797,34 @@ public sealed class DesktopGatewayActivationTests
         Assert.Equal(
             OperationState.Succeeded,
             completed.Operation.State);
+    }
+
+    private static async Task<GatewayStatusResult>
+        WaitForRuntimeModeAsync(
+            GatewayDesktopHost host,
+            TimeSpan timeout,
+            params RuntimeMode[] expectedModes)
+    {
+        DateTimeOffset deadline =
+            DateTimeOffset.UtcNow.Add(timeout);
+        GatewayStatusResult status =
+            host.ApplicationService.GetStatus();
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            status = host.ApplicationService.GetStatus();
+            if (expectedModes.Contains(
+                    status.TwinCat.Mode))
+            {
+                return status;
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException(
+            "TwinCAT runtime did not reach one of the expected "
+                + $"modes ({string.Join(", ", expectedModes)}); "
+                + $"current mode is {status.TwinCat.Mode}.");
     }
 
     private static async Task WaitForStateAsync(
@@ -656,6 +931,106 @@ public sealed class DesktopGatewayActivationTests
         return Path.GetFullPath(
             Environment.GetEnvironmentVariable(
                 "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+    }
+
+    private static string GetFaultInjectionSourcePath(
+        string solutionPath)
+    {
+        string solutionDirectory =
+            Assert.IsType<string>(
+                Path.GetDirectoryName(solutionPath));
+        string path = Path.GetFullPath(
+            Path.Combine(
+                solutionDirectory,
+                "TC3_SimpleProject",
+                "PlcProject1",
+                "POUs",
+                "MAIN.TcPOU"));
+        Assert.True(
+            File.Exists(path),
+            $"The controlled fault source was not found at '{path}'.");
+        return path;
+    }
+
+    private static byte[] ReplaceUniqueAsciiToken(
+        byte[] source,
+        string before,
+        string after)
+    {
+        if (before.Length != after.Length)
+        {
+            throw new InvalidOperationException(
+                "Fault injection tokens must have equal length.");
+        }
+
+        byte[] beforeBytes =
+            System.Text.Encoding.ASCII.GetBytes(before);
+        byte[] afterBytes =
+            System.Text.Encoding.ASCII.GetBytes(after);
+        int match = -1;
+        for (int index = 0;
+             index <= source.Length - beforeBytes.Length;
+             index++)
+        {
+            bool equal = true;
+            for (int offset = 0;
+                 offset < beforeBytes.Length;
+                 offset++)
+            {
+                if (source[index + offset]
+                    == beforeBytes[offset])
+                {
+                    continue;
+                }
+
+                equal = false;
+                break;
+            }
+
+            if (!equal)
+            {
+                continue;
+            }
+
+            if (match >= 0)
+            {
+                throw new InvalidOperationException(
+                    "The controlled fault source contains more than "
+                        + "one disabled injection token.");
+            }
+
+            match = index;
+        }
+
+        if (match < 0)
+        {
+            throw new InvalidOperationException(
+                "The controlled fault source does not contain the "
+                    + "disabled injection token.");
+        }
+
+        byte[] result = (byte[])source.Clone();
+        Buffer.BlockCopy(
+            afterBytes,
+            0,
+            result,
+            match,
+            afterBytes.Length);
+        return result;
+    }
+
+    private static void AssertFaultDetails(
+        string? details)
+    {
+        string value = Assert.IsType<string>(details);
+        Assert.Contains(
+            "Page Fault",
+            value,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(
+            "0xc0000005",
+            value,
+            StringComparison.OrdinalIgnoreCase);
     }
 
     private static string CreatePipeName()

@@ -2,12 +2,20 @@
 <TcPlcObject Version="1.1.0.1" ProductVersion="3.1.4024.9">
   <POU Name="MAIN" Id="{b72daeb9-f97b-498a-8662-597d8e37f5bc}" SpecialFunc="None">
     <Declaration><![CDATA[PROGRAM MAIN
+VAR CONSTANT
+    cGatewayInjectPageFault : BOOL := FALSE;
+END_VAR
 VAR
     gatewaySmokeTests : FB_GatewaySmokeTests;
+    pGatewayPageFault : POINTER TO DWORD;
 END_VAR
 ]]></Declaration>
     <Implementation>
-      <ST><![CDATA[TcUnit.RUN();
+      <ST><![CDATA[IF cGatewayInjectPageFault THEN
+    pGatewayPageFault^ := 16#DEADBEEF;
+END_IF
+
+TcUnit.RUN();
 ]]></ST>
     </Implementation>
   </POU>
