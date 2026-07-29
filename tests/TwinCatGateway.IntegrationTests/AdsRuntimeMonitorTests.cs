@@ -122,6 +122,94 @@ public sealed class AdsRuntimeMonitorTests
     }
 
     [Fact]
+    public async Task EnrichesExistingExceptionAlertWithoutNewTransition()
+    {
+        using TemporaryDirectory temporary = new();
+        string project = temporary.WriteTwinCatProject();
+        GatewayStatusSnapshotStore status = new(
+            GatewayStatusSnapshotStore.CreateInitial("test"));
+        GatewayEventJournal events = new(status);
+        FakeProbe probe = new();
+        probe.SetMode(10000, RuntimeMode.Run);
+        probe.SetMode(851, RuntimeMode.Run);
+        probe.SetMode(852, RuntimeMode.Exception);
+        XaeErrorListSnapshotStore errorListSnapshots =
+            new();
+        using GatewayLoggingSession logging =
+            GatewayLoggingSession.Create(temporary.Path);
+        using AdsRuntimeMonitor monitor = new(
+            status,
+            logging.CreateLogger<AdsRuntimeMonitor>(),
+            events,
+            CreateConfiguration(),
+            probe,
+            errorListSnapshots);
+        monitor.UpdateTarget(
+            "192.168.3.31.1.1",
+            project);
+        using CancellationTokenSource cancellation = new();
+        Task monitorTask = monitor.RunAsync(cancellation.Token);
+        try
+        {
+            await WaitUntilAsync(
+                () =>
+                    status.Read().TwinCat.Alert?.Code
+                        == "PLC_RUNTIME_EXCEPTION");
+            RuntimeAlert initialAlert =
+                Assert.IsType<RuntimeAlert>(
+                    status.Read().TwinCat.Alert);
+            Assert.Null(initialAlert.Details);
+            long initialCursor = initialAlert.EventCursor;
+            DateTimeOffset initialOccurrence =
+                initialAlert.OccurredAtUtc;
+            long initialLatestCursor =
+                status.Read().LatestEventCursor;
+
+            errorListSnapshots.Replace(
+                new[]
+                {
+                    new BuildDiagnostic
+                    {
+                        Severity = DiagnosticSeverity.Error,
+                        Source = "xae-error-list",
+                        Message = "Exception Code: 0xc0000005. "
+                            + "Page Fault in PlcProject2 on ADS port 852.",
+                    },
+                });
+            await WaitUntilAsync(
+                () =>
+                    status.Read().TwinCat.Alert?.Details
+                        is not null);
+
+            RuntimeAlert enrichedAlert =
+                Assert.IsType<RuntimeAlert>(
+                    status.Read().TwinCat.Alert);
+            Assert.Equal(
+                initialCursor,
+                enrichedAlert.EventCursor);
+            Assert.Equal(
+                initialOccurrence,
+                enrichedAlert.OccurredAtUtc);
+            Assert.Equal(
+                initialLatestCursor,
+                status.Read().LatestEventCursor);
+            Assert.Contains(
+                "Page Fault",
+                enrichedAlert.Details,
+                StringComparison.OrdinalIgnoreCase);
+            Assert.Contains(
+                "0xc0000005",
+                enrichedAlert.Details,
+                StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await monitorTask;
+        }
+    }
+
+    [Fact]
     public async Task ReportsDisconnectAndRecoversWithoutPollingPlcs()
     {
         using TemporaryDirectory temporary = new();

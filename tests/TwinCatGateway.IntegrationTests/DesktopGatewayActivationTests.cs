@@ -402,11 +402,14 @@ public sealed class DesktopGatewayActivationTests
                 Assert.True(activationResult.Ok);
             }
 
-            GatewayStatusResult faultStatus =
-                await WaitForRuntimeModeAsync(
+            await WaitForRuntimeModeAsync(
                     host,
                     TimeSpan.FromSeconds(15),
                     RuntimeMode.Exception);
+            GatewayStatusResult faultStatus =
+                await WaitForRuntimeFaultDetailsAsync(
+                    host,
+                    TimeSpan.FromSeconds(15));
             RuntimeAlert alert = Assert.IsType<RuntimeAlert>(
                 faultStatus.TwinCat.Alert);
             Assert.Equal(
@@ -868,6 +871,42 @@ public sealed class DesktopGatewayActivationTests
                 + $"expected modes ({string.Join(", ", expectedModes)}); "
                 + "current system mode is "
                 + $"{status.TwinCat.SystemMode}.");
+    }
+
+    private static async Task<GatewayStatusResult>
+        WaitForRuntimeFaultDetailsAsync(
+            GatewayDesktopHost host,
+            TimeSpan timeout)
+    {
+        DateTimeOffset deadline =
+            DateTimeOffset.UtcNow.Add(timeout);
+        GatewayStatusResult status =
+            host.ApplicationService.GetStatus();
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            status = host.ApplicationService.GetStatus();
+            string? details =
+                status.TwinCat.Alert?.Details;
+            if (details is not null
+                && details.IndexOf(
+                    "Page Fault",
+                    StringComparison.OrdinalIgnoreCase)
+                    >= 0
+                && details.IndexOf(
+                    "0xc0000005",
+                    StringComparison.OrdinalIgnoreCase)
+                    >= 0)
+            {
+                return status;
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException(
+            "TwinCAT runtime fault details were not retained; "
+                + "current details are "
+                + $"'{status.TwinCat.Alert?.Details ?? "<none>"}'.");
     }
 
     private static async Task WaitForStateAsync(
