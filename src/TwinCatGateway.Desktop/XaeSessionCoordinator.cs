@@ -18,6 +18,10 @@ namespace TwinCatGateway.Desktop;
 
 internal sealed class XaeSessionCoordinator : IDisposable
 {
+    private const int RpcECallRejected =
+        unchecked((int)0x80010001);
+    private const int RpcEServerCallRetryLater =
+        unchecked((int)0x8001010A);
     private static readonly TimeSpan AttachTimeout =
         TimeSpan.FromSeconds(60);
     private static readonly TimeSpan HealthTimeout =
@@ -135,11 +139,21 @@ internal sealed class XaeSessionCoordinator : IDisposable
             }
             catch (Exception exception)
             {
-                connected = false;
+                bool retainAttachment =
+                    ShouldRetainAttachmentAfterFailure(
+                        connected,
+                        exception);
                 XaeSessionSnapshot snapshot =
                     await ReadSnapshotAfterFailureAsync().ConfigureAwait(false);
-                PublishFailure(snapshot, exception);
-                await TryDisconnectAsync().ConfigureAwait(false);
+                PublishFailure(
+                    snapshot,
+                    exception,
+                    retainAttachment);
+                if (!retainAttachment)
+                {
+                    connected = false;
+                    await TryDisconnectAsync().ConfigureAwait(false);
+                }
             }
 
             await DelayAsync(cancellationToken).ConfigureAwait(false);
@@ -1170,10 +1184,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
     private void PublishFailure(
         XaeSessionSnapshot snapshot,
-        Exception exception)
+        Exception exception,
+        bool retainAttachment)
     {
-        string? code =
-            (exception as GatewayOperationException)?.Code;
+        GatewayOperationException? operationException =
+            FindGatewayOperationException(exception);
+        string? code = operationException?.Code;
         string signature =
             $"{code ?? exception.GetType().FullName}|{exception.Message}";
         bool newFailure;
@@ -1182,8 +1198,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
         lock (_sync)
         {
             _lastSnapshot = CloneSnapshot(snapshot);
-            _lastSnapshot.UnsynchronizedFiles =
-                Array.Empty<ProjectFileChange>();
+            if (!retainAttachment)
+            {
+                _lastSnapshot.UnsynchronizedFiles =
+                    Array.Empty<ProjectFileChange>();
+            }
+
             _lastComDiagnostics =
                 CloneCom(_session.GetComDiagnostics());
             _lastErrorMessage = exception.Message;
@@ -1194,30 +1214,15 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 StringComparison.Ordinal);
             _lastFailureSignature = signature;
             wasConnected = _wasConnected;
-            _wasConnected = false;
+            _wasConnected = retainAttachment;
         }
 
-        _status.Update(status =>
-        {
-            if (status.Gateway.State != GatewayState.Stopping)
-            {
-                status.Gateway.State =
-                    code == ErrorCodes.XaeNotFound
-                        ? GatewayState.Disconnected
-                        : GatewayState.Faulted;
-            }
-
-            status.Xae.Connected = false;
-            status.Xae.Version = null;
-            status.Xae.Solution = null;
-            status.Xae.AgentWorkspaceOwned = false;
-            status.Xae.DiscardedDocumentCount = 0;
-            status.Xae.SynchronizationState =
-                SynchronizationState.Uninitialized;
-            status.Xae.DirtyDocumentCount = 0;
-            return status;
-        });
-        if (wasConnected)
+        _status.Update(status => ApplyFailureStatus(
+            status,
+            snapshot,
+            code,
+            retainAttachment));
+        if (wasConnected && !retainAttachment)
         {
             _events.Record(
                 new GatewayEvent
@@ -1241,11 +1246,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 {
                     ["code"] = code ?? "UNEXPECTED_EXCEPTION",
                     ["stage"] =
-                        (exception as GatewayOperationException)?.Stage
+                        operationException?.Stage
                         ?? "xae.coordinator",
                     ["hresult"] = hResult is null
                         ? "unknown"
                         : $"0x{hResult.Value:X8}",
+                    ["attachmentRetained"] =
+                        retainAttachment.ToString(),
                 },
                 exception: exception);
             GatewayError error = new()
@@ -1253,10 +1260,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 Code = code ?? ErrorCodes.OperationFailed,
                 Message = exception.Message,
                 Retryable =
-                    (exception as GatewayOperationException)?.Retryable
+                    operationException?.Retryable
                     ?? true,
                 Stage =
-                    (exception as GatewayOperationException)?.Stage
+                    operationException?.Stage
                     ?? "xae.coordinator",
             };
             _events.Record(
@@ -1271,9 +1278,111 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         ["hresult"] = hResult is null
                             ? "unknown"
                             : $"0x{hResult.Value:X8}",
+                        ["attachmentRetained"] =
+                            retainAttachment.ToString(),
                     }),
                 DateTimeOffset.UtcNow);
         }
+    }
+
+    internal static bool ShouldRetainAttachmentAfterFailure(
+        bool attached,
+        Exception exception)
+    {
+        if (!attached)
+        {
+            return false;
+        }
+
+        if (exception is null)
+        {
+            throw new ArgumentNullException(nameof(exception));
+        }
+
+        GatewayOperationException? operationException =
+            FindGatewayOperationException(exception);
+        if (operationException?.Code == ErrorCodes.ComCallTimeout
+            || operationException?.Code == ErrorCodes.ComCallRejected)
+        {
+            return true;
+        }
+
+        int? hResult = GetMeaningfulHResult(exception);
+        return hResult == RpcECallRejected
+            || hResult == RpcEServerCallRetryLater;
+    }
+
+    internal static GatewayStatusResult ApplyFailureStatus(
+        GatewayStatusResult status,
+        XaeSessionSnapshot snapshot,
+        string? code,
+        bool retainAttachment)
+    {
+        if (status is null)
+        {
+            throw new ArgumentNullException(nameof(status));
+        }
+
+        if (snapshot is null)
+        {
+            throw new ArgumentNullException(nameof(snapshot));
+        }
+
+        if (status.Gateway.State != GatewayState.Stopping)
+        {
+            status.Gateway.State = retainAttachment
+                ? GatewayState.Faulted
+                : code == ErrorCodes.XaeNotFound
+                    ? GatewayState.Disconnected
+                    : GatewayState.Faulted;
+        }
+
+        if (retainAttachment)
+        {
+            status.Xae.Connected = true;
+            status.Xae.Version =
+                snapshot.SelectedInstance?.Version
+                ?? status.Xae.Version;
+            status.Xae.Solution =
+                snapshot.SelectedInstance?.Solution
+                ?? status.Xae.Solution;
+            status.Xae.AgentWorkspaceOwned =
+                snapshot.AgentWorkspaceOwned;
+            status.Xae.DiscardedDocumentCount =
+                snapshot.DiscardedDocumentCount;
+            status.Xae.SynchronizationState =
+                snapshot.SynchronizationState;
+            status.Xae.DirtyDocumentCount =
+                snapshot.DirtyDocumentCount;
+            return status;
+        }
+
+        status.Xae.Connected = false;
+        status.Xae.Version = null;
+        status.Xae.Solution = null;
+        status.Xae.AgentWorkspaceOwned = false;
+        status.Xae.DiscardedDocumentCount = 0;
+        status.Xae.SynchronizationState =
+            SynchronizationState.Uninitialized;
+        status.Xae.DirtyDocumentCount = 0;
+        return status;
+    }
+
+    private static GatewayOperationException?
+        FindGatewayOperationException(Exception exception)
+    {
+        Exception? current = exception;
+        while (current is not null)
+        {
+            if (current is GatewayOperationException operationException)
+            {
+                return operationException;
+            }
+
+            current = current.InnerException;
+        }
+
+        return null;
     }
 
     private static GatewayEvent CreateErrorEvent(
