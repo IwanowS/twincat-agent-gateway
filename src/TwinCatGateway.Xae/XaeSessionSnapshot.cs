@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TwinCatGateway.Contracts;
+using TwinCatGateway.Core;
 
 namespace TwinCatGateway.Xae;
 
@@ -23,6 +24,9 @@ public sealed class XaeSessionSnapshot
         SynchronizationState.Uninitialized;
 
     public int DirtyDocumentCount { get; set; }
+
+    public IReadOnlyList<ProjectFileChange> UnsynchronizedFiles { get; set; } =
+        new List<ProjectFileChange>();
 
     public string? ActiveConfiguration { get; set; }
 

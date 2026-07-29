@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using TwinCatGateway.Contracts;
 using Xunit;
@@ -339,6 +340,52 @@ public sealed class MvpContractSerializationTests
         Assert.Contains("\"mode\":\"unknown\"", json);
         Assert.DoesNotContain("unreadErrors", json);
         Assert.DoesNotContain("latestErrorCursor", json);
+    }
+
+    [Fact]
+    public void DiagnosticsPreserveUnsynchronizedFileDetails()
+    {
+        GatewayDiagnosticsResult diagnostics = new()
+        {
+            Xae = new XaeDiagnostics
+            {
+                UnsynchronizedFiles = new List<UnsynchronizedFileInfo>
+                {
+                    new()
+                    {
+                        Path =
+                            @"C:\Projects\Machine\PlcProject\MAIN.TcPOU",
+                        ChangeKind =
+                            SynchronizationChangeKind.Modified,
+                        Role = SynchronizationFileRole.PlcSource,
+                    },
+                },
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            diagnostics,
+            ContractJson.SerializerOptions);
+        GatewayDiagnosticsResult? result =
+            JsonSerializer.Deserialize<GatewayDiagnosticsResult>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        UnsynchronizedFileInfo file =
+            Assert.Single(result.Xae.UnsynchronizedFiles);
+        Assert.Equal(
+            @"C:\Projects\Machine\PlcProject\MAIN.TcPOU",
+            file.Path);
+        Assert.Equal(
+            SynchronizationChangeKind.Modified,
+            file.ChangeKind);
+        Assert.Equal(
+            SynchronizationFileRole.PlcSource,
+            file.Role);
+        Assert.Contains(
+            "\"changeKind\":\"modified\"",
+            json);
     }
 
     [Fact]

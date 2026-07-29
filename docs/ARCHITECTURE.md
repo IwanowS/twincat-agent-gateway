@@ -838,6 +838,8 @@ metadata. ADS completion adapter получает NetId только из target
 - `ITcSysManager` availability;
 - active configuration/platform;
 - target NetId;
+- список non-generated project-graph файлов, отличающихся от confirmed
+  fingerprint baseline, с path/change kind/role;
 - raw ADS state и device state с System Service port 10000;
 - `GetLastErrorMessages()`;
 - последний HRESULT;
@@ -881,6 +883,14 @@ MVP хранит последние 1000 событий только в памя
 они не объявляются replayable event journal в MVP. Получение только ошибок
 задаёт `minimumSeverity=error` и сканирует не более bounded retained window,
 поэтому отдельный error index для MVP не нужен.
+
+Когда нет активной изменяющей operation, XAE coordinator обновляет этот
+список read-only fingerprint scan вместе с периодической проверкой точной
+XAE-сессии. Ненулевой список переводит synchronization state в
+`syncRequired`; совпадение с существующим confirmed baseline возвращает
+`confirmed`. Если baseline ещё не подтверждён, список пуст и
+`syncRequired` означает, что точное сравнение пока невозможно. Scan не
+reload-ит документы, не сохраняет XAE buffers и не меняет runtime.
 
 ### 12.3 Runtime status
 

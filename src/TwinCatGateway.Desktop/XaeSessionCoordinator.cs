@@ -116,6 +116,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         _profile.AssumeAttachedXaeSynchronized,
                         AttachTimeout,
                         cancellationToken).ConfigureAwait(false);
+                snapshot = _session.RefreshSynchronizationStatus(
+                    cancellationToken);
                 connected = true;
                 PublishConnected(snapshot);
             }
@@ -160,6 +162,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     InspectionIssues =
                         _lastSnapshot.DiagnosticIssues.ToList(),
                     LastHResult = _lastHResult,
+                    UnsynchronizedFiles =
+                        _lastSnapshot.UnsynchronizedFiles
+                            .Select(CreateUnsynchronizedFileInfo)
+                            .ToList(),
                 },
                 Com = CloneCom(_lastComDiagnostics),
                 Runtime =
@@ -1169,6 +1175,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         lock (_sync)
         {
             _lastSnapshot = CloneSnapshot(snapshot);
+            _lastSnapshot.UnsynchronizedFiles =
+                Array.Empty<ProjectFileChange>();
             _lastComDiagnostics =
                 CloneCom(_session.GetComDiagnostics());
             _lastErrorMessage = exception.Message;
@@ -1356,6 +1364,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 source.SynchronizationState,
             DirtyDocumentCount =
                 source.DirtyDocumentCount,
+            UnsynchronizedFiles =
+                source.UnsynchronizedFiles
+                    .Select(CloneProjectFileChange)
+                    .ToArray(),
             ActiveConfiguration =
                 source.ActiveConfiguration,
             ActivePlatform = source.ActivePlatform,
@@ -1389,6 +1401,47 @@ internal sealed class XaeSessionCoordinator : IDisposable
             Line = source.Line,
             Column = source.Column,
         };
+    }
+
+    private static UnsynchronizedFileInfo
+        CreateUnsynchronizedFileInfo(
+            ProjectFileChange source)
+    {
+        return new UnsynchronizedFileInfo
+        {
+            Path = source.Path,
+            ChangeKind = source.Kind switch
+            {
+                ProjectFileChangeKind.Added =>
+                    SynchronizationChangeKind.Added,
+                ProjectFileChangeKind.Modified =>
+                    SynchronizationChangeKind.Modified,
+                ProjectFileChangeKind.Deleted =>
+                    SynchronizationChangeKind.Deleted,
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(source)),
+            },
+            Role = source.Role switch
+            {
+                ProjectGraphFileRole.TwinCatProject =>
+                    SynchronizationFileRole.TwinCatProject,
+                ProjectGraphFileRole.PlcProject =>
+                    SynchronizationFileRole.PlcProject,
+                ProjectGraphFileRole.PlcSource =>
+                    SynchronizationFileRole.PlcSource,
+                _ => throw new ArgumentOutOfRangeException(
+                    nameof(source)),
+            },
+        };
+    }
+
+    private static ProjectFileChange CloneProjectFileChange(
+        ProjectFileChange source)
+    {
+        return new ProjectFileChange(
+            source.Path,
+            source.Kind,
+            source.Role);
     }
 
     private static DteInstanceInfo CloneInfo(DteInstanceInfo source)

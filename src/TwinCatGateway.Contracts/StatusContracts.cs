@@ -160,6 +160,32 @@ public sealed class XaeDiagnostics
     public List<string> InspectionIssues { get; set; } = new();
 
     public int? LastHResult { get; set; }
+
+    public List<UnsynchronizedFileInfo> UnsynchronizedFiles { get; set; } =
+        new();
+}
+
+public sealed class UnsynchronizedFileInfo
+{
+    public string Path { get; set; } = string.Empty;
+
+    public SynchronizationChangeKind ChangeKind { get; set; }
+
+    public SynchronizationFileRole Role { get; set; }
+}
+
+public enum SynchronizationChangeKind
+{
+    Added,
+    Modified,
+    Deleted,
+}
+
+public enum SynchronizationFileRole
+{
+    TwinCatProject,
+    PlcProject,
+    PlcSource,
 }
 
 public sealed class AdsRuntimeDiagnostics

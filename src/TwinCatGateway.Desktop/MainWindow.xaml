@@ -287,6 +287,30 @@
                         </ListView>
                     </DockPanel>
                 </TabItem>
+                <TabItem Header="Unsynchronized files">
+                    <DockPanel Margin="0,10,0,0">
+                        <TextBlock DockPanel.Dock="Top"
+                                   Margin="4,0,0,10"
+                                   Foreground="#5C6975"
+                                   TextWrapping="Wrap"
+                                   Text="{Binding UnsynchronizedFilesSummary}" />
+                        <ListView ItemsSource="{Binding UnsynchronizedFiles}">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Width="150"
+                                                    DisplayMemberBinding="{Binding ChangeKind}"
+                                                    Header="Change" />
+                                    <GridViewColumn Width="150"
+                                                    DisplayMemberBinding="{Binding Role}"
+                                                    Header="Role" />
+                                    <GridViewColumn Width="700"
+                                                    DisplayMemberBinding="{Binding Path}"
+                                                    Header="File" />
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
+                </TabItem>
             </TabControl>
         </Border>
 

@@ -46,6 +46,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _currentStage = string.Empty;
     private string _runtimeState = string.Empty;
     private string _runtimeAlert = string.Empty;
+    private string _unsynchronizedFilesSummary = string.Empty;
     private string _workspaceOwnership = string.Empty;
     private string _lastBuild = string.Empty;
     private string _lastActivation = string.Empty;
@@ -89,6 +90,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     public ObservableCollection<OperationRow> RecentOperations { get; } = new();
 
     public ObservableCollection<EventRow> Events { get; } = new();
+
+    public ObservableCollection<UnsynchronizedFileRow>
+        UnsynchronizedFiles { get; } = new();
 
     public ICollectionView RecentOperationsView { get; }
 
@@ -161,6 +165,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         get => _runtimeAlert;
         private set => SetField(ref _runtimeAlert, value);
+    }
+
+    public string UnsynchronizedFilesSummary
+    {
+        get => _unsynchronizedFilesSummary;
+        private set =>
+            SetField(ref _unsynchronizedFilesSummary, value);
     }
 
     public string? StartupError { get; }
@@ -304,6 +315,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             CurrentStage = "ui.refresh";
             RuntimeState = "Unknown";
             RuntimeAlert = "Runtime status unavailable";
+            UnsynchronizedFilesSummary =
+                "Synchronization status unavailable";
             LastIssue =
                 "UI_STATUS_REFRESH_FAILED: "
                 + exception.Message;
@@ -418,6 +431,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             diagnostics.Events);
         RuntimeState = FormatRuntimeState(status.TwinCat);
         RuntimeAlert = FormatRuntimeAlert(status.TwinCat.Alert);
+        UnsynchronizedFilesSummary =
+            FormatUnsynchronizedFilesSummary(
+                status.Xae.SynchronizationState,
+                diagnostics.Xae.UnsynchronizedFiles.Count);
         LastBuild = FormatBuild(status.LastBuild);
         LastActivation =
             FormatActivation(status.LastActivation);
@@ -453,6 +470,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             Events,
             diagnostics.EventStreamId,
             diagnostics.Events);
+        SynchronizeUnsynchronizedFiles(
+            UnsynchronizedFiles,
+            diagnostics.Xae.UnsynchronizedFiles);
     }
 
     internal static void SynchronizeRecentOperations(
@@ -549,6 +569,47 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             }
 
             row.Update(gatewayEvent);
+        }
+    }
+
+    internal static void SynchronizeUnsynchronizedFiles(
+        ObservableCollection<UnsynchronizedFileRow> rows,
+        IReadOnlyList<UnsynchronizedFileInfo> files)
+    {
+        HashSet<string> retainedPaths =
+            new(
+                files.Select(file => file.Path),
+                StringComparer.OrdinalIgnoreCase);
+        for (int index = rows.Count - 1; index >= 0; index--)
+        {
+            if (!retainedPaths.Contains(rows[index].Path))
+            {
+                rows.RemoveAt(index);
+            }
+        }
+
+        for (int index = 0; index < files.Count; index++)
+        {
+            UnsynchronizedFileInfo file = files[index];
+            UnsynchronizedFileRow? row = rows.FirstOrDefault(
+                candidate => string.Equals(
+                    candidate.Path,
+                    file.Path,
+                    StringComparison.OrdinalIgnoreCase));
+            if (row is null)
+            {
+                rows.Insert(
+                    index,
+                    new UnsynchronizedFileRow(file));
+                continue;
+            }
+
+            row.Update(file);
+            int currentIndex = rows.IndexOf(row);
+            if (currentIndex != index)
+            {
+                rows.Move(currentIndex, index);
+            }
         }
     }
 
@@ -688,6 +749,23 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             : $"{alert.Code} · {alert.Message}";
     }
 
+    private static string FormatUnsynchronizedFilesSummary(
+        SynchronizationState state,
+        int fileCount)
+    {
+        if (fileCount != 0)
+        {
+            return fileCount == 1
+                ? "1 file differs from the confirmed XAE baseline."
+                : $"{fileCount} files differ from the confirmed XAE baseline.";
+        }
+
+        return state == SynchronizationState.Confirmed
+            ? "No files differ from the confirmed XAE baseline."
+            : "Synchronization is required, but no confirmed baseline "
+                + "comparison is available.";
+    }
+
     private bool IncludeEvent(object item)
     {
         return item is EventRow row
@@ -768,6 +846,57 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private void OnPropertyChanged(
         [CallerMemberName] string? propertyName = null)
     {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+public sealed class UnsynchronizedFileRow : INotifyPropertyChanged
+{
+    private string _changeKind = string.Empty;
+    private string _role = string.Empty;
+
+    public UnsynchronizedFileRow(UnsynchronizedFileInfo source)
+    {
+        Path = source.Path;
+        Update(source);
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string Path { get; }
+
+    public string ChangeKind => _changeKind;
+
+    public string Role => _role;
+
+    internal void Update(UnsynchronizedFileInfo source)
+    {
+        SetField(
+            ref _changeKind,
+            source.ChangeKind.ToString(),
+            nameof(ChangeKind));
+        SetField(
+            ref _role,
+            source.Role.ToString(),
+            nameof(Role));
+    }
+
+    private void SetField(
+        ref string field,
+        string value,
+        string propertyName)
+    {
+        if (string.Equals(
+                field,
+                value,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        field = value;
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(propertyName));

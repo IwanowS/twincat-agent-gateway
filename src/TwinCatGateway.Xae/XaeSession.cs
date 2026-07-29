@@ -241,6 +241,52 @@ public sealed class XaeSession : IDisposable
             cancellationToken);
     }
 
+    public XaeSessionSnapshot RefreshSynchronizationStatus(
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        FingerprintState state = GetFingerprintState();
+        if (state.Baseline is null)
+        {
+            lock (_fingerprintSync)
+            {
+                _snapshot.UnsynchronizedFiles =
+                    Array.Empty<ProjectFileChange>();
+                _snapshot.SynchronizationState =
+                    SynchronizationState.SyncRequired;
+                _fingerprintState =
+                    SynchronizationState.SyncRequired;
+                return CloneSnapshot(_snapshot);
+            }
+        }
+
+        ProjectFileFingerprintSnapshot current =
+            CaptureProjectGraph(
+                state.SolutionPath,
+                state.TwinCatProjectPath,
+                cancellationToken);
+        ProjectFileChange[] changes =
+            ProjectFileFingerprintScanner.Compare(
+                state.Baseline,
+                current)
+                .Where(change =>
+                    change.Role
+                        != ProjectGraphFileRole.GeneratedArtifact)
+                .ToArray();
+        lock (_fingerprintSync)
+        {
+            _snapshot.UnsynchronizedFiles =
+                changes.Select(CloneProjectFileChange).ToArray();
+            _snapshot.SynchronizationState =
+                changes.Length == 0
+                    ? SynchronizationState.Confirmed
+                    : SynchronizationState.SyncRequired;
+            _fingerprintState =
+                _snapshot.SynchronizationState;
+            return CloneSnapshot(_snapshot);
+        }
+    }
+
     public void MarkSynchronizationRequired()
     {
         ThrowIfDisposed();
@@ -475,6 +521,7 @@ public sealed class XaeSession : IDisposable
                             != ProjectGraphFileRole
                                 .GeneratedArtifact)
                     .ToArray();
+        SetUnsynchronizedFiles(detected);
         HashSet<string> graphPaths = new(
             current.Files.Select(file => file.Path),
             StringComparer.OrdinalIgnoreCase);
@@ -600,6 +647,10 @@ public sealed class XaeSession : IDisposable
                         != ProjectGraphFileRole
                             .GeneratedArtifact)
                 .ToArray();
+        if (concurrentChanges.Count != 0)
+        {
+            SetUnsynchronizedFiles(concurrentChanges);
+        }
         HashSet<string> provenNoisePaths = new(
             trackedProjectChanges
                 .Where(change =>
@@ -2285,6 +2336,8 @@ public sealed class XaeSession : IDisposable
                 baseline.Files.Select(file => file.Path).ToArray();
             _snapshot.SynchronizationState =
                 SynchronizationState.Confirmed;
+            _snapshot.UnsynchronizedFiles =
+                Array.Empty<ProjectFileChange>();
             _fingerprintState =
                 SynchronizationState.Confirmed;
         }
@@ -2305,6 +2358,8 @@ public sealed class XaeSession : IDisposable
             _fingerprintTwinCatProjectPath = null;
             _snapshot.SynchronizationState =
                 SynchronizationState.SyncRequired;
+            _snapshot.UnsynchronizedFiles =
+                Array.Empty<ProjectFileChange>();
             _fingerprintState =
                 SynchronizationState.SyncRequired;
         }
@@ -2345,8 +2400,28 @@ public sealed class XaeSession : IDisposable
             _fingerprintLaunchedByGateway = false;
             _fingerprintTwinCatProjectPath = null;
             _projectGraphPaths = Array.Empty<string>();
+            _snapshot.UnsynchronizedFiles =
+                Array.Empty<ProjectFileChange>();
             _fingerprintState =
                 SynchronizationState.Uninitialized;
+        }
+    }
+
+    private void SetUnsynchronizedFiles(
+        IEnumerable<ProjectFileChange> changes)
+    {
+        ProjectFileChange[] snapshot =
+            changes.Select(CloneProjectFileChange).ToArray();
+        lock (_fingerprintSync)
+        {
+            _snapshot.UnsynchronizedFiles = snapshot;
+            if (snapshot.Length != 0)
+            {
+                _snapshot.SynchronizationState =
+                    SynchronizationState.SyncRequired;
+                _fingerprintState =
+                    SynchronizationState.SyncRequired;
+            }
         }
     }
 
@@ -2978,6 +3053,10 @@ public sealed class XaeSession : IDisposable
                 source.SynchronizationState,
             DirtyDocumentCount =
                 source.DirtyDocumentCount,
+            UnsynchronizedFiles =
+                source.UnsynchronizedFiles
+                    .Select(CloneProjectFileChange)
+                    .ToArray(),
             ActiveConfiguration = source.ActiveConfiguration,
             ActivePlatform = source.ActivePlatform,
             TargetAmsNetId = source.TargetAmsNetId,
@@ -3009,6 +3088,15 @@ public sealed class XaeSession : IDisposable
             Line = source.Line,
             Column = source.Column,
         };
+    }
+
+    private static ProjectFileChange CloneProjectFileChange(
+        ProjectFileChange source)
+    {
+        return new ProjectFileChange(
+            source.Path,
+            source.Kind,
+            source.Role);
     }
 
     private static DteInstanceInfo? CloneInfo(DteInstanceInfo? source)

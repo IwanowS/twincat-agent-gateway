@@ -344,6 +344,38 @@ public sealed class DesktopGatewayHostTests
     }
 
     [Fact]
+    public void UnsynchronizedFileRowsPreservePathsAndUpdateDetails()
+    {
+        ObservableCollection<UnsynchronizedFileRow> rows = new();
+        UnsynchronizedFileInfo source = new()
+        {
+            Path = @"C:\Projects\Machine\MAIN.TcPOU",
+            ChangeKind = SynchronizationChangeKind.Modified,
+            Role = SynchronizationFileRole.PlcSource,
+        };
+
+        MainWindowViewModel.SynchronizeUnsynchronizedFiles(
+            rows,
+            new[] { source });
+        UnsynchronizedFileRow existing = Assert.Single(rows);
+        MainWindowViewModel.SynchronizeUnsynchronizedFiles(
+            rows,
+            new[]
+            {
+                new UnsynchronizedFileInfo
+                {
+                    Path = source.Path,
+                    ChangeKind = SynchronizationChangeKind.Deleted,
+                    Role = SynchronizationFileRole.PlcSource,
+                },
+            });
+
+        Assert.Same(existing, Assert.Single(rows));
+        Assert.Equal("Deleted", existing.ChangeKind);
+        Assert.Equal("PlcSource", existing.Role);
+    }
+
+    [Fact]
     public void ManualReconnectIsPublishedWithoutCallingCom()
     {
         using TemporaryDirectory temporary = new();
