@@ -25,20 +25,23 @@ internal sealed class UnavailableTwinCatGatewayClient
             exception.Code,
             exception.Message,
             exception.Retryable,
-            exception.Stage);
+            exception.Stage,
+            exception.Details);
     }
 
     public static ITwinCatGatewayClient Create(
         string code,
         string message,
         bool retryable,
-        string? stage)
+        string? stage,
+        string? details = null)
     {
         return new UnavailableTwinCatGatewayClient(
             new GatewayError
             {
                 Code = code,
                 Message = message,
+                Details = details,
                 Retryable = retryable,
                 Stage = stage,
             });
@@ -73,6 +76,15 @@ internal sealed class UnavailableTwinCatGatewayClient
             CancellationToken cancellationToken = default)
     {
         return Response<GatewayDiagnosticsResult>(
+            cancellationToken);
+    }
+
+    public Task<GatewayResponse<XaeMessagesResult>>
+        GetXaeMessagesAsync(
+            GetXaeMessagesParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        return Response<XaeMessagesResult>(
             cancellationToken);
     }
 
@@ -171,6 +183,7 @@ internal sealed class UnavailableTwinCatGatewayClient
                 {
                     Code = _error.Code,
                     Message = _error.Message,
+                    Details = _error.Details,
                     Retryable = _error.Retryable,
                     Stage = _error.Stage,
                 },

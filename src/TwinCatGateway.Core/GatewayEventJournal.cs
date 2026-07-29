@@ -209,6 +209,7 @@ public sealed class GatewayEventJournal : IGatewayEventSink
             {
                 Code = source.Code,
                 Message = source.Message,
+                Details = source.Details,
                 Retryable = source.Retryable,
                 OperationId = source.OperationId,
                 Stage = source.Stage,

@@ -25,6 +25,17 @@ public interface ITwinCatGatewayClient
             GetDiagnosticsParameters parameters,
             CancellationToken cancellationToken = default);
 
+    Task<GatewayResponse<XaeMessagesResult>>
+        GetXaeMessagesAsync(
+            GetXaeMessagesParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        return Task.FromException<
+            GatewayResponse<XaeMessagesResult>>(
+            new NotSupportedException(
+                "XAE Error List reading is not implemented by this client."));
+    }
+
     Task<GatewayResponse<OperationAccepted>> StartBuildAsync(
         BuildParameters parameters,
         CancellationToken cancellationToken = default);

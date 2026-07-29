@@ -11,13 +11,16 @@ description: Diagnose TwinCAT Agent Gateway, XAE connection, build, activation, 
    `afterCursor`. Use `minimumSeverity: error` when only errors are needed.
 3. Follow the unified event sequence around the failed operation. Preserve the
    returned cursor for the next read.
-4. Read one referenced raw resource only when the compact events do not explain
+4. If the runtime is in `exception` and the retained `details` are absent or
+   insufficient, call `twincat_get_xae_messages` once for the bounded current
+   XAE Error List error/warning snapshot.
+5. Read one referenced raw resource only when the compact events do not explain
    the failure. Choose the build log, XAE log, xUnit report, or focused project
    diff that corresponds to the failing stage.
 
-Do not fetch every log, the full Error List, the full `.tsproj`, or the full
-xUnit report by default. Do not repeat state-changing operations as a
-diagnostic probe.
+Do not fetch every log, repeatedly read the Error List, inspect the full
+`.tsproj`, or fetch the full xUnit report by default. Do not repeat
+state-changing operations as a diagnostic probe.
 
 Treat `unknown`, timeout, missing event, and execution-context mismatch as
 evidence gaps. Report them honestly. For interactive XAE discovery, the

@@ -310,7 +310,8 @@ public sealed class OperationQueue : IDisposable
                 item.OperationId,
                 exception.Retryable,
                 exception.Stage,
-                exception.RawLogRef);
+                exception.RawLogRef,
+                exception.Details);
             bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.Failed,
@@ -390,12 +391,14 @@ public sealed class OperationQueue : IDisposable
         string operationId,
         bool retryable,
         string? stage = null,
-        string? rawLogRef = null)
+        string? rawLogRef = null,
+        string? details = null)
     {
         return new GatewayError
         {
             Code = code,
             Message = message,
+            Details = details,
             OperationId = operationId,
             Retryable = retryable,
             Stage = stage,
@@ -607,6 +610,7 @@ public sealed class OperationQueue : IDisposable
             {
                 Code = source.Code,
                 Message = source.Message,
+                Details = source.Details,
                 Retryable = source.Retryable,
                 OperationId = string.IsNullOrEmpty(source.OperationId)
                     ? operationId

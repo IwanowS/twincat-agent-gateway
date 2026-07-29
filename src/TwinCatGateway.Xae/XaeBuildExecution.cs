@@ -106,7 +106,8 @@ internal sealed class XaeBuildEventLease : IDisposable
             _projectFileLease = projectFileLease;
             _outputSnapshot =
                 XaeOutputCollector.Capture(dte);
-            _errorListBaseline = ReadErrorList();
+            _errorListBaseline =
+                XaeErrorListReader.Read(dte);
             _buildEvents.OnBuildDone += _doneHandler;
             subscribed = true;
         }
@@ -171,7 +172,7 @@ internal sealed class XaeBuildEventLease : IDisposable
             _requestedAction == BuildAction.Clean
                 ? new List<BuildDiagnostic>()
                 : BuildDiagnosticMultiset.Except(
-                        ReadErrorList(),
+                        XaeErrorListReader.Read(_dte),
                         _errorListBaseline)
                     .ToList();
         IReadOnlyList<XaeOutputDelta> output =
@@ -326,74 +327,6 @@ internal sealed class XaeBuildEventLease : IDisposable
         catch (Exception exception)
         {
             _completion.TrySetException(exception);
-        }
-    }
-
-    private List<BuildDiagnostic> ReadErrorList()
-    {
-        ToolWindows? toolWindows = null;
-        ErrorList? errorList = null;
-        ErrorItems? items = null;
-        List<BuildDiagnostic> diagnostics = new();
-        try
-        {
-            toolWindows = _dte.ToolWindows;
-            errorList = toolWindows.ErrorList;
-            items = errorList.ErrorItems;
-            int count = items.Count;
-            for (int index = 1; index <= count; index++)
-            {
-                ErrorItem? item = null;
-                try
-                {
-                    item = items.Item(index);
-                    diagnostics.Add(
-                        new BuildDiagnostic
-                        {
-                            Severity = MapSeverity(
-                                item.ErrorLevel),
-                            Source = "xae-error-list",
-                            Message = item.Description
-                                ?? string.Empty,
-                            File = string.IsNullOrWhiteSpace(
-                                item.FileName)
-                                ? null
-                                : item.FileName,
-                            Line = item.Line > 0
-                                ? item.Line
-                                : null,
-                            Column = item.Column > 0
-                                ? item.Column
-                                : null,
-                        });
-                }
-                finally
-                {
-                    ComObject.Release(item);
-                }
-            }
-
-            return diagnostics;
-        }
-        finally
-        {
-            ComObject.Release(items);
-            ComObject.Release(errorList);
-            ComObject.Release(toolWindows);
-        }
-    }
-
-    private static DiagnosticSeverity MapSeverity(
-        vsBuildErrorLevel level)
-    {
-        switch (level)
-        {
-            case vsBuildErrorLevel.vsBuildErrorLevelHigh:
-                return DiagnosticSeverity.Error;
-            case vsBuildErrorLevel.vsBuildErrorLevelMedium:
-                return DiagnosticSeverity.Warning;
-            default:
-                return DiagnosticSeverity.Info;
         }
     }
 

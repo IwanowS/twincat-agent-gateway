@@ -1,5 +1,15 @@
 # Release notes
 
+## 0.1.22
+
+- Added the read-only `twincat_get_xae_messages` MCP tool and
+  `xae-messages` CLI command for bounded error/warning snapshots from the
+  exact attached XAE solution.
+- Runtime `Exception Code` and `Page Fault` messages from the XAE Error List
+  are retained in runtime-alert and operation-error `details`.
+- Reused the shared STA Error List reader for build diagnostics and added
+  contract, adapter, policy, monitor, and marked real-XAE coverage.
+
 ## 0.1.0 MVP
 
 TwinCAT Agent Gateway 0.1.0 provides:

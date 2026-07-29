@@ -27,6 +27,7 @@ public sealed class McpAdapterTests
         "twincat_build",
         "twincat_get_diagnostics",
         "twincat_get_test_results",
+        "twincat_get_xae_messages",
         "twincat_recover_to_config",
         "twincat_status",
         "twincat_sync",
@@ -167,6 +168,14 @@ public sealed class McpAdapterTests
         Assert.True(recovery.Destructive);
         Assert.True(recovery.Idempotent);
         Assert.False(recovery.ReadOnly);
+        McpServerToolAttribute xaeMessages =
+            Assert.Single(
+                attributes,
+                attribute =>
+                    attribute.Name
+                    == "twincat_get_xae_messages");
+        Assert.True(xaeMessages.ReadOnly);
+        Assert.True(xaeMessages.Idempotent);
         Assert.All(
             attributes,
             attribute => Assert.False(attribute.OpenWorld));
@@ -387,6 +396,38 @@ public sealed class McpAdapterTests
     }
 
     [Fact]
+    public async Task XaeMessagesMapsBoundedRead()
+    {
+        FakeGatewayClient client = new()
+        {
+            XaeMessagesResponse =
+                new GatewayResponse<XaeMessagesResult>
+                {
+                    Ok = true,
+                    Result = new XaeMessagesResult
+                    {
+                        Solution = @"C:\Project\Fixture.sln",
+                    },
+                },
+        };
+        TwinCatTools tools = new(
+            client,
+            new GatewayOperationPoller(client));
+
+        string response =
+            await tools.GetXaeMessagesAsync(
+                maximumMessages: 7);
+
+        Assert.Equal(
+            7,
+            client.XaeMessages?.MaximumMessages);
+        Assert.Contains(
+            @"C:\\Project\\Fixture.sln",
+            response,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task SynchronizeMapsForceSyncArguments()
     {
         FakeGatewayClient client = new()
@@ -586,6 +627,14 @@ public sealed class McpAdapterTests
                         new GatewayDiagnosticsResult(),
                 };
 
+        public GatewayResponse<XaeMessagesResult>
+            XaeMessagesResponse { get; set; } =
+                new()
+                {
+                    Ok = true,
+                    Result = new XaeMessagesResult(),
+                };
+
         public GatewayResponse<ResourceContent>
             ResourceResponse { get; set; } =
                 new()
@@ -599,6 +648,12 @@ public sealed class McpAdapterTests
         public SynchronizeParameters? Synchronize { get; private set; }
 
         public GetDiagnosticsParameters? Diagnostics
+        {
+            get;
+            private set;
+        }
+
+        public GetXaeMessagesParameters? XaeMessages
         {
             get;
             private set;
@@ -663,6 +718,16 @@ public sealed class McpAdapterTests
             cancellationToken.ThrowIfCancellationRequested();
             Diagnostics = parameters;
             return Task.FromResult(DiagnosticsResponse);
+        }
+
+        public Task<GatewayResponse<XaeMessagesResult>>
+            GetXaeMessagesAsync(
+                GetXaeMessagesParameters parameters,
+                CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            XaeMessages = parameters;
+            return Task.FromResult(XaeMessagesResponse);
         }
 
         public Task<GatewayResponse<OperationAccepted>>

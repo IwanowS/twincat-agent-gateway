@@ -27,7 +27,7 @@ public sealed class GatewayRequestDispatcher
         _shutdownRequested = shutdownRequested;
     }
 
-    public Task<GatewayDispatchResult> DispatchAsync(
+    public async Task<GatewayDispatchResult> DispatchAsync(
         GatewayRequestContext request,
         CancellationToken cancellationToken)
     {
@@ -41,29 +41,49 @@ public sealed class GatewayRequestDispatcher
         {
             if (request.Method == GatewayMethods.Shutdown)
             {
-                return Task.FromResult(DispatchShutdown());
+                return DispatchShutdown();
             }
 
-            object? result = Dispatch(request);
-            return Task.FromResult(
-                GatewayDispatchResult.Success(
-                    result,
-                    GetRuntimeAlert()));
+            object? result =
+                request.Method
+                    == GatewayMethods.GetXaeMessages
+                ? await DispatchXaeMessagesAsync(
+                        request,
+                        cancellationToken)
+                    .ConfigureAwait(false)
+                : Dispatch(request);
+            return GatewayDispatchResult.Success(
+                result,
+                GetRuntimeAlert());
         }
         catch (GatewayOperationException exception)
         {
-            return Task.FromResult(
-                GatewayDispatchResult.Failure(
-                    new GatewayError
-                    {
-                        Code = exception.Code,
-                        Message = exception.Message,
-                        Retryable = exception.Retryable,
-                        Stage = exception.Stage,
-                        RawLogRef = exception.RawLogRef,
-                    },
-                    GetRuntimeAlert()));
+            return GatewayDispatchResult.Failure(
+                new GatewayError
+                {
+                    Code = exception.Code,
+                    Message = exception.Message,
+                    Details = exception.Details,
+                    Retryable = exception.Retryable,
+                    Stage = exception.Stage,
+                    RawLogRef = exception.RawLogRef,
+                },
+                GetRuntimeAlert());
         }
+    }
+
+    private Task<XaeMessagesResult>
+        DispatchXaeMessagesAsync(
+            GatewayRequestContext request,
+            CancellationToken cancellationToken)
+    {
+        GetXaeMessagesParameters parameters =
+            request.DeserializeParameters<
+                GetXaeMessagesParameters>(
+                _serializerOptions);
+        return _service.GetXaeMessagesAsync(
+            parameters,
+            cancellationToken);
     }
 
     private GatewayDispatchResult DispatchShutdown()

@@ -4,7 +4,8 @@ TwinCAT Agent Gateway is a local Windows desktop application that gives coding
 agents a compact, typed interface to TwinCAT 3 XAE. The MVP supports XAE
 discovery/launch, Build/Rebuild/Clean, explicit remote activation with an
 optional Run confirmation,
-cursor-based diagnostics, local raw logs, and linked TcUnit result collection.
+cursor-based diagnostics, bounded XAE Error List reads, local raw logs, and
+linked TcUnit result collection.
 
 ## Requirements
 

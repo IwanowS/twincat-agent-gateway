@@ -79,6 +79,8 @@ public sealed class RuntimeAlert
 
     public string Message { get; set; } = string.Empty;
 
+    public string? Details { get; set; }
+
     public DateTimeOffset OccurredAtUtc { get; set; }
 
     public long EventCursor { get; set; }

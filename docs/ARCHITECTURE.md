@@ -892,7 +892,7 @@ Gateway читает состояние выбранного target через `
 run | config | exception | stopped | unknown
 ```
 
-`Run`, `Config/Reconfig`, `Stop/Stopping/Shutdown` и `Error/Exception` отображаются соответственно в `run`, `config`, `stopped` и `exception`. Переходные, неподдержанные состояния и ошибки ADS возвращают `unknown`. Detailed diagnostics сохраняет NetId, port, raw ADS state, device state, timestamp и error code. Runtime status failure не делает исправную XAE-сессию disconnected.
+`Run`, `Config/Reconfig`, `Stop/Stopping/Shutdown` и `Error/Exception` отображаются соответственно в `run`, `config`, `stopped` и `exception`. Переходные, неподдержанные состояния и ошибки ADS возвращают `unknown`. Detailed diagnostics сохраняет NetId, port, raw ADS state, device state, timestamp и error code. При подтверждённом `exception` gateway выбирает связанную строку `Exception Code`/`Page Fault` из текущего XAE Error List и сохраняет её в `RuntimeAlert.details`; та же строка попадает в `GatewayError.details`, когда runtime блокирует build или activation. Runtime status failure не делает исправную XAE-сессию disconnected.
 
 ### 12.4 Continuous ADS runtime monitoring
 
@@ -1273,8 +1273,15 @@ twincat_sync
 twincat_activate
 twincat_recover_to_config
 twincat_get_diagnostics
+twincat_get_xae_messages
 twincat_get_test_results
 ```
+
+`twincat_get_xae_messages(maximumMessages=50)` является read-only bounded
+снимком текущих error/warning строк XAE Error List. Gateway сначала проверяет
+точное выбранное `Solution.FullName`; caller не передаёт произвольную XAE
+session. Ответ содержит solution, timestamp, общие counts, не более 200 строк
+и `moreMessages`.
 
 ### Resources
 

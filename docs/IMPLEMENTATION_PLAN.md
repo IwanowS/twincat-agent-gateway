@@ -671,8 +671,14 @@ twincat_build
 twincat_activate
 twincat_recover_to_config
 twincat_get_diagnostics
+twincat_get_xae_messages
 twincat_get_test_results
 ```
+
+`twincat_get_xae_messages` читает только error/warning из Error List точной
+выбранной XAE solution, ограничивает ответ и не изменяет XAE. При runtime
+`Exception` связанная строка `Exception Code`/`Page Fault` сохраняется в
+`RuntimeAlert.details` и в details блокирующей operation error.
 
 ### MCP resources
 
@@ -825,6 +831,15 @@ twincat-doc://configuration
 
 ### Позже, вне MVP
 
+- специализированный read-only TwinCAT EventLogger receiver для runtime
+  messages и alarms с фиксированного, проверенного profile target. Использовать
+  Beckhoff EventLogger ADS proxy: принимать `MessageSent`, `AlarmRaised`,
+  `AlarmCleared`, `AlarmConfirmed` и читать cache после reconnect; сохранять
+  severity, EventClass/Event-ID, text, Source Info и JSON attribute. Receiver
+  не отправляет сообщения, не подтверждает и не очищает alarms, не открывает
+  general-purpose ADS surface и не заменяет XAE Error List: XAE показывает
+  EventLogger events в Error List только при включённом `Output as Task Item`
+  и с учётом severity filter;
 - general-purpose ADS client;
 - arbitrary online symbol reads/writes;
 - ADS RPC и runtime `WriteControl`;

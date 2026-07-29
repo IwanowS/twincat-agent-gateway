@@ -136,6 +136,41 @@ public sealed class TwinCatTools
     }
 
     [McpServerTool(
+        Name = "twincat_get_xae_messages",
+        ReadOnly = true,
+        Idempotent = true,
+        OpenWorld = false)]
+    [Description(
+        "Read the current error and warning entries from the "
+        + "Error List of the exact attached XAE solution.")]
+    public async Task<string> GetXaeMessagesAsync(
+        [Description(
+            "Maximum XAE Error List entries in the response.")]
+        int maximumMessages = 50,
+        McpServer? server = null,
+        CancellationToken cancellationToken = default)
+    {
+        McpGatewayJson.RequirePositive(
+            maximumMessages,
+            nameof(maximumMessages));
+        GatewayToolSession session =
+            await ResolveSessionAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        GatewayResponse<XaeMessagesResult> response =
+            await session.Client.GetXaeMessagesAsync(
+                    new GetXaeMessagesParameters
+                    {
+                        MaximumMessages =
+                            maximumMessages,
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+        return McpGatewayJson.Serialize(response);
+    }
+
+    [McpServerTool(
         Name = "twincat_build",
         Destructive = false,
         Idempotent = false,

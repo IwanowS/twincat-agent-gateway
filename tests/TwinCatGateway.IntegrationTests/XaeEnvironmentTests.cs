@@ -144,6 +144,36 @@ public sealed class XaeEnvironmentTests
     }
 
     [XaeFact]
+    public async Task AttachedSessionReadsCurrentErrorList()
+    {
+        string solution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        using XaeSession session = new();
+        await session.AttachAsync(
+            solution,
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+
+        var messages = await session.ReadErrorListAsync(
+            TimeSpan.FromSeconds(10),
+            CancellationToken.None);
+
+        Assert.All(
+            messages,
+            message =>
+            {
+                Assert.True(
+                    Enum.IsDefined(
+                        typeof(DiagnosticSeverity),
+                        message.Severity));
+                Assert.Equal(
+                    "xae-error-list",
+                    message.Source);
+            });
+    }
+
+    [XaeFact]
     public async Task AttachedSessionRestoresUserSilentMode()
     {
         string solution = Path.GetFullPath(

@@ -111,6 +111,10 @@ NetId, and (by default) a recent successful build.
   pass; verify the selected target in XAE.
 - runtime `unknown`: evidence is incomplete; do not report success.
 - runtime `exception`: the target answered but is in TwinCAT Exception state.
+  The current runtime alert and blocked operation retain the matching XAE
+  Error List message in `details`. Call the read-only
+  `twincat_get_xae_messages` tool when the current error/warning rows are
+  needed for diagnosis.
   Repair/reset the test target through the approved operator workflow, then
   reconnect. Do not treat it as unavailable.
 

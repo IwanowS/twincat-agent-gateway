@@ -72,6 +72,22 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
             cancellationToken);
     }
 
+    public Task<GatewayResponse<XaeMessagesResult>>
+        GetXaeMessagesAsync(
+            GetXaeMessagesParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        return _client.SendAsync<
+            GetXaeMessagesParameters,
+            XaeMessagesResult>(
+            GatewayMethods.GetXaeMessages,
+            parameters,
+            wait: true,
+            cancellationToken);
+    }
+
     public Task<GatewayResponse<OperationAccepted>> StartBuildAsync(
         BuildParameters parameters,
         CancellationToken cancellationToken = default)

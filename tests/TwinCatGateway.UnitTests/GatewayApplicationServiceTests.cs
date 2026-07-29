@@ -174,6 +174,71 @@ public sealed class GatewayApplicationServiceTests
     }
 
     [Fact]
+    public async Task XaeMessagesUsesBoundedProvider()
+    {
+        GetXaeMessagesParameters? captured = null;
+        using ServiceFixture fixture = new(
+            xaeMessagesProvider: (
+                parameters,
+                cancellationToken) =>
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                captured = parameters;
+                return Task.FromResult(
+                    new XaeMessagesResult
+                    {
+                        Solution =
+                            @"C:\Project\Fixture.sln",
+                    });
+            });
+
+        XaeMessagesResult result =
+            await fixture.Service.GetXaeMessagesAsync(
+                new GetXaeMessagesParameters
+                {
+                    MaximumMessages = 7,
+                },
+                CancellationToken.None);
+
+        Assert.Equal(7, captured?.MaximumMessages);
+        Assert.Equal(
+            @"C:\Project\Fixture.sln",
+            result.Solution);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(201)]
+    public async Task XaeMessagesRejectsInvalidLimit(
+        int maximumMessages)
+    {
+        using ServiceFixture fixture = new(
+            xaeMessagesProvider: (
+                parameters,
+                cancellationToken) =>
+                    Task.FromResult(
+                        new XaeMessagesResult()));
+
+        GatewayOperationException exception =
+            await Assert.ThrowsAsync<
+                GatewayOperationException>(
+                () => fixture.Service.GetXaeMessagesAsync(
+                    new GetXaeMessagesParameters
+                    {
+                        MaximumMessages =
+                            maximumMessages,
+                    },
+                    CancellationToken.None));
+
+        Assert.Equal(
+            ErrorCodes.RequestInvalid,
+            exception.Code);
+        Assert.Equal(
+            "xae.errorList.validate",
+            exception.Stage);
+    }
+
+    [Fact]
     public async Task BuildUsesStableOperationIdAndCapturedPaths()
     {
         string? executorOperationId = null;
@@ -1044,7 +1109,8 @@ public sealed class GatewayApplicationServiceTests
                 tcUnitPreparationExecutor = null,
             TcUnitOperationExecutor? tcUnitExecutor = null,
             SynchronizeOperationExecutor? synchronizeExecutor = null,
-            RecoveryOperationExecutor? recoveryExecutor = null)
+            RecoveryOperationExecutor? recoveryExecutor = null,
+            XaeMessagesProvider? xaeMessagesProvider = null)
         {
             _temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -1075,7 +1141,8 @@ public sealed class GatewayApplicationServiceTests
                 tcUnitPreparationExecutor,
                 tcUnitExecutor,
                 synchronizeExecutor,
-                recoveryExecutor);
+                recoveryExecutor,
+                xaeMessagesProvider);
         }
 
         public GatewayStatusSnapshotStore Status { get; }

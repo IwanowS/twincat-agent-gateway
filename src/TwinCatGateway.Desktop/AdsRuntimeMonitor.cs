@@ -19,6 +19,8 @@ internal sealed class AdsRuntimeMonitor : IDisposable
     private readonly StructuredFileLogger _logger;
     private readonly IGatewayEventSink _events;
     private readonly IAdsRuntimeStatusProbe _probe;
+    private readonly XaeErrorListSnapshotStore
+        _errorListSnapshots;
     private readonly TimeSpan _pollInterval;
     private readonly TimeSpan _readTimeout;
     private readonly SemaphoreSlim _wakeSignal = new(0, 1);
@@ -37,7 +39,8 @@ internal sealed class AdsRuntimeMonitor : IDisposable
         StructuredFileLogger logger,
         IGatewayEventSink events,
         RuntimeMonitoringConfiguration configuration,
-        IAdsRuntimeStatusProbe? probe = null)
+        IAdsRuntimeStatusProbe? probe = null,
+        XaeErrorListSnapshotStore? errorListSnapshots = null)
     {
         _status = status
             ?? throw new ArgumentNullException(nameof(status));
@@ -55,6 +58,8 @@ internal sealed class AdsRuntimeMonitor : IDisposable
         _readTimeout = TimeSpan.FromMilliseconds(
             configuration.ReadTimeoutMilliseconds);
         _probe = probe ?? new AdsRuntimeStatusProbe();
+        _errorListSnapshots = errorListSnapshots
+            ?? new XaeErrorListSnapshotStore();
     }
 
     public void UpdateTarget(
@@ -336,7 +341,8 @@ internal sealed class AdsRuntimeMonitor : IDisposable
         RuntimeAlert? alert = CreateAlert(
             system,
             plcs,
-            _lastEventCursors);
+            _lastEventCursors,
+            _errorListSnapshots.Read());
         DateTimeOffset? observedAtUtc = observations
             .Select(observation =>
                 observation.Result.Diagnostics.ReadAtUtc)
@@ -431,7 +437,8 @@ internal sealed class AdsRuntimeMonitor : IDisposable
     private static RuntimeAlert? CreateAlert(
         RuntimeObservation system,
         IReadOnlyList<RuntimeObservation> plcs,
-        IReadOnlyDictionary<int, long> transitionCursors)
+        IReadOnlyDictionary<int, long> transitionCursors,
+        IReadOnlyList<BuildDiagnostic> xaeMessages)
     {
         if (system.Result.Diagnostics.ErrorCode is not null)
         {
@@ -454,7 +461,11 @@ internal sealed class AdsRuntimeMonitor : IDisposable
                 DiagnosticSeverity.Error,
                 $"PLC runtime '{plcException.Name}' is in Exception.",
                 plcException,
-                transitionCursors);
+                transitionCursors,
+                XaeRuntimeExceptionDetails.Select(
+                    xaeMessages,
+                    plcException.Name,
+                    plcException.Result.Diagnostics.Port));
         }
 
         if (system.Result.Status.Mode == RuntimeMode.Exception)
@@ -464,7 +475,11 @@ internal sealed class AdsRuntimeMonitor : IDisposable
                 DiagnosticSeverity.Error,
                 "The TwinCAT runtime is in Exception.",
                 system,
-                transitionCursors);
+                transitionCursors,
+                XaeRuntimeExceptionDetails.Select(
+                    xaeMessages,
+                    system.Name,
+                    system.Result.Diagnostics.Port));
         }
 
         RuntimeObservation? unavailablePlc = plcs
@@ -488,7 +503,8 @@ internal sealed class AdsRuntimeMonitor : IDisposable
         DiagnosticSeverity severity,
         string message,
         RuntimeObservation observation,
-        IReadOnlyDictionary<int, long> transitionCursors)
+        IReadOnlyDictionary<int, long> transitionCursors,
+        string? details = null)
     {
         int port = observation.Result.Diagnostics.Port;
         transitionCursors.TryGetValue(
@@ -499,6 +515,7 @@ internal sealed class AdsRuntimeMonitor : IDisposable
             Code = code,
             Severity = severity,
             Message = message,
+            Details = details,
             OccurredAtUtc =
                 observation.Result.Diagnostics.ReadAtUtc
                 ?? DateTimeOffset.UtcNow,

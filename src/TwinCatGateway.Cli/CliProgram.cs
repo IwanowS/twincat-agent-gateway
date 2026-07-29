@@ -32,6 +32,7 @@ internal static class CliProgram
         Usage:
           twincat-gateway [--pipe NAME] status
           twincat-gateway [--pipe NAME] diagnostics [options]
+          twincat-gateway [--pipe NAME] xae-messages [options]
           twincat-gateway [--pipe NAME] build --profile NAME [options]
           twincat-gateway [--pipe NAME] activate --profile NAME [options]
           twincat-gateway [--pipe NAME] recover-to-config --profile NAME [options]
@@ -43,6 +44,9 @@ internal static class CliProgram
           --after-cursor NUMBER
           --max-events NUMBER
           --minimum-severity info|warning|error
+
+        xae-messages options:
+          --max-messages NUMBER
 
         build options:
           --action build|rebuild|clean
@@ -151,6 +155,11 @@ internal static class CliProgram
                 client,
                 output,
                 cancellationToken),
+            "xae-messages" => ExecuteXaeMessagesAsync(
+                commandArguments,
+                client,
+                output,
+                cancellationToken),
             "build" => ExecuteBuildAsync(
                 commandArguments,
                 client,
@@ -243,6 +252,35 @@ internal static class CliProgram
 
         GatewayResponse<GatewayDiagnosticsResult> response =
             await client.GetDiagnosticsAsync(
+                    parameters,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        await WriteJsonAsync(output, response)
+            .ConfigureAwait(false);
+        return GatewayExitCode(response.Ok);
+    }
+
+    private static async Task<int> ExecuteXaeMessagesAsync(
+        string[] args,
+        ITwinCatGatewayClient client,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        OptionBag options = OptionBag.Parse(
+            args,
+            "--max-messages");
+        GetXaeMessagesParameters parameters = new();
+        if (options.GetOptional("--max-messages")
+            is string maximumMessages)
+        {
+            parameters.MaximumMessages =
+                ParsePositiveInt(
+                    maximumMessages,
+                    "--max-messages");
+        }
+
+        GatewayResponse<XaeMessagesResult> response =
+            await client.GetXaeMessagesAsync(
                     parameters,
                     cancellationToken)
                 .ConfigureAwait(false);

@@ -114,6 +114,34 @@ public sealed class OperationQueueTests
     }
 
     [Fact]
+    public async Task OperationFailurePreservesDiagnosticDetails()
+    {
+        OperationStore store = new();
+        using OperationQueue queue = new(store);
+
+        OperationAccepted failed = queue.Enqueue(
+            OperationKind.Build,
+            cancellationToken =>
+                throw new GatewayOperationException(
+                    ErrorCodes.BuildBlockedByRuntimeException,
+                    "Runtime is in Exception.",
+                    details:
+                        "Exception Code 0xc0000005.",
+                    stage: "build.runtimePreflight"));
+
+        StoredOperation operation =
+            await WaitForStateAsync(
+                store,
+                failed.OperationId,
+                OperationState.Failed);
+        await queue.StopAsync();
+
+        Assert.Equal(
+            "Exception Code 0xc0000005.",
+            operation.Summary.Error?.Details);
+    }
+
+    [Fact]
     public async Task DeadlineCancelsCooperativeOperationAndMarksTimeout()
     {
         OperationStore store = new();

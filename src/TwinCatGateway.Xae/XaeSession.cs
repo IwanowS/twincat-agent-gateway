@@ -748,6 +748,18 @@ public sealed class XaeSession : IDisposable
         return _dispatcher.GetDiagnostics();
     }
 
+    public Task<IReadOnlyList<BuildDiagnostic>>
+        ReadErrorListAsync(
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        return _dispatcher.InvokeAsync(
+            ReadErrorListOnSta,
+            timeout,
+            cancellationToken);
+    }
+
     public XaeProjectGraphChangeScope
         BeginProjectGraphChangeTracking()
     {
@@ -1524,6 +1536,8 @@ public sealed class XaeSession : IDisposable
         string? targetAmsNetId = null;
         IReadOnlyList<string> lastErrorMessages =
             Array.Empty<string>();
+        IReadOnlyList<BuildDiagnostic> errorListMessages =
+            Array.Empty<BuildDiagnostic>();
 
         try
         {
@@ -1555,6 +1569,18 @@ public sealed class XaeSession : IDisposable
                 exception));
         }
 
+        try
+        {
+            errorListMessages =
+                XaeErrorListReader.Read(dte);
+        }
+        catch (Exception exception)
+        {
+            issues.Add(FormatDiagnosticIssue(
+                "errorList",
+                exception));
+        }
+
         _snapshot.ActiveConfiguration =
             activeConfiguration;
         _snapshot.ActivePlatform = activePlatform;
@@ -1563,7 +1589,37 @@ public sealed class XaeSession : IDisposable
             _twinCatProjectPath;
         _snapshot.LastErrorMessages =
             lastErrorMessages;
+        _snapshot.ErrorListMessages =
+            errorListMessages;
         _snapshot.DiagnosticIssues = issues;
+    }
+
+    private IReadOnlyList<BuildDiagnostic>
+        ReadErrorListOnSta()
+    {
+        DTE2 dte = _dte
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: "xae.errorList.read");
+        try
+        {
+            return XaeErrorListReader.Read(dte);
+        }
+        catch (GatewayOperationException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.OperationFailed,
+                "XAE Error List could not be read.",
+                retryable: true,
+                stage: "xae.errorList.read",
+                innerException: exception);
+        }
     }
 
     private static void ReadActiveSolutionConfiguration(
@@ -2928,11 +2984,30 @@ public sealed class XaeSession : IDisposable
             TwinCatProjectPath = source.TwinCatProjectPath,
             LastErrorMessages =
                 source.LastErrorMessages.ToArray(),
+            ErrorListMessages =
+                source.ErrorListMessages
+                    .Select(CloneBuildDiagnostic)
+                    .ToArray(),
             DiagnosticIssues =
                 source.DiagnosticIssues.ToArray(),
             DiscoveredInstances = source.DiscoveredInstances
                 .Select(instance => CloneInfo(instance)!)
                 .ToArray(),
+        };
+    }
+
+    private static BuildDiagnostic CloneBuildDiagnostic(
+        BuildDiagnostic source)
+    {
+        return new BuildDiagnostic
+        {
+            Severity = source.Severity,
+            Source = source.Source,
+            Code = source.Code,
+            Message = source.Message,
+            File = source.File,
+            Line = source.Line,
+            Column = source.Column,
         };
     }
 

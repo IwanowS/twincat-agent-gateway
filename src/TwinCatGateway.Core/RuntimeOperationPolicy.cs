@@ -4,7 +4,9 @@ namespace TwinCatGateway.Core;
 
 public static class RuntimeOperationPolicy
 {
-    public static void EnsureBuildAllowed(RuntimeMode runtimeMode)
+    public static void EnsureBuildAllowed(
+        RuntimeMode runtimeMode,
+        string? details = null)
     {
         if (runtimeMode != RuntimeMode.Exception)
         {
@@ -17,6 +19,7 @@ public static class RuntimeOperationPolicy
                 + "in Exception. Preserve the current runtime and build "
                 + "artifacts for diagnostics; explicitly recover the "
                 + "runtime to Config before starting a new build.",
+            details: details,
             retryable: true,
             stage: "build.runtimePreflight");
     }
@@ -24,7 +27,8 @@ public static class RuntimeOperationPolicy
     public static void EnsureActivationAllowed(
         RuntimeMode runtimeMode,
         string stage = "activation.runtimePreflight",
-        string? message = null)
+        string? message = null,
+        string? details = null)
     {
         if (runtimeMode != RuntimeMode.Exception)
         {
@@ -37,6 +41,7 @@ public static class RuntimeOperationPolicy
                 ?? "Activation was not started because the TwinCAT runtime "
                     + "is in Exception. Explicitly recover the runtime to "
                     + "Config before activating a new configuration.",
+            details: details,
             retryable: true,
             stage: stage);
     }

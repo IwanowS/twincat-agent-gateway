@@ -22,7 +22,8 @@ public sealed class RuntimeOperationPolicyTests
         GatewayOperationException exception = Assert.Throws<
             GatewayOperationException>(
             () => RuntimeOperationPolicy.EnsureBuildAllowed(
-                RuntimeMode.Exception));
+                RuntimeMode.Exception,
+                "Exception Code 0xc0000005."));
 
         Assert.Equal(
             ErrorCodes.BuildBlockedByRuntimeException,
@@ -31,6 +32,9 @@ public sealed class RuntimeOperationPolicyTests
         Assert.Equal(
             "build.runtimePreflight",
             exception.Stage);
+        Assert.Equal(
+            "Exception Code 0xc0000005.",
+            exception.Details);
     }
 
     [Fact]

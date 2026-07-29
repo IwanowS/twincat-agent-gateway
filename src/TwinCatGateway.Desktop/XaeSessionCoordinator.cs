@@ -30,6 +30,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly LocalLogStore _logs;
     private readonly IGatewayEventSink _events;
     private readonly AdsRuntimeMonitor _runtimeMonitor;
+    private readonly XaeErrorListSnapshotStore
+        _errorListSnapshots;
     private readonly XaeSession _session = new();
     private readonly TcUnitRunExecutor _tcUnit;
     private readonly SemaphoreSlim _wakeSignal = new(0, 1);
@@ -48,7 +50,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         StructuredFileLogger logger,
         LocalLogStore logs,
         IGatewayEventSink events,
-        AdsRuntimeMonitor runtimeMonitor)
+        AdsRuntimeMonitor runtimeMonitor,
+        XaeErrorListSnapshotStore errorListSnapshots)
     {
         _profile = profile
             ?? throw new ArgumentNullException(nameof(profile));
@@ -63,6 +66,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
         _runtimeMonitor = runtimeMonitor
             ?? throw new ArgumentNullException(
                 nameof(runtimeMonitor));
+        _errorListSnapshots = errorListSnapshots
+            ?? throw new ArgumentNullException(
+                nameof(errorListSnapshots));
         _tcUnit = new TcUnitRunExecutor(
             _profile,
             _logs,
@@ -165,6 +171,61 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
     }
 
+    public async Task<XaeMessagesResult>
+        ReadXaeMessagesAsync(
+            GetXaeMessagesParameters parameters,
+            CancellationToken cancellationToken)
+    {
+        if (parameters is null)
+        {
+            throw new ArgumentNullException(
+                nameof(parameters));
+        }
+
+        XaeSessionSnapshot snapshot =
+            await _session.VerifyAttachedAsync(
+                _profile.Solution,
+                HealthTimeout,
+                cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<BuildDiagnostic> messages =
+            await _session.ReadErrorListAsync(
+                HealthTimeout,
+                cancellationToken).ConfigureAwait(false);
+        snapshot.ErrorListMessages = messages;
+        _errorListSnapshots.Replace(messages);
+        PublishConnected(snapshot);
+
+        BuildDiagnostic[] selected = messages
+            .Where(message =>
+                message.Severity == DiagnosticSeverity.Error
+                || message.Severity
+                    == DiagnosticSeverity.Warning)
+            .ToArray();
+        return new XaeMessagesResult
+        {
+            Solution = snapshot.SelectedInstance?.Solution
+                ?? _profile.Solution,
+            ReadAtUtc = DateTimeOffset.UtcNow,
+            Counts = new DiagnosticCounts
+            {
+                Errors = selected.Count(message =>
+                    message.Severity
+                        == DiagnosticSeverity.Error),
+                Warnings = selected.Count(message =>
+                    message.Severity
+                        == DiagnosticSeverity.Warning),
+            },
+            Messages = selected
+                .Take(parameters.MaximumMessages)
+                .Select(CloneBuildDiagnostic)
+                .ToList(),
+            MoreMessages = Math.Max(
+                0,
+                selected.Length
+                    - parameters.MaximumMessages),
+        };
+    }
+
     public async Task<BuildResult> ExecuteBuildAsync(
         string operationId,
         BuildParameters parameters,
@@ -211,8 +272,25 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         cancellationToken)).ConfigureAwait(false);
             AdsRuntimeStatusReadResult runtime =
                 ReadRuntimeStatus(snapshot);
+            string? runtimeExceptionDetails =
+                XaeRuntimeExceptionDetails.Select(
+                    snapshot.ErrorListMessages);
+            if (runtime.Status.Mode
+                    == RuntimeMode.Exception
+                && runtimeExceptionDetails is null)
+            {
+                runtimeExceptionDetails =
+                    await ReadRuntimeExceptionDetailsAsync(
+                        GetRemaining(
+                            deadlineUtc,
+                            "build.runtimePreflight"),
+                        cancellationToken)
+                        .ConfigureAwait(false);
+            }
+
             RuntimeOperationPolicy.EnsureBuildAllowed(
-                runtime.Status.Mode);
+                runtime.Status.Mode,
+                runtimeExceptionDetails);
 
             dialogScope.SetStage("xae.build");
             execution = await dialogScope.ObserveAsync(
@@ -479,8 +557,25 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         RuntimeMode initialRuntimeMode = runtime.Status.Mode;
+        string? runtimeExceptionDetails =
+            XaeRuntimeExceptionDetails.Select(
+                snapshot.ErrorListMessages);
+        if (initialRuntimeMode
+                == RuntimeMode.Exception
+            && runtimeExceptionDetails is null)
+        {
+            runtimeExceptionDetails =
+                await ReadRuntimeExceptionDetailsAsync(
+                    GetRemaining(
+                        deadlineUtc,
+                        "activation.runtimePreflight"),
+                    cancellationToken)
+                    .ConfigureAwait(false);
+        }
+
         RuntimeOperationPolicy.EnsureActivationAllowed(
-            initialRuntimeMode);
+            initialRuntimeMode,
+            details: runtimeExceptionDetails);
         const bool recoveryAttempted = false;
 
         dialogScope.SetStage("activation.activateConfiguration");
@@ -981,6 +1076,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private void PublishConnected(
         XaeSessionSnapshot snapshot)
     {
+        _errorListSnapshots.Replace(
+            snapshot.ErrorListMessages);
         ComDiagnostics diagnostics = _session.GetComDiagnostics();
         bool logConnection;
         lock (_sync)
@@ -1267,11 +1364,30 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 source.TwinCatProjectPath,
             LastErrorMessages =
                 source.LastErrorMessages.ToArray(),
+            ErrorListMessages =
+                source.ErrorListMessages
+                    .Select(CloneBuildDiagnostic)
+                    .ToArray(),
             DiagnosticIssues =
                 source.DiagnosticIssues.ToArray(),
             DiscoveredInstances = source.DiscoveredInstances
                 .Select(CloneInfo)
                 .ToArray(),
+        };
+    }
+
+    private static BuildDiagnostic CloneBuildDiagnostic(
+        BuildDiagnostic source)
+    {
+        return new BuildDiagnostic
+        {
+            Severity = source.Severity,
+            Source = source.Source,
+            Code = source.Code,
+            Message = source.Message,
+            File = source.File,
+            Line = source.Line,
+            Column = source.Column,
         };
     }
 
@@ -1530,7 +1646,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         };
     }
 
-    private static async Task<AdsRuntimeStatusReadResult>
+    private async Task<AdsRuntimeStatusReadResult>
         WaitForRuntimeModeAsync(
             string amsNetId,
             RuntimeMode expectedMode,
@@ -1565,13 +1681,25 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 if (runtime.Diagnostics.ErrorCode is null
                     && failOnException)
                 {
+                    string? details = null;
+                    if (runtime.Status.Mode
+                        == RuntimeMode.Exception)
+                    {
+                        details =
+                            await ReadRuntimeExceptionDetailsAsync(
+                                readTimeout,
+                                cancellationToken)
+                                .ConfigureAwait(false);
+                    }
+
                     RuntimeOperationPolicy.EnsureActivationAllowed(
                         runtime.Status.Mode,
                         stage,
                         "Activation did not reach Run because the TwinCAT "
                             + "runtime entered Exception. Explicitly "
                             + "recover the runtime to Config before "
-                            + "building or activating again.");
+                            + "building or activating again.",
+                        details);
                 }
             }
 
@@ -1595,6 +1723,37 @@ internal sealed class XaeSessionCoordinator : IDisposable
             errorMessage,
             retryable: true,
             stage: stage);
+    }
+
+    private async Task<string?>
+        ReadRuntimeExceptionDetailsAsync(
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+    {
+        try
+        {
+            IReadOnlyList<BuildDiagnostic> messages =
+                await _session.ReadErrorListAsync(
+                    timeout,
+                    cancellationToken).ConfigureAwait(false);
+            _errorListSnapshots.Replace(messages);
+            return XaeRuntimeExceptionDetails.Select(
+                messages);
+        }
+        catch (OperationCanceledException) when (
+            cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            _logger.Write(
+                StructuredLogLevel.Warning,
+                "xae.error_list.read_failed",
+                "Could not read XAE Error List after the runtime entered Exception.",
+                exception: exception);
+            return null;
+        }
     }
 
     private static void VerifyTarget(

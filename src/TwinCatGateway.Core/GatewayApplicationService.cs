@@ -28,6 +28,10 @@ public delegate Task<SynchronizeResult> SynchronizeOperationExecutor(
     SynchronizeParameters parameters,
     CancellationToken cancellationToken);
 
+public delegate Task<XaeMessagesResult> XaeMessagesProvider(
+    GetXaeMessagesParameters parameters,
+    CancellationToken cancellationToken);
+
 public sealed class GatewayApplicationService
 {
     private readonly string _version;
@@ -40,6 +44,7 @@ public sealed class GatewayApplicationService
     private readonly ActivationOperationExecutor? _activationExecutor;
     private readonly SynchronizeOperationExecutor? _synchronizeExecutor;
     private readonly RecoveryOperationExecutor? _recoveryExecutor;
+    private readonly XaeMessagesProvider? _xaeMessagesProvider;
     private readonly TcUnitPreparationExecutor?
         _tcUnitPreparationExecutor;
     private readonly TcUnitOperationExecutor?
@@ -64,7 +69,8 @@ public sealed class GatewayApplicationService
             tcUnitPreparationExecutor = null,
         TcUnitOperationExecutor? tcUnitExecutor = null,
         SynchronizeOperationExecutor? synchronizeExecutor = null,
-        RecoveryOperationExecutor? recoveryExecutor = null)
+        RecoveryOperationExecutor? recoveryExecutor = null,
+        XaeMessagesProvider? xaeMessagesProvider = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -81,6 +87,7 @@ public sealed class GatewayApplicationService
         _activationExecutor = activationExecutor;
         _synchronizeExecutor = synchronizeExecutor;
         _recoveryExecutor = recoveryExecutor;
+        _xaeMessagesProvider = xaeMessagesProvider;
         _tcUnitPreparationExecutor =
             tcUnitPreparationExecutor;
         _tcUnitExecutor = tcUnitExecutor;
@@ -189,6 +196,35 @@ public sealed class GatewayApplicationService
         result.EventHistoryTruncated =
             events.HistoryTruncated;
         return result;
+    }
+
+    public Task<XaeMessagesResult> GetXaeMessagesAsync(
+        GetXaeMessagesParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        if (parameters is null)
+        {
+            throw new ArgumentNullException(
+                nameof(parameters));
+        }
+
+        if (parameters.MaximumMessages <= 0
+            || parameters.MaximumMessages > 200)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Maximum XAE messages must be between 1 and 200.",
+                stage: "xae.errorList.validate");
+        }
+
+        XaeMessagesProvider provider =
+            _xaeMessagesProvider
+            ?? throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "The XAE Error List reader is unavailable.",
+                retryable: true,
+                stage: "xae.errorList.read");
+        return provider(parameters, cancellationToken);
     }
 
     public OperationAccepted StartBuild(BuildParameters parameters)
@@ -333,8 +369,11 @@ public sealed class GatewayApplicationService
                 stage: "activation.tcunit");
         }
 
+        TwinCatStatus runtimeStatus =
+            _status.Read().TwinCat;
         RuntimeOperationPolicy.EnsureActivationAllowed(
-            _status.Read().TwinCat.Mode);
+            runtimeStatus.Mode,
+            details: runtimeStatus.Alert?.Details);
         ValidateRecentBuild(_activeProfile);
         ActivateParameters captured =
             CloneActivateParameters(parameters);

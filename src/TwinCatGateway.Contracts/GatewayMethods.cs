@@ -6,6 +6,7 @@ public static class GatewayMethods
     public const string Shutdown = "shutdown";
     public const string Status = "status";
     public const string GetDiagnostics = "getDiagnostics";
+    public const string GetXaeMessages = "getXaeMessages";
     public const string Build = "build";
     public const string Synchronize = "synchronize";
     public const string Activate = "activate";

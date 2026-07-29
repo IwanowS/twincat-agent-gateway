@@ -59,13 +59,16 @@ public sealed class GatewayDesktopHost : IDisposable
         _status = new GatewayStatusSnapshotStore(
             GatewayStatusSnapshotStore.CreateInitial(version));
         _events = new GatewayEventJournal(_status);
+        XaeErrorListSnapshotStore errorListSnapshots =
+            new();
         _runtimeMonitor = ActiveProfile is null
             ? null
             : new AdsRuntimeMonitor(
                 _status,
                 _logger,
                 _events,
-                Configuration.RuntimeMonitoring);
+                Configuration.RuntimeMonitoring,
+                errorListSnapshots: errorListSnapshots);
         OperationStore operations = new();
         _queue = new OperationQueue(
             operations,
@@ -79,7 +82,8 @@ public sealed class GatewayDesktopHost : IDisposable
                 _logger,
                 logs,
                 _events,
-                _runtimeMonitor!);
+                _runtimeMonitor!,
+                errorListSnapshots);
         Func<GatewayDiagnosticsResult>? diagnosticsProvider =
             _xaeCoordinator is null
                 ? null
@@ -109,6 +113,10 @@ public sealed class GatewayDesktopHost : IDisposable
             _xaeCoordinator is null
                 ? null
                 : _xaeCoordinator.ExecuteTcUnitAsync;
+        XaeMessagesProvider? xaeMessagesProvider =
+            _xaeCoordinator is null
+                ? null
+                : _xaeCoordinator.ReadXaeMessagesAsync;
         ApplicationService = new GatewayApplicationService(
             version,
             _status,
@@ -125,7 +133,8 @@ public sealed class GatewayDesktopHost : IDisposable
                 tcUnitPreparationExecutor,
             tcUnitExecutor: tcUnitExecutor,
             synchronizeExecutor: synchronizeExecutor,
-            recoveryExecutor: recoveryExecutor);
+            recoveryExecutor: recoveryExecutor,
+            xaeMessagesProvider: xaeMessagesProvider);
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
             Configuration.AgentProcessControl.AllowShutdown,

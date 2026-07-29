@@ -281,6 +281,8 @@ public sealed class MvpContractSerializationTests
                     Severity = DiagnosticSeverity.Error,
                     Message =
                         "PLC runtime 'PlcProject2' is in Exception.",
+                    Details =
+                        "Page Fault in PlcProject2 on ADS port 852.",
                     OccurredAtUtc = new DateTimeOffset(
                         2026,
                         7,
@@ -312,6 +314,9 @@ public sealed class MvpContractSerializationTests
             "PLC_RUNTIME_EXCEPTION",
             result.TwinCat.Alert?.Code);
         Assert.Equal(852, result.TwinCat.Alert?.AdsPort);
+        Assert.Equal(
+            "Page Fault in PlcProject2 on ADS port 852.",
+            result.TwinCat.Alert?.Details);
         Assert.True(result.Gateway.Ready);
         Assert.Equal(
             @"C:\Projects\Machine\twincat-gateway.json",
@@ -693,5 +698,61 @@ public sealed class MvpContractSerializationTests
             DiagnosticSeverity.Error,
             result.MinimumSeverity);
         Assert.Contains("\"minimumSeverity\":\"error\"", json);
+    }
+
+    [Fact]
+    public void XaeMessagesRoundTripWithBoundedDiagnostics()
+    {
+        XaeMessagesResult messages = new()
+        {
+            Solution = @"C:\Project\Fixture.sln",
+            ReadAtUtc = new DateTimeOffset(
+                2026,
+                7,
+                29,
+                0,
+                0,
+                0,
+                TimeSpan.Zero),
+            Counts = new DiagnosticCounts
+            {
+                Errors = 1,
+                Warnings = 1,
+            },
+            Messages =
+            {
+                new BuildDiagnostic
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Source = "xae-error-list",
+                    Message =
+                        "Exception Code 0xc0000005.",
+                },
+                new BuildDiagnostic
+                {
+                    Severity = DiagnosticSeverity.Warning,
+                    Source = "xae-error-list",
+                    Message = "Unused variable.",
+                },
+            },
+            MoreMessages = 3,
+        };
+
+        string json = JsonSerializer.Serialize(
+            messages,
+            ContractJson.SerializerOptions);
+        XaeMessagesResult? result =
+            JsonSerializer.Deserialize<XaeMessagesResult>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(1, result.Counts.Errors);
+        Assert.Equal(1, result.Counts.Warnings);
+        Assert.Equal(2, result.Messages.Count);
+        Assert.Equal(3, result.MoreMessages);
+        Assert.Contains(
+            "\"source\":\"xae-error-list\"",
+            json);
     }
 }

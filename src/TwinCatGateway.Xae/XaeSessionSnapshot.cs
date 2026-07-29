@@ -35,6 +35,9 @@ public sealed class XaeSessionSnapshot
     public IReadOnlyList<string> LastErrorMessages { get; set; } =
         new List<string>();
 
+    public IReadOnlyList<BuildDiagnostic> ErrorListMessages { get; set; } =
+        new List<BuildDiagnostic>();
+
     public IReadOnlyList<string> DiagnosticIssues { get; set; } =
         new List<string>();
 

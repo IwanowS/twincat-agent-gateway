@@ -605,7 +605,8 @@ public sealed class GatewayMcpRuntime
             exception.Code,
             exception.Message,
             exception.Retryable,
-            exception.Stage);
+            exception.Stage,
+            exception.Details);
     }
 
     private static GatewayResponse<T> Failure<T>(
@@ -622,13 +623,15 @@ public sealed class GatewayMcpRuntime
         string code,
         string message,
         bool retryable,
-        string? stage)
+        string? stage,
+        string? details = null)
     {
         return Failure<T>(
             new GatewayError
             {
                 Code = code,
                 Message = message,
+                Details = details,
                 Retryable = retryable,
                 Stage = stage,
             });

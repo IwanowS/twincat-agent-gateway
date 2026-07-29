@@ -26,12 +26,26 @@ public sealed class AdsRuntimeMonitorTests
         probe.SetMode(10000, RuntimeMode.Run);
         probe.SetMode(851, RuntimeMode.Run);
         probe.SetMode(852, RuntimeMode.Exception);
+        XaeErrorListSnapshotStore errorListSnapshots =
+            new();
+        errorListSnapshots.Replace(
+            new[]
+            {
+                new BuildDiagnostic
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Source = "xae-error-list",
+                    Message =
+                        "Page Fault in PlcProject2 on ADS port 852.",
+                },
+            });
         using AdsRuntimeMonitor monitor = new(
             status,
             new StructuredFileLogger(temporary.Path),
             events,
             CreateConfiguration(),
-            probe);
+            probe,
+            errorListSnapshots);
         monitor.UpdateTarget(
             "192.168.3.31.1.1",
             project);
@@ -57,6 +71,9 @@ public sealed class AdsRuntimeMonitorTests
             Assert.Equal(
                 852,
                 faulted.TwinCat.Alert?.AdsPort);
+            Assert.Equal(
+                "Page Fault in PlcProject2 on ADS port 852.",
+                faulted.TwinCat.Alert?.Details);
             Assert.True(
                 faulted.TwinCat.Alert?.EventCursor > 0);
             Assert.Equal(

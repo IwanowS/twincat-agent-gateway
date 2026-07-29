@@ -66,6 +66,41 @@ public sealed class CliProgramTests
     }
 
     [Fact]
+    public async Task XaeMessagesMapsBoundedRead()
+    {
+        FakeClient client = new()
+        {
+            XaeMessagesResponse =
+                new GatewayResponse<XaeMessagesResult>
+                {
+                    Ok = true,
+                    Result = new XaeMessagesResult
+                    {
+                        Solution =
+                            @"C:\Project\Fixture.sln",
+                    },
+                },
+        };
+
+        CliResult result = await RunAsync(
+            client,
+            "xae-messages",
+            "--max-messages",
+            "7");
+
+        Assert.Equal(
+            CliProgram.SuccessExitCode,
+            result.ExitCode);
+        Assert.Equal(
+            7,
+            client.XaeMessages?.MaximumMessages);
+        Assert.Contains(
+            @"C:\\Project\\Fixture.sln",
+            result.Output,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task BuildMapsOptionsAndWaitsForCompletion()
     {
         FakeClient client = new()
@@ -367,6 +402,14 @@ public sealed class CliProgramTests
             BuildAccepted { get; set; } =
                 Accepted("build-1");
 
+        public GatewayResponse<XaeMessagesResult>
+            XaeMessagesResponse { get; set; } =
+                new()
+                {
+                    Ok = true,
+                    Result = new XaeMessagesResult(),
+                };
+
         public Queue<GatewayResponse<
             OperationDetails<BuildResult>>>
             BuildOperations { get; } = new();
@@ -380,6 +423,12 @@ public sealed class CliProgramTests
             RecoveryOperations { get; } = new();
 
         public BuildParameters? Build { get; private set; }
+
+        public GetXaeMessagesParameters? XaeMessages
+        {
+            get;
+            private set;
+        }
 
         public RecoverToConfigParameters? Recovery { get; private set; }
 
@@ -440,6 +489,16 @@ public sealed class CliProgramTests
                 CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
+        }
+
+        public Task<GatewayResponse<XaeMessagesResult>>
+            GetXaeMessagesAsync(
+                GetXaeMessagesParameters parameters,
+                CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            XaeMessages = parameters;
+            return Task.FromResult(XaeMessagesResponse);
         }
 
         public Task<GatewayResponse<GatewayDiagnosticsResult>>

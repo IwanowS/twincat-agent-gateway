@@ -194,6 +194,7 @@ public sealed class GatewayStatusSnapshotStore
             {
                 Code = source.Code,
                 Message = source.Message,
+                Details = source.Details,
                 Retryable = source.Retryable,
                 OperationId = source.OperationId,
                 Stage = source.Stage,
@@ -211,6 +212,7 @@ public sealed class GatewayStatusSnapshotStore
                 Code = source.Code,
                 Severity = source.Severity,
                 Message = source.Message,
+                Details = source.Details,
                 OccurredAtUtc = source.OccurredAtUtc,
                 EventCursor = source.EventCursor,
                 RuntimeName = source.RuntimeName,

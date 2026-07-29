@@ -6,6 +6,8 @@ public sealed class GatewayError
 
     public string Message { get; set; } = string.Empty;
 
+    public string? Details { get; set; }
+
     public bool Retryable { get; set; }
 
     public string? OperationId { get; set; }

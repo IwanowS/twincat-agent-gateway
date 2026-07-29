@@ -8,6 +8,7 @@ public sealed class GatewayOperationException : Exception
     public GatewayOperationException(
         string code,
         string message,
+        string? details = null,
         bool retryable = false,
         string? stage = null,
         string? rawLogRef = null,
@@ -15,12 +16,15 @@ public sealed class GatewayOperationException : Exception
         : base(message, innerException)
     {
         Code = code;
+        Details = details;
         Retryable = retryable;
         Stage = stage;
         RawLogRef = rawLogRef;
     }
 
     public string Code { get; }
+
+    public string? Details { get; }
 
     public bool Retryable { get; }
 

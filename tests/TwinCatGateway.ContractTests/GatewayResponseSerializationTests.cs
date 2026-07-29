@@ -44,6 +44,7 @@ public sealed class GatewayResponseSerializationTests
             {
                 Code = ErrorCodes.ComCallTimeout,
                 Message = "XAE did not accept the call before the deadline.",
+                Details = "Exception Code 0xc0000005.",
                 Retryable = true,
                 OperationId = "operation-1",
                 Stage = "build.wait",
@@ -61,6 +62,9 @@ public sealed class GatewayResponseSerializationTests
         Assert.False(result.Ok);
         Assert.Null(result.Result);
         Assert.Equal(ErrorCodes.ComCallTimeout, result.Error?.Code);
+        Assert.Equal(
+            "Exception Code 0xc0000005.",
+            result.Error?.Details);
         Assert.True(result.Error?.Retryable);
         Assert.Equal("operation-1", result.Error?.OperationId);
         Assert.Equal("build.wait", result.Error?.Stage);
