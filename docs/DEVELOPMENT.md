@@ -72,6 +72,14 @@ sandbox so it inherits the interactive user's COM context. Do not ask the user
 to close, reopen, or terminate XAE until a same-user ROT discovery has also
 failed.
 
+The same interactive-session boundary applies to the repository-owned
+WinForms dialogs used by `XaeDialogSupervisorTests`. If a sandbox run detects
+the expected dialog but records `actionRequested=true` and
+`actionCompleted=false`, rerun that focused test outside the sandbox in the
+same interactive user session before diagnosing a gateway regression. The
+focused rerun may interact only with dialogs created by the test process; it
+must not close or manipulate user-owned XAE windows.
+
 Build with the pinned SDK as usual, then run the already-built .NET Framework
 integration assembly through VSTest's x86 platform:
 
