@@ -309,7 +309,7 @@ public sealed class DesktopGatewayHostTests
         Assert.Equal(ErrorCodes.UiFailure, rows[1].Code);
         Assert.Equal("Refresh failed.", rows[1].Description);
         Assert.Equal(
-            "System.InvalidOperationException",
+            "System.InvalidOperationException: Refresh failed.",
             rows[1].Exception);
     }
 

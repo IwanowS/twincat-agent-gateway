@@ -1060,7 +1060,14 @@ public sealed class EventRow : INotifyPropertyChanged
                 "exceptionType",
                 out string? exceptionType))
         {
-            return exceptionType;
+            string? exceptionDetails =
+                gatewayEvent.Error?.Details;
+            return !string.IsNullOrWhiteSpace(exceptionDetails)
+                && exceptionDetails!.StartsWith(
+                    exceptionType + ":",
+                    StringComparison.Ordinal)
+                    ? exceptionDetails
+                    : exceptionType;
         }
 
         string? details = gatewayEvent.Error?.Details;
@@ -1079,7 +1086,7 @@ public sealed class EventRow : INotifyPropertyChanged
         return candidate.EndsWith(
             "Exception",
             StringComparison.Ordinal)
-                ? candidate
+                ? details
                 : string.Empty;
     }
 
