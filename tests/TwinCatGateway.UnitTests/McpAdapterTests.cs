@@ -27,6 +27,7 @@ public sealed class McpAdapterTests
         "twincat_build",
         "twincat_get_diagnostics",
         "twincat_get_test_results",
+        "twincat_recover_to_config",
         "twincat_status",
         "twincat_sync",
     };
@@ -141,6 +142,15 @@ public sealed class McpAdapterTests
                     attribute.Name == "twincat_sync");
         Assert.True(synchronization.Destructive);
         Assert.False(synchronization.ReadOnly);
+        McpServerToolAttribute recovery =
+            Assert.Single(
+                attributes,
+                attribute =>
+                    attribute.Name
+                    == "twincat_recover_to_config");
+        Assert.True(recovery.Destructive);
+        Assert.True(recovery.Idempotent);
+        Assert.False(recovery.ReadOnly);
         Assert.All(
             attributes,
             attribute => Assert.False(attribute.OpenWorld));

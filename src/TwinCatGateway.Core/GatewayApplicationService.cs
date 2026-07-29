@@ -18,6 +18,11 @@ public delegate Task<ActivationResult> ActivationOperationExecutor(
     ActivateParameters parameters,
     CancellationToken cancellationToken);
 
+public delegate Task<RecoverToConfigResult> RecoveryOperationExecutor(
+    string operationId,
+    RecoverToConfigParameters parameters,
+    CancellationToken cancellationToken);
+
 public delegate Task<SynchronizeResult> SynchronizeOperationExecutor(
     string operationId,
     SynchronizeParameters parameters,
@@ -34,6 +39,7 @@ public sealed class GatewayApplicationService
     private readonly BuildOperationExecutor? _buildExecutor;
     private readonly ActivationOperationExecutor? _activationExecutor;
     private readonly SynchronizeOperationExecutor? _synchronizeExecutor;
+    private readonly RecoveryOperationExecutor? _recoveryExecutor;
     private readonly TcUnitPreparationExecutor?
         _tcUnitPreparationExecutor;
     private readonly TcUnitOperationExecutor?
@@ -57,7 +63,8 @@ public sealed class GatewayApplicationService
         TcUnitPreparationExecutor?
             tcUnitPreparationExecutor = null,
         TcUnitOperationExecutor? tcUnitExecutor = null,
-        SynchronizeOperationExecutor? synchronizeExecutor = null)
+        SynchronizeOperationExecutor? synchronizeExecutor = null,
+        RecoveryOperationExecutor? recoveryExecutor = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -73,6 +80,7 @@ public sealed class GatewayApplicationService
         _buildExecutor = buildExecutor;
         _activationExecutor = activationExecutor;
         _synchronizeExecutor = synchronizeExecutor;
+        _recoveryExecutor = recoveryExecutor;
         _tcUnitPreparationExecutor =
             tcUnitPreparationExecutor;
         _tcUnitExecutor = tcUnitExecutor;
@@ -338,6 +346,83 @@ public sealed class GatewayApplicationService
                     captured,
                     cancellationToken),
             timeout);
+    }
+
+    public OperationAccepted StartRecoverToConfig(
+        RecoverToConfigParameters parameters)
+    {
+        if (parameters is null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (_recoveryExecutor is null
+            || _activeProfile is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "The TwinCAT Config recovery executor is unavailable.",
+                retryable: true,
+                stage: "recovery.enqueue");
+        }
+
+        if (string.IsNullOrWhiteSpace(parameters.Profile))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Runtime recovery requires an explicit profile name.",
+                stage: "recovery.validate");
+        }
+
+        if (!string.Equals(
+            parameters.Profile,
+            _activeProfile.Name,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileNotFound,
+                $"Project profile '{parameters.Profile}' is not active.",
+                stage: "recovery.validate");
+        }
+
+        if (!_activeProfile.AllowActivation)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ActivationNotAllowed,
+                $"Runtime recovery is disabled for profile "
+                    + $"'{_activeProfile.Name}'.",
+                stage: "recovery.validate");
+        }
+
+        if (string.IsNullOrWhiteSpace(
+            _activeProfile.ExpectedTarget?.AmsNetId))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileInvalid,
+                "The recovery profile has no expected AMS NetId.",
+                stage: "recovery.validate");
+        }
+
+        if (parameters.TimeoutSeconds.HasValue
+            && parameters.TimeoutSeconds.Value <= 0)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "Recovery timeout must be positive.",
+                stage: "recovery.validate");
+        }
+
+        RecoverToConfigParameters captured =
+            CloneRecoverToConfigParameters(parameters);
+        return _queue.Enqueue(
+            OperationKind.RecoverToConfig,
+            (operationId, cancellationToken) =>
+                ExecuteRecoverToConfigAsync(
+                    operationId,
+                    captured,
+                    cancellationToken),
+            TimeSpan.FromSeconds(
+                captured.TimeoutSeconds ?? 120));
     }
 
     public OperationAccepted StartSynchronization(
@@ -752,6 +837,50 @@ public sealed class GatewayApplicationService
     }
 
     private async Task<OperationExecutionResult>
+        ExecuteRecoverToConfigAsync(
+            string operationId,
+            RecoverToConfigParameters parameters,
+            CancellationToken cancellationToken)
+    {
+        DateTimeOffset startedAtUtc = _clock.UtcNow;
+        _status.Update(status =>
+        {
+            status.Gateway.State =
+                GatewayState.RecoveringToConfig;
+            status.CurrentOperation = new OperationSummary
+            {
+                OperationId = operationId,
+                Kind = OperationKind.RecoverToConfig,
+                State = OperationState.Running,
+                QueuedAtUtc = startedAtUtc,
+                StartedAtUtc = startedAtUtc,
+            };
+            return status;
+        });
+        try
+        {
+            RecoverToConfigResult result =
+                await _recoveryExecutor!(
+                    operationId,
+                    parameters,
+                    cancellationToken).ConfigureAwait(false);
+            result.OperationId = operationId;
+            return OperationExecutionResult.Success(result);
+        }
+        finally
+        {
+            _status.Update(status =>
+            {
+                status.CurrentOperation = null;
+                status.Gateway.State = status.Xae.Connected
+                    ? GatewayState.Ready
+                    : GatewayState.Disconnected;
+                return status;
+            });
+        }
+    }
+
+    private async Task<OperationExecutionResult>
         ExecuteTcUnitAsync(
             string operationId,
             string activationOperationId,
@@ -911,6 +1040,17 @@ public sealed class GatewayApplicationService
             Profile = source.Profile,
             RunAfterActivation = source.RunAfterActivation,
             WaitForTcUnit = source.WaitForTcUnit,
+            TimeoutSeconds = source.TimeoutSeconds,
+        };
+    }
+
+    private static RecoverToConfigParameters
+        CloneRecoverToConfigParameters(
+            RecoverToConfigParameters source)
+    {
+        return new RecoverToConfigParameters
+        {
+            Profile = source.Profile,
             TimeoutSeconds = source.TimeoutSeconds,
         };
     }

@@ -142,6 +142,16 @@ public sealed class GatewayRequestDispatcher
                     return _service.StartActivation(parameters);
                 }
 
+            case GatewayMethods.RecoverToConfig:
+                {
+                    RecoverToConfigParameters parameters =
+                        request.DeserializeParameters<
+                            RecoverToConfigParameters>(
+                            _serializerOptions);
+                    return _service.StartRecoverToConfig(
+                        parameters);
+                }
+
             case GatewayMethods.GetOperation:
                 {
                     GetOperationParameters parameters =

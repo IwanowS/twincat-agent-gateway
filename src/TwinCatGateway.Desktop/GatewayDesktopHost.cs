@@ -92,6 +92,10 @@ public sealed class GatewayDesktopHost : IDisposable
             _xaeCoordinator is null
                 ? null
                 : _xaeCoordinator.ExecuteActivationAsync;
+        RecoveryOperationExecutor? recoveryExecutor =
+            _xaeCoordinator is null
+                ? null
+                : _xaeCoordinator.ExecuteRecoverToConfigAsync;
         SynchronizeOperationExecutor? synchronizeExecutor =
             _xaeCoordinator is null
                 ? null
@@ -120,7 +124,8 @@ public sealed class GatewayDesktopHost : IDisposable
             tcUnitPreparationExecutor:
                 tcUnitPreparationExecutor,
             tcUnitExecutor: tcUnitExecutor,
-            synchronizeExecutor: synchronizeExecutor);
+            synchronizeExecutor: synchronizeExecutor,
+            recoveryExecutor: recoveryExecutor);
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
             Configuration.AgentProcessControl.AllowShutdown,

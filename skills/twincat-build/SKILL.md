@@ -18,6 +18,11 @@ description: Build, rebuild, clean, and repair TwinCAT PLC projects through Twin
    inconsistent result, or diagnostics that are insufficient to act on.
 
 Build never activates TwinCAT. Keep activation as a separate explicit task.
+If the compact result reports `BUILD_BLOCKED_BY_RUNTIME_EXCEPTION`, treat it
+as a diagnostic stop: do not retry and do not recover the runtime
+automatically. Report that the previous PLC artifacts are being preserved and
+require an explicit user decision before calling
+`twincat_recover_to_config`.
 
 Gateway owns the workspace while attached: it fingerprints project sources,
 discards conflicting dirty XAE documents, and reloads changed files before the

@@ -8,6 +8,62 @@ namespace TwinCatGateway.ContractTests;
 public sealed class MvpContractSerializationTests
 {
     [Fact]
+    public void RecoverToConfigContractsRoundTrip()
+    {
+        RecoverToConfigParameters parameters = new()
+        {
+            Profile = "fixture",
+            TimeoutSeconds = 30,
+        };
+        RecoverToConfigResult source = new()
+        {
+            Ok = true,
+            OperationId = "recover-1",
+            Profile = "fixture",
+            Solution = @"C:\Project\Machine.sln",
+            Target = new TargetIdentity
+            {
+                AmsNetId = "192.168.3.31.1.1",
+            },
+            InitialRuntimeMode = RuntimeMode.Exception,
+            ObservedRuntimeMode = RuntimeMode.Config,
+            TransitionRequested = true,
+        };
+
+        string parametersJson = JsonSerializer.Serialize(
+            parameters,
+            ContractJson.SerializerOptions);
+        string resultJson = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        RecoverToConfigParameters parametersResult =
+            JsonSerializer.Deserialize<RecoverToConfigParameters>(
+                parametersJson,
+                ContractJson.SerializerOptions)
+            ?? throw new InvalidOperationException(
+                "Recovery parameters did not deserialize.");
+        RecoverToConfigResult result =
+            JsonSerializer.Deserialize<RecoverToConfigResult>(
+                resultJson,
+                ContractJson.SerializerOptions)
+            ?? throw new InvalidOperationException(
+                "Recovery result did not deserialize.");
+
+        Assert.Equal("fixture", parametersResult.Profile);
+        Assert.Equal(30, parametersResult.TimeoutSeconds);
+        Assert.Equal(
+            RuntimeMode.Exception,
+            result.InitialRuntimeMode);
+        Assert.Equal(
+            RuntimeMode.Config,
+            result.ObservedRuntimeMode);
+        Assert.True(result.TransitionRequested);
+        Assert.Contains(
+            "\"observedRuntimeMode\":\"config\"",
+            resultJson);
+    }
+
+    [Fact]
     public void SynchronizeContractsRoundTrip()
     {
         SynchronizeParameters parameters = new()

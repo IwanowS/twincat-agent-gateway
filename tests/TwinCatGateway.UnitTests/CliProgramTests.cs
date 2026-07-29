@@ -151,6 +151,43 @@ public sealed class CliProgramTests
     }
 
     [Fact]
+    public async Task RecoverToConfigMapsProfileAndWaitsForCompletion()
+    {
+        FakeClient client = new()
+        {
+            RecoveryAccepted = Accepted("recovery-1"),
+        };
+        client.RecoveryOperations.Enqueue(
+            RecoveryOperation(
+                "recovery-1",
+                OperationState.Succeeded,
+                new RecoverToConfigResult
+                {
+                    Ok = true,
+                    InitialRuntimeMode =
+                        RuntimeMode.Exception,
+                    ObservedRuntimeMode =
+                        RuntimeMode.Config,
+                    TransitionRequested = true,
+                }));
+
+        CliResult result = await RunAsync(
+            client,
+            "recover-to-config",
+            "--profile",
+            "fixture",
+            "--timeout",
+            "7");
+
+        Assert.Equal(
+            CliProgram.SuccessExitCode,
+            result.ExitCode);
+        Assert.Equal("fixture", client.Recovery?.Profile);
+        Assert.Equal(7, client.Recovery?.TimeoutSeconds);
+        Assert.Equal(1, client.OperationReads);
+    }
+
+    [Fact]
     public async Task SucceededBuildWithoutResultFailsClosed()
     {
         FakeClient client = new()
@@ -274,6 +311,29 @@ public sealed class CliProgramTests
         };
     }
 
+    private static GatewayResponse<
+        OperationDetails<RecoverToConfigResult>>
+        RecoveryOperation(
+            string operationId,
+            OperationState state,
+            RecoverToConfigResult? result = null)
+    {
+        return new GatewayResponse<
+            OperationDetails<RecoverToConfigResult>>
+        {
+            Ok = true,
+            Result = new OperationDetails<RecoverToConfigResult>
+            {
+                Operation = new OperationSummary
+                {
+                    OperationId = operationId,
+                    State = state,
+                },
+                Result = result,
+            },
+        };
+    }
+
     private sealed class CliResult
     {
         public CliResult(
@@ -311,7 +371,17 @@ public sealed class CliProgramTests
             OperationDetails<BuildResult>>>
             BuildOperations { get; } = new();
 
+        public GatewayResponse<OperationAccepted>
+            RecoveryAccepted { get; set; } =
+                Accepted("recovery-1");
+
+        public Queue<GatewayResponse<
+            OperationDetails<RecoverToConfigResult>>>
+            RecoveryOperations { get; } = new();
+
         public BuildParameters? Build { get; private set; }
+
+        public RecoverToConfigParameters? Recovery { get; private set; }
 
         public int OperationReads { get; private set; }
 
@@ -348,7 +418,11 @@ public sealed class CliProgramTests
         {
             cancellationToken.ThrowIfCancellationRequested();
             OperationReads++;
-            object response = BuildOperations.Dequeue();
+            object response =
+                typeof(TResult)
+                    == typeof(RecoverToConfigResult)
+                    ? RecoveryOperations.Dequeue()
+                    : BuildOperations.Dequeue();
             return Task.FromResult(
                 (GatewayResponse<
                     OperationDetails<TResult>>)response);
@@ -382,6 +456,16 @@ public sealed class CliProgramTests
                 CancellationToken cancellationToken = default)
         {
             throw new NotSupportedException();
+        }
+
+        public Task<GatewayResponse<OperationAccepted>>
+            StartRecoverToConfigAsync(
+                RecoverToConfigParameters parameters,
+                CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Recovery = parameters;
+            return Task.FromResult(RecoveryAccepted);
         }
 
         public Task<

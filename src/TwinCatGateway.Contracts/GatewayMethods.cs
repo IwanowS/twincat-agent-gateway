@@ -9,6 +9,7 @@ public static class GatewayMethods
     public const string Build = "build";
     public const string Synchronize = "synchronize";
     public const string Activate = "activate";
+    public const string RecoverToConfig = "recoverToConfig";
     public const string GetTestResults = "getTestResults";
     public const string GetOperation = "getOperation";
     public const string CancelOperation = "cancelOperation";

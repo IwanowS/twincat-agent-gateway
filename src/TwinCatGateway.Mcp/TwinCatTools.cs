@@ -354,6 +354,62 @@ public sealed class TwinCatTools
     }
 
     [McpServerTool(
+        Name = "twincat_recover_to_config",
+        Destructive = true,
+        Idempotent = true,
+        OpenWorld = false)]
+    [Description(
+        "Explicitly transition the configured allow-listed remote "
+        + "TwinCAT runtime to Config Mode. Use this only after the "
+        + "runtime diagnostic state has been inspected; build and "
+        + "activation never invoke recovery automatically.")]
+    public async Task<string> RecoverToConfigAsync(
+        [Description(
+            "Operator-controlled activation profile name.")]
+        string profile,
+        [Description(
+            "Gateway operation timeout in seconds.")]
+        int timeoutSeconds =
+            DefaultOperationTimeoutSeconds,
+        McpServer? server = null,
+        CancellationToken cancellationToken = default)
+    {
+        McpGatewayJson.RequirePositive(
+            timeoutSeconds,
+            nameof(timeoutSeconds));
+        RecoverToConfigParameters parameters = new()
+        {
+            Profile = RequireText(profile, nameof(profile)),
+            TimeoutSeconds = timeoutSeconds,
+        };
+
+        GatewayToolSession session =
+            await ResolveSessionAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        GatewayResponse<OperationAccepted> accepted =
+            await session.Client.StartRecoverToConfigAsync(
+                    parameters,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (!accepted.Ok || accepted.Result is null)
+        {
+            return McpGatewayJson.Serialize(accepted);
+        }
+
+        GatewayResponse<
+            OperationDetails<RecoverToConfigResult>> completed =
+                await session.Poller
+                    .WaitAsync<RecoverToConfigResult>(
+                        accepted.Result.OperationId,
+                        GetClientWaitTimeout(timeoutSeconds),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+        return McpGatewayJson.Serialize(completed);
+    }
+
+    [McpServerTool(
         Name = "twincat_get_diagnostics",
         ReadOnly = true,
         Idempotent = true,

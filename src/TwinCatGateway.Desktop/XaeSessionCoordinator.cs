@@ -678,6 +678,140 @@ internal sealed class XaeSessionCoordinator : IDisposable
         return result;
     }
 
+    public async Task<RecoverToConfigResult>
+        ExecuteRecoverToConfigAsync(
+            string operationId,
+            RecoverToConfigParameters parameters,
+            CancellationToken cancellationToken)
+    {
+        if (!string.Equals(
+            parameters.Profile,
+            _profile.Name,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileNotFound,
+                $"Project profile '{parameters.Profile}' is not active.",
+                stage: "recovery.validate");
+        }
+
+        if (!_profile.AllowActivation)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ActivationNotAllowed,
+                $"Runtime recovery is disabled for profile "
+                    + $"'{_profile.Name}'.",
+                stage: "recovery.validate");
+        }
+
+        string expectedAmsNetId =
+            _profile.ExpectedTarget?.AmsNetId
+            ?? throw new GatewayOperationException(
+                ErrorCodes.ProfileInvalid,
+                "The recovery profile has no expected AMS NetId.",
+                stage: "recovery.validate");
+        DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
+        DateTimeOffset deadlineUtc = startedAtUtc.AddSeconds(
+            parameters.TimeoutSeconds ?? 120);
+        using XaeDialogOperationScope dialogScope =
+            _session.BeginDialogOperation(
+                operationId,
+                "recoverToConfig",
+                "recovery.preflight");
+        XaeSessionSnapshot snapshot =
+            await dialogScope.ObserveAsync(
+                _session.VerifyAttachedAsync(
+                    _profile.Solution,
+                    GetRemaining(
+                        deadlineUtc,
+                        "recovery.preflight"),
+                    cancellationToken)).ConfigureAwait(false);
+        VerifyTarget(
+            snapshot,
+            expectedAmsNetId,
+            "recovery.preflight");
+        AdsRuntimeStatusReadResult runtime =
+            ReadRuntimeStatus(snapshot);
+        if (runtime.Status.Mode == RuntimeMode.Unknown)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.TwinCatStateUnknown,
+                "Runtime recovery requires a readable TwinCAT "
+                    + "runtime state.",
+                retryable: true,
+                stage: "recovery.preflight");
+        }
+
+        RuntimeMode initialRuntimeMode = runtime.Status.Mode;
+        bool transitionRequested =
+            initialRuntimeMode != RuntimeMode.Config;
+        if (transitionRequested)
+        {
+            dialogScope.SetStage("recovery.command");
+            await dialogScope.ObserveAsync(
+                _session.RestartTwinCatConfigModeAsync(
+                    _profile.Solution,
+                    expectedAmsNetId,
+                    GetRemaining(
+                        deadlineUtc,
+                        "recovery.command"),
+                    cancellationToken)).ConfigureAwait(false);
+            dialogScope.SetStage("recovery.verify");
+            runtime = await dialogScope.ObserveAsync(
+                WaitForRuntimeModeAsync(
+                    expectedAmsNetId,
+                    RuntimeMode.Config,
+                    deadlineUtc,
+                    ErrorCodes.ConfigModeRecoveryFailed,
+                    "TwinCAT did not reach Config Mode after the "
+                        + "explicit recovery request.",
+                    "recovery.verify",
+                    cancellationToken)).ConfigureAwait(false);
+        }
+
+        PublishConnected(snapshot);
+        long durationMs = Math.Max(
+            0,
+            (long)(DateTimeOffset.UtcNow - startedAtUtc)
+                .TotalMilliseconds);
+        _logger.Write(
+            StructuredLogLevel.Information,
+            "runtime.recoverToConfig.completed",
+            transitionRequested
+                ? "TwinCAT reached Config Mode after an explicit "
+                    + "recovery request."
+                : "TwinCAT was already in Config Mode.",
+            operationId,
+            properties: new Dictionary<string, string>
+            {
+                ["profile"] = _profile.Name,
+                ["solution"] = _profile.Solution,
+                ["amsNetId"] = expectedAmsNetId,
+                ["initialRuntimeMode"] =
+                    initialRuntimeMode.ToString(),
+                ["observedRuntimeMode"] =
+                    runtime.Status.Mode.ToString(),
+                ["transitionRequested"] =
+                    transitionRequested.ToString(),
+            });
+        return new RecoverToConfigResult
+        {
+            Ok = true,
+            OperationId = operationId,
+            DurationMs = durationMs,
+            Profile = _profile.Name,
+            Solution = _profile.Solution,
+            Target = new TargetIdentity
+            {
+                Name = _profile.ExpectedTarget?.Name,
+                AmsNetId = expectedAmsNetId,
+            },
+            InitialRuntimeMode = initialRuntimeMode,
+            ObservedRuntimeMode = runtime.Status.Mode,
+            TransitionRequested = transitionRequested,
+        };
+    }
+
     public TcUnitRunPreparation PrepareTcUnitRun(
         string activationOperationId)
     {

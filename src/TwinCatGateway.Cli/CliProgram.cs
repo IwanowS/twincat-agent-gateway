@@ -34,6 +34,7 @@ internal static class CliProgram
           twincat-gateway [--pipe NAME] diagnostics [options]
           twincat-gateway [--pipe NAME] build --profile NAME [options]
           twincat-gateway [--pipe NAME] activate --profile NAME [options]
+          twincat-gateway [--pipe NAME] recover-to-config --profile NAME [options]
           twincat-gateway [--pipe NAME] test-results --operation ID
           twincat-gateway [--pipe NAME] resource --uri URI [options]
 
@@ -54,6 +55,9 @@ internal static class CliProgram
         activate options:
           --run-after-activation true|false
           --wait-for-tcunit auto|true|false
+          --timeout SECONDS
+
+        recover-to-config options:
           --timeout SECONDS
 
         resource options:
@@ -154,6 +158,12 @@ internal static class CliProgram
                 output,
                 cancellationToken),
             "activate" => ExecuteActivationAsync(
+                commandArguments,
+                client,
+                poller,
+                output,
+                cancellationToken),
+            "recover-to-config" => ExecuteRecoverToConfigAsync(
                 commandArguments,
                 client,
                 poller,
@@ -400,6 +410,55 @@ internal static class CliProgram
         return OperationExitCode(
             response,
             response.Result?.Result?.Ok);
+    }
+
+    private static async Task<int> ExecuteRecoverToConfigAsync(
+        string[] args,
+        ITwinCatGatewayClient client,
+        GatewayOperationPoller poller,
+        TextWriter output,
+        CancellationToken cancellationToken)
+    {
+        OptionBag options = OptionBag.Parse(
+            args,
+            "--profile",
+            "--timeout");
+        RecoverToConfigParameters parameters = new()
+        {
+            Profile = options.GetRequired("--profile"),
+        };
+        if (options.GetOptional("--timeout") is string timeout)
+        {
+            parameters.TimeoutSeconds = ParsePositiveInt(
+                timeout,
+                "--timeout");
+        }
+
+        GatewayResponse<OperationAccepted> accepted =
+            await client.StartRecoverToConfigAsync(
+                    parameters,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (!accepted.Ok || accepted.Result is null)
+        {
+            await WriteJsonAsync(output, accepted)
+                .ConfigureAwait(false);
+            return OperationFailedExitCode;
+        }
+
+        GatewayResponse<
+            OperationDetails<RecoverToConfigResult>> completed =
+                await poller.WaitAsync<RecoverToConfigResult>(
+                        accepted.Result.OperationId,
+                        GetClientWaitTimeout(
+                            parameters.TimeoutSeconds),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+        await WriteJsonAsync(output, completed)
+            .ConfigureAwait(false);
+        return OperationExitCode(
+            completed,
+            completed.Result?.Result?.Ok);
     }
 
     private static async Task<int> ExecuteResourceAsync(

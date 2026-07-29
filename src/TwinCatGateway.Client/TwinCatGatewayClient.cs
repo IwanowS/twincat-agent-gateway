@@ -118,6 +118,22 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
             cancellationToken);
     }
 
+    public Task<GatewayResponse<OperationAccepted>>
+        StartRecoverToConfigAsync(
+            RecoverToConfigParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        return _client.SendAsync<
+            RecoverToConfigParameters,
+            OperationAccepted>(
+            GatewayMethods.RecoverToConfig,
+            parameters,
+            wait: false,
+            cancellationToken);
+    }
+
     public Task<GatewayResponse<OperationDetails<TResult>>> GetOperationAsync<TResult>(
         string operationId,
         CancellationToken cancellationToken = default)

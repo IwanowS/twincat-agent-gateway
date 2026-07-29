@@ -16,9 +16,12 @@ description: Explicitly activate and restart an allow-listed remote TwinCAT targ
 5. Report the completed physical stages: configuration activation, TwinCAT
    restart, and verified runtime postcondition.
 
-On failure, call `twincat_get_diagnostics` and report the exact failure stage
-and recovery result. `unknown` runtime state remains unknown; do not infer
-success from a timeout or from the COM call returning.
+On failure, call `twincat_get_diagnostics` and report the exact failure stage.
+If the runtime is in `Exception`, do not recover it automatically. Preserve
+the diagnostic state and require an explicit user decision before calling
+`twincat_recover_to_config`; after confirmed `Config`, build and activation
+remain separate explicit operations. `unknown` runtime state remains unknown;
+do not infer success from a timeout or from the COM call returning.
 
 Never activate a local target, a disabled profile, or a different AMS NetId.
 Never use ADS writes, `WriteControl`, PLC login, or an alternate runtime-control
