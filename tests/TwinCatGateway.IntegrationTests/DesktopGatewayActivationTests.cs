@@ -337,7 +337,7 @@ public sealed class DesktopGatewayActivationTests
             TimeSpan.FromSeconds(60));
         NamedPipeGatewayClient client = new(pipeName);
         await SynchronizeDiskAsync(host, client);
-        await WaitForRuntimeModeAsync(
+        await WaitForSystemRuntimeModeAsync(
             host,
             TimeSpan.FromSeconds(15),
             RuntimeMode.Run,
@@ -463,7 +463,7 @@ public sealed class DesktopGatewayActivationTests
                 originalSource);
             await SynchronizeDiskAsync(host, client);
             GatewayStatusResult finalStatus =
-                await WaitForRuntimeModeAsync(
+                await WaitForSystemRuntimeModeAsync(
                     host,
                     TimeSpan.FromSeconds(15),
                     RuntimeMode.Config);
@@ -828,6 +828,35 @@ public sealed class DesktopGatewayActivationTests
             "TwinCAT runtime did not reach one of the expected "
                 + $"modes ({string.Join(", ", expectedModes)}); "
                 + $"current mode is {status.TwinCat.Mode}.");
+    }
+
+    private static async Task<GatewayStatusResult>
+        WaitForSystemRuntimeModeAsync(
+            GatewayDesktopHost host,
+            TimeSpan timeout,
+            params RuntimeMode[] expectedModes)
+    {
+        DateTimeOffset deadline =
+            DateTimeOffset.UtcNow.Add(timeout);
+        GatewayStatusResult status =
+            host.ApplicationService.GetStatus();
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            status = host.ApplicationService.GetStatus();
+            if (expectedModes.Contains(
+                    status.TwinCat.SystemMode))
+            {
+                return status;
+            }
+
+            await Task.Delay(100);
+        }
+
+        throw new TimeoutException(
+            "TwinCAT system runtime did not reach one of the "
+                + $"expected modes ({string.Join(", ", expectedModes)}); "
+                + "current system mode is "
+                + $"{status.TwinCat.SystemMode}.");
     }
 
     private static async Task WaitForStateAsync(
