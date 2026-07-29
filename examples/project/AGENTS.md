@@ -19,12 +19,14 @@ failure or substitute another TwinCAT automation path.
 Do not close the gateway when the task ends. Do not close, replace, or switch a
 gateway that reports `GATEWAY_RUNNING_DIFFERENT_PROJECT`.
 
-Gateway logs are stored in the configured `logDirectory`; when it is omitted,
-the default path is `%LOCALAPPDATA%\TwinCatAgentGateway\Logs`. Inspect these
-logs only when the TwinCAT Agent Gateway MCP server returns an unknown or
+Inspect the gateway session log only when the MCP server returns an unknown or
 undocumented error, or when its behavior or operation outcome cannot be
-determined from the normal MCP response and compact diagnostics. Do not read
-them for documented errors or normal successful workflows.
+determined from the normal MCP response and compact diagnostics. First read
+MCP resource `twincat-log://gateway/current`, then inspect only a bounded tail
+of the exact file path it returns. Never infer the active path from
+`logDirectory`, scan the log directory, or read every session file. For manual
+operator reference only, the default log directory is
+`%LOCALAPPDATA%\TwinCatAgentGateway\Logs`.
 
 ## Project configuration
 

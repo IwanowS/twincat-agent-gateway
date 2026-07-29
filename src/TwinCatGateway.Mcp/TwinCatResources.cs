@@ -89,6 +89,24 @@ public sealed class TwinCatResources
     }
 
     [McpServerResource(
+        UriTemplate = GatewayResourceUris.CurrentGatewayLog,
+        Name = "Current TwinCAT Agent Gateway log",
+        MimeType = "text/plain")]
+    [Description(
+        "Get the absolute path of the gateway log segment "
+        + "that is currently open.")]
+    public Task<TextResourceContents>
+        GetCurrentGatewayLogPathAsync(
+            McpServer? server = null,
+            CancellationToken cancellationToken = default)
+    {
+        return ReadUriAsync(
+            GatewayResourceUris.CurrentGatewayLog,
+            server,
+            cancellationToken);
+    }
+
+    [McpServerResource(
         UriTemplate =
             "twincat-test://{operationId}/xunit",
         Name = "TwinCAT TcUnit xUnit report",
@@ -222,6 +240,18 @@ public sealed class TwinCatResources
 
         string uri =
             $"{scheme}://{operationId}/{artifact}";
+        return await ReadUriAsync(
+                uri,
+                server,
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<TextResourceContents> ReadUriAsync(
+        string uri,
+        McpServer? server,
+        CancellationToken cancellationToken)
+    {
         ITwinCatGatewayClient client =
             _fixedClient
             ?? await (_runtime

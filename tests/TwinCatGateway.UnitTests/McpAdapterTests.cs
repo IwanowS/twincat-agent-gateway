@@ -45,6 +45,7 @@ public sealed class McpAdapterTests
     {
         "twincat-doc://configuration",
         "twincat-doc://setup",
+        "twincat-log://gateway/current",
     };
 
     private static readonly string[] ExpectedChangedPaths =
@@ -507,6 +508,40 @@ public sealed class McpAdapterTests
     }
 
     [Fact]
+    public async Task CurrentGatewayLogResourceUsesFixedGatewayUri()
+    {
+        const string currentPath =
+            @"C:\GatewayLogs\gateway-20260729T063245123Z-p1234_001.ndjson";
+        FakeGatewayClient client = new()
+        {
+            ResourceResponse =
+                new GatewayResponse<ResourceContent>
+                {
+                    Ok = true,
+                    Result = new ResourceContent
+                    {
+                        Uri = GatewayResourceUris.CurrentGatewayLog,
+                        ContentType = "text/plain",
+                        Content = currentPath,
+                    },
+                },
+        };
+        TwinCatResources resources = new(client);
+
+        TextResourceContents result =
+            await resources.GetCurrentGatewayLogPathAsync();
+
+        Assert.Equal(
+            GatewayResourceUris.CurrentGatewayLog,
+            client.ResourceUri);
+        Assert.Equal(
+            GatewayResourceUris.CurrentGatewayLog,
+            result.Uri);
+        Assert.Equal("text/plain", result.MimeType);
+        Assert.Equal(currentPath, result.Text);
+    }
+
+    [Fact]
     public async Task DocumentationResourcesReadInstalledCanonicalFiles()
     {
         TwinCatResources resources = new(
@@ -561,6 +596,33 @@ public sealed class McpAdapterTests
 
         Assert.Contains(
             "RESOURCE_NOT_FOUND",
+            exception.Message);
+    }
+
+    [Fact]
+    public async Task StoppedGatewayCurrentLogFailureIsReportedAsMcpError()
+    {
+        FakeGatewayClient client = new()
+        {
+            ResourceResponse =
+                new GatewayResponse<ResourceContent>
+                {
+                    Ok = false,
+                    Error = new GatewayError
+                    {
+                        Code = ErrorCodes.GatewayNotRunning,
+                        Message = "Gateway is not running.",
+                    },
+                },
+        };
+        TwinCatResources resources = new(client);
+
+        McpException exception =
+            await Assert.ThrowsAsync<McpException>(
+                () => resources.GetCurrentGatewayLogPathAsync());
+
+        Assert.Contains(
+            ErrorCodes.GatewayNotRunning,
             exception.Message);
     }
 
@@ -666,6 +728,8 @@ public sealed class McpAdapterTests
         }
 
         public long ResourceOffset { get; private set; }
+
+        public string? ResourceUri { get; private set; }
 
         public Task<GatewayResponse<GatewayStatusResult>>
             GetStatusAsync(
@@ -799,6 +863,7 @@ public sealed class McpAdapterTests
                 CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            ResourceUri = uri;
             ResourceMaximumCharacters = maximumCharacters;
             ResourceOffset = offset;
             return Task.FromResult(ResourceResponse);

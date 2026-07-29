@@ -95,6 +95,73 @@ public sealed class GatewayApplicationServiceTests
     }
 
     [Fact]
+    public void CurrentGatewayLogResourceReturnsTrackedAbsolutePath()
+    {
+        const string currentPath =
+            @"C:\GatewayLogs\gateway-20260729T063245123Z-p1234_001.ndjson";
+        using ServiceFixture fixture = new(
+            currentLogPathProvider: () => currentPath);
+
+        ResourceContent resource = fixture.Service.GetResource(
+            GatewayResourceUris.CurrentGatewayLog,
+            1024,
+            offset: 0);
+
+        Assert.Equal(
+            GatewayResourceUris.CurrentGatewayLog,
+            resource.Uri);
+        Assert.Equal("text/plain", resource.ContentType);
+        Assert.Equal(currentPath, resource.Content);
+        Assert.Equal(0, resource.Offset);
+        Assert.Null(resource.NextOffset);
+        Assert.False(resource.Truncated);
+    }
+
+    [Fact]
+    public void CurrentGatewayLogResourceFailsWhenTrackerIsUnavailable()
+    {
+        using ServiceFixture fixture = new();
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.GetResource(
+                    GatewayResourceUris.CurrentGatewayLog,
+                    1024,
+                    offset: 0));
+
+        Assert.Equal(ErrorCodes.GatewayNotRunning, exception.Code);
+    }
+
+    [Fact]
+    public void CurrentGatewayLogResourceDoesNotCacheRolloverPath()
+    {
+        string currentPath =
+            @"C:\GatewayLogs\gateway-20260729T063245123Z-p1234.ndjson";
+        using ServiceFixture fixture = new(
+            currentLogPathProvider: () => currentPath);
+
+        ResourceContent initial = fixture.Service.GetResource(
+            GatewayResourceUris.CurrentGatewayLog,
+            1024,
+            offset: 0);
+        currentPath =
+            @"C:\GatewayLogs\gateway-20260729T063245123Z-p1234_001.ndjson";
+        ResourceContent rolled = fixture.Service.GetResource(
+            GatewayResourceUris.CurrentGatewayLog,
+            1024,
+            offset: 0);
+
+        Assert.EndsWith(
+            "-p1234.ndjson",
+            initial.Content,
+            StringComparison.Ordinal);
+        Assert.EndsWith(
+            "-p1234_001.ndjson",
+            rolled.Content,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DiagnosticsMergeRuntimeEvidenceWithCurrentStatus()
     {
         using ServiceFixture fixture = new(
@@ -1110,7 +1177,8 @@ public sealed class GatewayApplicationServiceTests
             TcUnitOperationExecutor? tcUnitExecutor = null,
             SynchronizeOperationExecutor? synchronizeExecutor = null,
             RecoveryOperationExecutor? recoveryExecutor = null,
-            XaeMessagesProvider? xaeMessagesProvider = null)
+            XaeMessagesProvider? xaeMessagesProvider = null,
+            Func<string?>? currentLogPathProvider = null)
         {
             _temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -1142,7 +1210,8 @@ public sealed class GatewayApplicationServiceTests
                 tcUnitExecutor,
                 synchronizeExecutor,
                 recoveryExecutor,
-                xaeMessagesProvider);
+                xaeMessagesProvider,
+                currentLogPathProvider);
         }
 
         public GatewayStatusSnapshotStore Status { get; }

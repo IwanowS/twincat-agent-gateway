@@ -17,10 +17,15 @@ description: Diagnose TwinCAT Agent Gateway, XAE connection, build, activation, 
 5. Read one referenced raw resource only when the compact events do not explain
    the failure. Choose the build log, XAE log, xUnit report, or focused project
    diff that corresponds to the failing stage.
+6. Only for a gateway-wide, unknown, or undocumented error that remains after
+   the focused operation resource, read MCP resource
+   `twincat-log://gateway/current`. Inspect only a bounded tail of the exact
+   file path it returns.
 
 Do not fetch every log, repeatedly read the Error List, inspect the full
 `.tsproj`, or fetch the full xUnit report by default. Do not repeat
-state-changing operations as a diagnostic probe.
+state-changing operations as a diagnostic probe. Never guess the active
+gateway log path, scan the whole log directory, or read all session files.
 
 Treat `unknown`, timeout, missing event, and execution-context mismatch as
 evidence gaps. Report them honestly. For interactive XAE discovery, the

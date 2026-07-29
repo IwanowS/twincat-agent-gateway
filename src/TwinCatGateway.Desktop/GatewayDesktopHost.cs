@@ -145,7 +145,8 @@ public sealed class GatewayDesktopHost : IDisposable
             tcUnitExecutor: tcUnitExecutor,
             synchronizeExecutor: synchronizeExecutor,
             recoveryExecutor: recoveryExecutor,
-            xaeMessagesProvider: xaeMessagesProvider);
+            xaeMessagesProvider: xaeMessagesProvider,
+            currentLogPathProvider: () => _logging.Path);
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
             Configuration.AgentProcessControl.AllowShutdown,

@@ -34,6 +34,7 @@ public delegate Task<XaeMessagesResult> XaeMessagesProvider(
 
 public sealed class GatewayApplicationService
 {
+    private const int MaximumResourceCharacters = 1024 * 1024;
     private readonly string _version;
     private readonly GatewayStatusSnapshotStore _status;
     private readonly OperationStore _operations;
@@ -52,6 +53,7 @@ public sealed class GatewayApplicationService
     private readonly ProjectProfile? _activeProfile;
     private readonly IClock _clock;
     private readonly GatewayEventJournal _eventJournal;
+    private readonly Func<string?>? _currentLogPathProvider;
 
     public GatewayApplicationService(
         string version,
@@ -70,7 +72,8 @@ public sealed class GatewayApplicationService
         TcUnitOperationExecutor? tcUnitExecutor = null,
         SynchronizeOperationExecutor? synchronizeExecutor = null,
         RecoveryOperationExecutor? recoveryExecutor = null,
-        XaeMessagesProvider? xaeMessagesProvider = null)
+        XaeMessagesProvider? xaeMessagesProvider = null,
+        Func<string?>? currentLogPathProvider = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -96,6 +99,7 @@ public sealed class GatewayApplicationService
         _eventJournal = eventJournal
             ?? throw new ArgumentNullException(
                 nameof(eventJournal));
+        _currentLogPathProvider = currentLogPathProvider;
     }
 
     public HealthResult GetHealth()
@@ -613,6 +617,16 @@ public sealed class GatewayApplicationService
     {
         try
         {
+            if (string.Equals(
+                    uri,
+                    GatewayResourceUris.CurrentGatewayLog,
+                    StringComparison.Ordinal))
+            {
+                return ReadCurrentLogPath(
+                    maximumCharacters,
+                    offset);
+            }
+
             return _logs.Read(uri, maximumCharacters, offset);
         }
         catch (FileNotFoundException exception)
@@ -629,6 +643,54 @@ public sealed class GatewayApplicationService
                 exception.Message,
                 innerException: exception);
         }
+    }
+
+    private ResourceContent ReadCurrentLogPath(
+        int maximumCharacters,
+        long offset)
+    {
+        if (maximumCharacters <= 0
+            || maximumCharacters > MaximumResourceCharacters)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(maximumCharacters));
+        }
+
+        if (offset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offset));
+        }
+
+        string? currentPath = _currentLogPathProvider?.Invoke();
+        if (string.IsNullOrWhiteSpace(currentPath))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotRunning,
+                "The current gateway log is unavailable because the gateway is not running.");
+        }
+
+        int contentOffset =
+            offset >= currentPath!.Length
+                ? currentPath.Length
+                : (int)offset;
+        int contentLength = Math.Min(
+            maximumCharacters,
+            currentPath.Length - contentOffset);
+        bool truncated =
+            contentOffset + contentLength < currentPath.Length;
+        return new ResourceContent
+        {
+            Uri = GatewayResourceUris.CurrentGatewayLog,
+            ContentType = "text/plain",
+            Content = currentPath.Substring(
+                contentOffset,
+                contentLength),
+            Offset = offset,
+            NextOffset = truncated
+                ? offset + contentLength
+                : null,
+            Truncated = truncated,
+        };
     }
 
     public IReadOnlyList<StoredOperation> GetRecentOperations(int maximumCount)
