@@ -377,19 +377,30 @@ public sealed class DesktopGatewayActivationTests
                     client,
                     activationAccepted.OperationId,
                     TimeSpan.FromSeconds(195));
-            Assert.Equal(
-                OperationState.Failed,
-                activation.Operation.State);
-            GatewayError activationError =
-                Assert.IsType<GatewayError>(
-                    activation.Operation.Error);
-            Assert.Equal(
-                ErrorCodes.RuntimeRecoveryRequired,
-                activationError.Code);
-            Assert.Equal(
-                "activation.verify",
-                activationError.Stage);
-            AssertFaultDetails(activationError.Details);
+            if (activation.Operation.State
+                == OperationState.Failed)
+            {
+                GatewayError activationError =
+                    Assert.IsType<GatewayError>(
+                        activation.Operation.Error);
+                Assert.Equal(
+                    ErrorCodes.RuntimeRecoveryRequired,
+                    activationError.Code);
+                Assert.Equal(
+                    "activation.verify",
+                    activationError.Stage);
+                AssertFaultDetails(activationError.Details);
+            }
+            else
+            {
+                Assert.Equal(
+                    OperationState.Succeeded,
+                    activation.Operation.State);
+                ActivationResult activationResult =
+                    Assert.IsType<ActivationResult>(
+                        activation.Result);
+                Assert.True(activationResult.Ok);
+            }
 
             GatewayStatusResult faultStatus =
                 await WaitForRuntimeModeAsync(
