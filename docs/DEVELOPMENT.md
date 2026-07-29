@@ -181,6 +181,16 @@ restart prompt. The next explicit gateway operation may dismiss only its `OK`
 button, must return `XAE_DIALOG_REPORTED_FAILURE`, and must not retry the
 runtime transition automatically.
 
+After a completed fault/recovery lifecycle, this XAE has also shown `Closing
+project failed! Visual Studio will restart now. Key cannot be null. Parameter
+name: key` while closing the solution. Corrupted Visual Studio/TwinCAT caches
+or hidden project configuration are suspected on this bench, but the root
+cause is not confirmed. Do not click `OK` automatically: one manual
+confirmation did not actually restart XAE, but that single observation is not
+a cross-environment guarantee. Report the runtime lifecycle and XAE cleanup
+as separate outcomes, require manual XAE closure, and verify process/ROT
+removal with `Get-XaeSessions.ps1`.
+
 The linked TcUnit acceptance additionally launches its own XAE instance,
 waits for the single PLC configured by the profile, reads a fresh report
 through the operator-provided read-only path, queries `getTestResults`, and

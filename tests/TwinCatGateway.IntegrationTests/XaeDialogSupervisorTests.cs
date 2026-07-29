@@ -31,6 +31,11 @@ public sealed class XaeDialogSupervisorTests
         "AdsError: 1804",
         "FatalError")]
     [InlineData(
+        "TcXaeShell",
+        "Closing project failed! Visual Studio will restart now. "
+            + "Key cannot be null. Parameter name: key",
+        "ProjectCloseFailure")]
+    [InlineData(
         "Unexpected",
         "Unknown prompt",
         "Unknown")]
@@ -44,6 +49,89 @@ public sealed class XaeDialogSupervisorTests
             XaeDialogSupervisor.ClassifyDialog(
                 title,
                 text).ToString());
+    }
+
+    [Fact]
+    public async Task ProjectCloseFailureRemainsOpenAndFailsCloseOperation()
+    {
+        if (!Environment.UserInteractive)
+        {
+            return;
+        }
+
+        const string dialogScript =
+            "Start-Sleep -Milliseconds 500; "
+            + "Add-Type -AssemblyName System.Windows.Forms; "
+            + "$owner = New-Object System.Windows.Forms.Form; "
+            + "$owner.ShowInTaskbar = $false; "
+            + "$owner.Opacity = 0; "
+            + "$owner.Show(); "
+            + "[System.Windows.Forms.MessageBox]::Show("
+            + "$owner, "
+            + "'Closing project failed!`r`n"
+            + "Visual Studio will restart now.`r`n`r`n"
+            + "Key cannot be null.`r`n"
+            + "Parameter name: key', "
+            + "'TcXaeShell', "
+            + "[System.Windows.Forms.MessageBoxButtons]::OK, "
+            + "[System.Windows.Forms.MessageBoxIcon]::Error) "
+            + "| Out-Null; "
+            + "$owner.Close()";
+        using Process dialogProcess =
+            StartDialogProcess(dialogScript);
+        using XaeDialogSupervisor supervisor = new(
+            dialogProcess.Id);
+        List<XaeDialogObservation> observed = new();
+        supervisor.DialogObserved += (_, eventArgs) =>
+        {
+            lock (observed)
+            {
+                observed.Add(eventArgs.Observation);
+            }
+        };
+        using XaeDialogOperationScope operation =
+            supervisor.BeginOperation(
+                "project-close-failure-test",
+                "closeXae",
+                "xae.close",
+                runAfterActivation: null);
+        GatewayOperationException exception;
+        try
+        {
+            exception =
+                await Assert.ThrowsAsync<GatewayOperationException>(
+                    () => operation.ObserveAsync(
+                        Task.Delay(TimeSpan.FromSeconds(15))));
+            Assert.False(dialogProcess.HasExited);
+        }
+        finally
+        {
+            if (!dialogProcess.HasExited)
+            {
+                dialogProcess.Kill();
+            }
+        }
+
+        Assert.Equal(
+            ErrorCodes.XaeDialogReportedFailure,
+            exception.Code);
+        Assert.Contains(
+            "Key cannot be null",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+        XaeDialogObservation observation;
+        lock (observed)
+        {
+            observation = Assert.Single(observed);
+        }
+
+        Assert.Equal(
+            "ProjectCloseFailure",
+            observation.Kind);
+        Assert.Equal("none", observation.Action);
+        Assert.False(observation.ActionRequested);
+        Assert.False(observation.ActionCompleted);
+        Assert.True(observation.Failure);
     }
 
     [Fact]

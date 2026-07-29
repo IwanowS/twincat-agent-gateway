@@ -767,6 +767,15 @@ Gateway никогда не переключает Autostart checkbox автом
 а operation завершается `XAE_DIALOG_REPORTED_FAILURE`. Неизвестный dialog
 остаётся fail-closed и не подтверждается автоматически.
 
+Отдельно распознаётся close-time dialog `Closing project failed! Visual
+Studio will restart now.`. Gateway сохраняет его content, завершает cleanup
+как `XAE_DIALOG_REPORTED_FAILURE` и не нажимает `OK`: заявленный dialog
+перезапуск XAE нельзя автоматически считать безопасным. На стенде
+`WIN-T077ADA` после одного ручного подтверждения restart фактически не
+произошёл, но это наблюдение не подтверждено на других XAE/runtime и не
+является гарантией. Оператор вручную закрывает XAE, а внешний session probe
+подтверждает исчезновение process и ROT.
+
 Если TcUnit executor или profile отсутствует, запрос с эффективным
 `waitForTcUnit=true` отклоняется до первой изменяющей команды. Такая же
 ошибка возвращается для сочетания `waitForTcUnit=true` и

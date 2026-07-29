@@ -1067,13 +1067,37 @@ internal sealed class XaeSessionCoordinator : IDisposable
             GatewayJson.CreateSerializerOptions());
     }
 
-    internal Task<bool> CloseGatewayLaunchedXaeAsync(
+    internal async Task<bool> CloseGatewayLaunchedXaeAsync(
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
-        return _session.CloseGatewayLaunchedAsync(
-            timeout,
-            cancellationToken);
+        try
+        {
+            using XaeDialogOperationScope dialogScope =
+                _session.BeginDialogOperation(
+                    Guid.NewGuid().ToString("N"),
+                    "closeXae",
+                    "xae.close");
+            return await dialogScope.ObserveAsync(
+                _session.CloseGatewayLaunchedAsync(
+                    timeout,
+                    cancellationToken)).ConfigureAwait(false);
+        }
+        catch (GatewayOperationException exception)
+        {
+            _logger.Write(
+                LogLevel.Warning,
+                "xae.close.failed",
+                "Gateway-launched XAE cleanup did not complete.",
+                properties: new Dictionary<string, string>
+                {
+                    ["code"] = exception.Code,
+                    ["stage"] = exception.Stage
+                        ?? "xae.close",
+                },
+                exception: exception);
+            return false;
+        }
     }
 
     public void Dispose()

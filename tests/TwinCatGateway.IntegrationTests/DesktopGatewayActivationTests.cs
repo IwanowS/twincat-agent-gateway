@@ -394,9 +394,12 @@ public sealed class DesktopGatewayActivationTests
                 }
                 else
                 {
-                    Assert.Equal(
-                        ErrorCodes.XaeDialogReportedFailure,
-                        activationError.Code);
+                    Assert.True(
+                        string.Equals(
+                            ErrorCodes.XaeDialogReportedFailure,
+                            activationError.Code,
+                            StringComparison.Ordinal),
+                        activationError.Message);
                     string activationStage =
                         Assert.IsType<string>(
                             activationError.Stage);
@@ -1204,7 +1207,9 @@ public sealed class DesktopGatewayActivationTests
 
             Assert.True(
                 xaeClosed,
-                "The gateway-owned XAE instance did not close.");
+                "The runtime lifecycle completed, but the gateway-owned "
+                    + "XAE instance did not close. Inspect known close "
+                    + "failure dialogs and close XAE manually.");
         }
 
         public void Dispose()

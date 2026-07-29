@@ -21,6 +21,7 @@ internal enum XaeKnownDialogKind
     ActivationConfirmation,
     RunConfirmation,
     FatalError,
+    ProjectCloseFailure,
 }
 
 public sealed class XaeDialogButtonObservation
@@ -650,6 +651,16 @@ internal sealed class XaeDialogSupervisor : IDisposable
             return XaeKnownDialogKind.FatalError;
         }
 
+        if (combined.IndexOf(
+                "Closing project failed",
+                StringComparison.OrdinalIgnoreCase) >= 0
+            && combined.IndexOf(
+                "Visual Studio will restart now",
+                StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            return XaeKnownDialogKind.ProjectCloseFailure;
+        }
+
         return XaeKnownDialogKind.Unknown;
     }
 
@@ -915,6 +926,24 @@ internal sealed class XaeDialogSupervisor : IDisposable
         XaeKnownDialogKind kind,
         XaeDialogObservation observation)
     {
+        if (kind == XaeKnownDialogKind.ProjectCloseFailure)
+        {
+            observation.Action = "none";
+            observation.Failure = true;
+            operation.Record(
+                observation,
+                dialog.NativeWindowHandle);
+            Publish(observation);
+            operation.Fail(CreateDialogFailure(
+                ErrorCodes.XaeDialogReportedFailure,
+                operation,
+                observation,
+                "XAE could not close the project. Automatic "
+                    + "confirmation was withheld because the dialog "
+                    + "would restart Visual Studio."));
+            return;
+        }
+
         if (kind == XaeKnownDialogKind.FatalError)
         {
             RequestFatalDismissal(
