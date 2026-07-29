@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.CompilerServices;
+using System.Windows.Data;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 
@@ -30,6 +31,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private string _activationPolicy = string.Empty;
     private string _currentOperation = string.Empty;
     private string _currentStage = string.Empty;
+    private string _runtimeState = string.Empty;
+    private string _runtimeAlert = string.Empty;
     private string _workspaceOwnership = string.Empty;
     private string _lastBuild = string.Empty;
     private string _lastActivation = string.Empty;
@@ -41,18 +44,29 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _canActivate;
     private bool _canSynchronize;
     private bool _canReconnect;
+    private bool _isVerboseEvents;
 
     public MainWindowViewModel(GatewayDesktopHost host)
     {
         _host = host ?? throw new ArgumentNullException(nameof(host));
         Version = GatewayProductVersion.DisplayText;
         StartupError = host.StartupError;
+        RecentOperationsView =
+            CollectionViewSource.GetDefaultView(RecentOperations);
+        EventsView = CollectionViewSource.GetDefaultView(Events);
+        EventsView.Filter = IncludeEvent;
         Refresh();
     }
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<OperationRow> RecentOperations { get; } = new();
+
+    public ObservableCollection<EventRow> Events { get; } = new();
+
+    public ICollectionView RecentOperationsView { get; }
+
+    public ICollectionView EventsView { get; }
 
     public IReadOnlyList<BuildAction> BuildActions { get; } =
         AvailableBuildActions;
@@ -103,6 +117,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         get => _currentStage;
         private set => SetField(ref _currentStage, value);
+    }
+
+    public string RuntimeState
+    {
+        get => _runtimeState;
+        private set => SetField(ref _runtimeState, value);
+    }
+
+    public string RuntimeAlert
+    {
+        get => _runtimeAlert;
+        private set => SetField(ref _runtimeAlert, value);
     }
 
     public string? StartupError { get; }
@@ -173,6 +199,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetField(ref _canReconnect, value);
     }
 
+    public bool IsVerboseEvents
+    {
+        get => _isVerboseEvents;
+        set
+        {
+            if (SetField(ref _isVerboseEvents, value))
+            {
+                EventsView.Refresh();
+            }
+        }
+    }
+
     public string ActivationConfirmation
     {
         get
@@ -208,6 +246,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             GatewayState = "Faulted";
             CurrentOperation = "Status unavailable";
             CurrentStage = "ui.refresh";
+            RuntimeState = "Unknown";
+            RuntimeAlert = "Runtime status unavailable";
             LastIssue =
                 "UI_STATUS_REFRESH_FAILED: "
                 + exception.Message;
@@ -320,6 +360,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         CurrentStage = FormatCurrentStage(
             status.CurrentOperation,
             diagnostics.Events);
+        RuntimeState = FormatRuntimeState(status.TwinCat);
+        RuntimeAlert = FormatRuntimeAlert(status.TwinCat.Alert);
         LastBuild = FormatBuild(status.LastBuild);
         LastActivation =
             FormatActivation(status.LastActivation);
@@ -351,6 +393,10 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         SynchronizeRecentOperations(
             RecentOperations,
             _host.ApplicationService.GetRecentOperations(20));
+        SynchronizeEvents(
+            Events,
+            diagnostics.EventStreamId,
+            diagnostics.Events);
     }
 
     internal static void SynchronizeRecentOperations(
@@ -408,18 +454,60 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
+    internal static void SynchronizeEvents(
+        ObservableCollection<EventRow> rows,
+        string eventStreamId,
+        IReadOnlyList<GatewayEvent> events)
+    {
+        if (rows.Count != 0
+            && !string.Equals(
+                rows[0].EventStreamId,
+                eventStreamId,
+                StringComparison.Ordinal))
+        {
+            rows.Clear();
+        }
+
+        HashSet<long> retainedCursors =
+            new(events.Select(gatewayEvent => gatewayEvent.Cursor));
+        for (int index = rows.Count - 1; index >= 0; index--)
+        {
+            if (!retainedCursors.Contains(rows[index].Cursor))
+            {
+                rows.RemoveAt(index);
+            }
+        }
+
+        foreach (GatewayEvent gatewayEvent in events
+                     .OrderBy(item => item.Cursor))
+        {
+            EventRow? row = rows.FirstOrDefault(
+                candidate => candidate.Cursor == gatewayEvent.Cursor);
+            if (row is null)
+            {
+                rows.Add(
+                    new EventRow(
+                        eventStreamId,
+                        gatewayEvent));
+                continue;
+            }
+
+            row.Update(gatewayEvent);
+        }
+    }
+
     private GatewayDiagnosticsResult ReadRecentDiagnostics(
         GatewayStatusResult status)
     {
         long afterCursor = Math.Max(
             0,
-            status.LatestEventCursor - 100);
+            status.LatestEventCursor - 200);
         return _host.ApplicationService.GetDiagnostics(
             new GetDiagnosticsParameters
             {
                 EventStreamId = status.EventStreamId,
                 AfterEventCursor = afterCursor,
-                MaximumEvents = 100,
+                MaximumEvents = 200,
             });
     }
 
@@ -525,6 +613,33 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return $"{code} · {issue.Message}";
     }
 
+    private static string FormatRuntimeState(
+        TwinCatStatus status)
+    {
+        string observed = status.ObservedAtUtc.HasValue
+            ? status.ObservedAtUtc.Value.LocalDateTime.ToString(
+                "G",
+                CultureInfo.CurrentCulture)
+            : "not observed";
+        return $"{status.Mode} · system {status.SystemMode} · {observed}";
+    }
+
+    private static string FormatRuntimeAlert(
+        RuntimeAlert? alert)
+    {
+        return alert is null
+            ? "No active runtime alert"
+            : $"{alert.Code} · {alert.Message}";
+    }
+
+    private bool IncludeEvent(object item)
+    {
+        return item is EventRow row
+            && (IsVerboseEvents
+                || row.SeverityValue
+                    >= DiagnosticSeverity.Warning);
+    }
+
     private ProjectProfile RequireActiveProfile()
     {
         return _host.ActiveProfile
@@ -547,23 +662,139 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    private void SetField<T>(
+    private bool SetField<T>(
         ref T field,
         T value,
         [CallerMemberName] string? propertyName = null)
     {
         if (EqualityComparer<T>.Default.Equals(field, value))
         {
-            return;
+            return false;
         }
 
         field = value;
         OnPropertyChanged(propertyName);
+        return true;
     }
 
     private void OnPropertyChanged(
         [CallerMemberName] string? propertyName = null)
     {
+        PropertyChanged?.Invoke(
+            this,
+            new PropertyChangedEventArgs(propertyName));
+    }
+}
+
+public sealed class EventRow : INotifyPropertyChanged
+{
+    private string _occurredAt = string.Empty;
+    private string _severity = string.Empty;
+    private DiagnosticSeverity _severityValue;
+    private string _type = string.Empty;
+    private string _code = string.Empty;
+    private string _description = string.Empty;
+    private string _exception = string.Empty;
+
+    public EventRow(
+        string eventStreamId,
+        GatewayEvent gatewayEvent)
+    {
+        EventStreamId = eventStreamId;
+        Cursor = gatewayEvent.Cursor;
+        Update(gatewayEvent);
+    }
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public string EventStreamId { get; }
+
+    public long Cursor { get; }
+
+    public string OccurredAt => _occurredAt;
+
+    public string Severity => _severity;
+
+    public DiagnosticSeverity SeverityValue => _severityValue;
+
+    public string Type => _type;
+
+    public string Code => _code;
+
+    public string Description => _description;
+
+    public string Exception => _exception;
+
+    internal void Update(GatewayEvent gatewayEvent)
+    {
+        SetField(
+            ref _occurredAt,
+            gatewayEvent.OccurredAtUtc.LocalDateTime.ToString(
+                "G",
+                CultureInfo.CurrentCulture),
+            nameof(OccurredAt));
+        SetField(
+            ref _severity,
+            gatewayEvent.Severity.ToString(),
+            nameof(Severity));
+        if (_severityValue != gatewayEvent.Severity)
+        {
+            _severityValue = gatewayEvent.Severity;
+            PropertyChanged?.Invoke(
+                this,
+                new PropertyChangedEventArgs(nameof(SeverityValue)));
+        }
+
+        SetField(ref _type, gatewayEvent.Type, nameof(Type));
+        SetField(
+            ref _code,
+            gatewayEvent.Error?.Code ?? string.Empty,
+            nameof(Code));
+        SetField(
+            ref _description,
+            gatewayEvent.Error?.Message ?? gatewayEvent.Message,
+            nameof(Description));
+        SetField(
+            ref _exception,
+            FormatException(gatewayEvent),
+            nameof(Exception));
+    }
+
+    private static string FormatException(GatewayEvent gatewayEvent)
+    {
+        if (gatewayEvent.Properties.TryGetValue(
+                "exceptionType",
+                out string? exceptionType))
+        {
+            return exceptionType;
+        }
+
+        string? details = gatewayEvent.Error?.Details;
+        if (string.IsNullOrWhiteSpace(details))
+        {
+            return string.Empty;
+        }
+
+        int separator = details!.IndexOf(':');
+        return separator > 0
+            ? details.Substring(0, separator)
+            : string.Empty;
+    }
+
+    private void SetField(
+        ref string field,
+        string value,
+        string propertyName)
+    {
+        if (string.Equals(
+                field,
+                value,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        field = value;
         PropertyChanged?.Invoke(
             this,
             new PropertyChangedEventArgs(propertyName));

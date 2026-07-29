@@ -110,6 +110,9 @@ public sealed class OperationQueueTests
         await queue.StopAsync();
 
         Assert.Equal(ErrorCodes.OperationFailed, failedOperation.Summary.Error?.Code);
+        Assert.Equal(
+            "System.InvalidOperationException: boom",
+            failedOperation.Summary.Error?.Details);
         Assert.Equal("complete", succeededOperation.Result);
     }
 

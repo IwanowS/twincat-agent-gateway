@@ -153,6 +153,9 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            _viewModel.RecordUiFailure(
+                "setup.instructions",
+                exception);
             MessageBox.Show(
                 "Setup instructions could not be opened.\n\n"
                 + exception.Message,
@@ -214,6 +217,9 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            _viewModel.RecordUiFailure(
+                "operation.resource",
+                exception);
             MessageBox.Show(
                 "The operation artifact could not be opened.\n\n" + exception.Message,
                 "TwinCAT Agent Gateway",
@@ -237,6 +243,9 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            _viewModel.RecordUiFailure(
+                "command",
+                exception);
             MessageBox.Show(
                 failureMessage + "\n\n" + exception.Message,
                 "TwinCAT Agent Gateway",

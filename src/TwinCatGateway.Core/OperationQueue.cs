@@ -335,7 +335,9 @@ public sealed class OperationQueue : IDisposable
                 ErrorCodes.OperationFailed,
                 "The operation failed unexpectedly. See the local log for details.",
                 item.OperationId,
-                retryable: false);
+                retryable: false,
+                details:
+                    $"{exception.GetType().FullName}: {exception.Message}");
             bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.Failed,

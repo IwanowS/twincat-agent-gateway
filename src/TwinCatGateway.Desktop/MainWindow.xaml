@@ -66,6 +66,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <StackPanel>
                     <TextBlock Foreground="#6A7681"
@@ -76,12 +77,24 @@
                 </StackPanel>
                 <StackPanel Grid.Column="1">
                     <TextBlock Foreground="#6A7681"
+                               Text="TwinCAT runtime" />
+                    <TextBlock Margin="0,5,12,0"
+                               FontWeight="SemiBold"
+                               TextWrapping="Wrap"
+                               Text="{Binding RuntimeState}" />
+                    <TextBlock Margin="0,4,12,0"
+                               Foreground="#5C6975"
+                               TextWrapping="Wrap"
+                               Text="{Binding RuntimeAlert}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Foreground="#6A7681"
                                Text="Profile" />
                     <TextBlock Margin="0,5,0,0"
                                FontWeight="SemiBold"
                                Text="{Binding Profile}" />
                 </StackPanel>
-                <StackPanel Grid.Column="2">
+                <StackPanel Grid.Column="3">
                     <TextBlock Foreground="#6A7681"
                                Text="Current operation" />
                     <TextBlock Margin="0,5,0,0"
@@ -200,71 +213,97 @@
                 BorderBrush="#DCE2E8"
                 BorderThickness="1"
                 CornerRadius="10">
-            <DockPanel>
-                <TextBlock DockPanel.Dock="Top"
-                           Margin="0,0,0,10"
-                           FontSize="16"
-                           FontWeight="SemiBold"
-                           Text="Recent operations" />
-                <ListView x:Name="RecentOperationsList"
-                          ItemsSource="{Binding RecentOperations}">
-                    <ListView.View>
-                        <GridView>
-                            <GridViewColumn Width="150"
-                                            DisplayMemberBinding="{Binding QueuedAt}"
-                                            Header="Queued" />
-                            <GridViewColumn Width="130"
-                                            DisplayMemberBinding="{Binding Kind}"
-                                            Header="Operation" />
-                            <GridViewColumn Width="120"
-                                            DisplayMemberBinding="{Binding State}"
-                                            Header="State" />
-                            <GridViewColumn Width="360"
-                                            DisplayMemberBinding="{Binding OperationId}"
-                                            Header="Operation ID" />
-                        </GridView>
-                    </ListView.View>
-                </ListView>
-            </DockPanel>
+            <TabControl Background="Transparent"
+                        BorderThickness="0">
+                <TabItem Header="Operations">
+                    <ListView x:Name="RecentOperationsList"
+                              Margin="0,10,0,0"
+                              ItemsSource="{Binding RecentOperationsView}">
+                        <ListView.View>
+                            <GridView>
+                                <GridViewColumn Width="150"
+                                                DisplayMemberBinding="{Binding QueuedAt}"
+                                                Header="Queued" />
+                                <GridViewColumn Width="130"
+                                                DisplayMemberBinding="{Binding Kind}"
+                                                Header="Operation" />
+                                <GridViewColumn Width="120"
+                                                DisplayMemberBinding="{Binding State}"
+                                                Header="State" />
+                                <GridViewColumn Width="360"
+                                                DisplayMemberBinding="{Binding OperationId}"
+                                                Header="Operation ID" />
+                            </GridView>
+                        </ListView.View>
+                    </ListView>
+                </TabItem>
+                <TabItem Header="Event journal">
+                    <DockPanel Margin="0,10,0,0">
+                        <CheckBox DockPanel.Dock="Top"
+                                  Margin="4,0,0,10"
+                                  IsChecked="{Binding IsVerboseEvents}"
+                                  Content="Verbose — show all events" />
+                        <ListView x:Name="EventLogList"
+                                  ItemsSource="{Binding EventsView}">
+                            <ListView.View>
+                                <GridView>
+                                    <GridViewColumn Width="145"
+                                                    DisplayMemberBinding="{Binding OccurredAt}"
+                                                    Header="Time" />
+                                    <GridViewColumn Width="72"
+                                                    DisplayMemberBinding="{Binding Severity}"
+                                                    Header="Level" />
+                                    <GridViewColumn Width="185"
+                                                    DisplayMemberBinding="{Binding Type}"
+                                                    Header="Event" />
+                                    <GridViewColumn Width="185"
+                                                    DisplayMemberBinding="{Binding Code}"
+                                                    Header="Error code" />
+                                    <GridViewColumn Width="175"
+                                                    DisplayMemberBinding="{Binding Exception}"
+                                                    Header="Exception" />
+                                    <GridViewColumn Width="360"
+                                                    DisplayMemberBinding="{Binding Description}"
+                                                    Header="Short description" />
+                                </GridView>
+                            </ListView.View>
+                        </ListView>
+                    </DockPanel>
+                </TabItem>
+            </TabControl>
         </Border>
 
         <Grid Grid.Row="5"
               Margin="0,16,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
-            <TextBlock VerticalAlignment="Center"
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock Grid.Row="0"
+                       Margin="0,0,0,10"
                        Foreground="#6A7681"
                        TextTrimming="CharacterEllipsis"
                        Text="{Binding LogDirectory}" />
-            <Button Grid.Column="1"
-                    MinWidth="92"
-                    Margin="8,0,0,0"
-                    Padding="12,7"
-                    IsEnabled="{Binding CanReconnect}"
-                    Click="ReconnectButton_Click"
-                    Content="Reconnect" />
-            <Button Grid.Column="2"
-                    MinWidth="92"
-                    Margin="8,0,0,0"
-                    Padding="12,7"
-                    Click="RefreshButton_Click"
-                    Content="Refresh" />
-            <Button Grid.Column="3"
-                    MinWidth="124"
-                    Margin="8,0,0,0"
-                    Padding="12,7"
-                    Click="SetupInstructionsButton_Click"
-                    Content="Setup instructions" />
-            <StackPanel Grid.Column="4"
-                        Margin="8,0,0,0"
+            <StackPanel Grid.Row="1"
+                        HorizontalAlignment="Right"
                         Orientation="Horizontal">
+                <Button MinWidth="92"
+                        Padding="12,7"
+                        IsEnabled="{Binding CanReconnect}"
+                        Click="ReconnectButton_Click"
+                        Content="Reconnect" />
+                <Button MinWidth="92"
+                        Margin="8,0,0,0"
+                        Padding="12,7"
+                        Click="RefreshButton_Click"
+                        Content="Refresh" />
+                <Button MinWidth="124"
+                        Margin="8,0,0,0"
+                        Padding="12,7"
+                        Click="SetupInstructionsButton_Click"
+                        Content="Setup instructions" />
                 <ComboBox Width="92"
-                          Margin="0,0,6,0"
+                          Margin="8,0,6,0"
                           VerticalContentAlignment="Center"
                           ItemsSource="{Binding BuildActions}"
                           SelectedItem="{Binding SelectedBuildAction}" />

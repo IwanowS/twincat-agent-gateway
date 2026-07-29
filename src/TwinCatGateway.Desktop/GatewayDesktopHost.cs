@@ -278,6 +278,33 @@ public sealed class GatewayDesktopHost : IDisposable
             "ui.failure",
             $"Desktop UI stage '{stage}' failed.",
             exception: exception);
+        GatewayError error = new()
+        {
+            Code = ErrorCodes.UiFailure,
+            Message = exception.Message,
+            Details =
+                $"{exception.GetType().FullName}: {exception.Message}",
+            Retryable = false,
+            Stage = stage,
+        };
+        _events.Record(
+            new GatewayEvent
+            {
+                Type = GatewayEventTypes.UiFailure,
+                Severity = DiagnosticSeverity.Error,
+                Stage = stage,
+                Message = exception.Message,
+                Error = error,
+                Properties =
+                    new System.Collections.Generic.Dictionary<string, string>
+                    {
+                        ["exceptionType"] =
+                            exception.GetType().FullName
+                            ?? exception.GetType().Name,
+                        ["hresult"] = $"0x{exception.HResult:X8}",
+                    },
+            },
+            DateTimeOffset.UtcNow);
     }
 
     public async Task StopAsync()

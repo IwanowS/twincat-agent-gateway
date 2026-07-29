@@ -26,6 +26,7 @@ public static class ErrorCodes
     public const string OperationNotCancellable = "OPERATION_NOT_CANCELLABLE";
     public const string OperationTimeout = "OPERATION_TIMEOUT";
     public const string OperationFailed = "OPERATION_FAILED";
+    public const string UiFailure = "UI_FAILURE";
     public const string ProfileNotFound = "PROFILE_NOT_FOUND";
     public const string ProfileInvalid = "PROFILE_INVALID";
     public const string ResourceNotFound = "RESOURCE_NOT_FOUND";

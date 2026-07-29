@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -254,6 +255,61 @@ public sealed class DesktopGatewayHostTests
         Assert.Equal("operation-2", rows[0].OperationId);
         Assert.Same(selectedRow, rows[1]);
         Assert.Equal("Running", selectedRow.State);
+    }
+
+    [Fact]
+    public void EventJournalRowsKeepOldestAtTopAndAppendNewestAtBottom()
+    {
+        ObservableCollection<EventRow> rows = new();
+        DateTimeOffset occurredAt =
+            new(2026, 7, 29, 10, 0, 0, TimeSpan.Zero);
+        GatewayEvent first = new()
+        {
+            Cursor = 1,
+            OccurredAtUtc = occurredAt,
+            Type = "gateway.started",
+            Severity = DiagnosticSeverity.Info,
+            Message = "Gateway started.",
+        };
+        GatewayEvent second = new()
+        {
+            Cursor = 2,
+            OccurredAtUtc = occurredAt.AddSeconds(1),
+            Type = "ui.failure",
+            Severity = DiagnosticSeverity.Error,
+            Message = "Refresh failed.",
+            Error = new GatewayError
+            {
+                Code = ErrorCodes.UiFailure,
+                Message = "Refresh failed.",
+                Details =
+                    "System.InvalidOperationException: Refresh failed.",
+            },
+            Properties = new Dictionary<string, string>
+            {
+                ["exceptionType"] =
+                    "System.InvalidOperationException",
+            },
+        };
+
+        MainWindowViewModel.SynchronizeEvents(
+            rows,
+            "stream-1",
+            new[] { first });
+        EventRow firstRow = Assert.Single(rows);
+        MainWindowViewModel.SynchronizeEvents(
+            rows,
+            "stream-1",
+            new[] { first, second });
+
+        Assert.Equal(2, rows.Count);
+        Assert.Same(firstRow, rows[0]);
+        Assert.Equal(2, rows[1].Cursor);
+        Assert.Equal(ErrorCodes.UiFailure, rows[1].Code);
+        Assert.Equal("Refresh failed.", rows[1].Description);
+        Assert.Equal(
+            "System.InvalidOperationException",
+            rows[1].Exception);
     }
 
     [Fact]

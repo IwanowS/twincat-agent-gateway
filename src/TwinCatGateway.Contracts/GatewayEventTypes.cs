@@ -130,4 +130,6 @@ public static class GatewayEventTypes
 
     public const string TcUnitZeroTests =
         "tcunit.zeroTests";
+
+    public const string UiFailure = "ui.failure";
 }
