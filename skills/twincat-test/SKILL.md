@@ -1,13 +1,16 @@
 ---
 name: twincat-test
-description: Run the linked TwinCAT Agent Gateway TcUnit workflow on an explicitly allowed remote test profile. Use when PLC changes require rebuild, activation/restart, ADS completion evidence, and a fresh compact TcUnit result.
+description: Run the linked TwinCAT Agent Gateway TcUnit workflow on an explicitly allowed remote test profile. Use when PLC runtime behavior needs activation/restart, ADS completion evidence, and a fresh compact TcUnit result, reusing an already verified current build when possible.
 ---
 
 # TwinCAT Test
 
 1. Call `twincat_status`. Confirm the profile, exact solution, activation
    permission, and remote AMS NetId.
-2. Call `twincat_build` with `action: rebuild`. Stop on compile errors; build
+2. Reuse a known successful Build or Rebuild for the same profile, solution,
+   target, configuration, and platform when no relevant edit, Clean, failed
+   build, `syncRequired`, or XAE reconnect followed it. Otherwise call
+   `twincat_build` once with `action: rebuild`. Stop on compile errors; build
    does not activate.
 3. Call `twincat_activate` explicitly with the same profile and
    `waitForTcUnit: true`. This activates and restarts only the allow-listed
@@ -16,6 +19,12 @@ description: Run the linked TwinCAT Agent Gateway TcUnit workflow on an explicit
    `twincat_get_test_results`.
 5. Use the compact counts and failures to repair tests. Read the xUnit resource
    only when a failure lacks enough context.
+
+Do not repeat Build/Rebuild before activation when step 2 reused or completed a
+valid build and no files changed afterward. If repairing a failure changes PLC
+sources, the previous build no longer validates that new source state.
+The reuse sequence is `twincat_status`, `twincat_activate` with
+`waitForTcUnit: true`, then `twincat_get_test_results`.
 
 Do not accept a timeout, stale report, missing completion symbol, or missing
 report as a test result. Do not read arbitrary ADS symbols or write runtime

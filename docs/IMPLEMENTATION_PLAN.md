@@ -713,7 +713,8 @@ twincat-log://gateway/current
 
 #### `twincat-test`
 
-- сначала успешный rebuild;
+- переиспользовать актуальный успешный Build/Rebuild либо выполнить один
+  rebuild после последней серии правок;
 - затем явный activate;
 - ждать связанный ADS completion, затем свежий TcUnit report;
 - исправлять failed tests;

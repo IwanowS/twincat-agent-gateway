@@ -17,7 +17,16 @@ description: Build, rebuild, clean, and repair TwinCAT PLC projects through Twin
 5. Read the referenced build log only for an infrastructure failure, an
    inconsistent result, or diagnostics that are insufficient to act on.
 
-Build never activates TwinCAT. Keep activation as a separate explicit task.
+For ordinary source validation, stop after a successful build. Build never
+activates TwinCAT. Activate only when the user explicitly requests runtime
+verification or debugging and the remote target is allowed.
+
+A successful Build or Rebuild is reusable evidence for the same profile,
+solution, target, configuration, and platform. Do not repeat it merely because
+activation or linked testing follows. Treat the evidence as invalid after a
+relevant source/project edit, Clean, a failed build, `syncRequired`, a profile
+or target/configuration/platform change, or an XAE disconnect/reconnect.
+
 If the compact result reports `BUILD_BLOCKED_BY_RUNTIME_EXCEPTION`, treat it
 as a diagnostic stop: do not retry and do not recover the runtime
 automatically. Report that the previous PLC artifacts are being preserved and

@@ -9,12 +9,24 @@ description: Explicitly activate and restart an allow-listed remote TwinCAT targ
 2. Confirm the requested profile is activation-enabled and that its exact
    solution and AMS NetId match the intended remote target. The optional target
    name is informational only.
-3. Require a successful recent build for the same profile. Never turn a build
-   request into activation implicitly.
-4. Call `twincat_activate` with the explicit profile. Use `waitForTcUnit:
+3. Activate only for an explicit runtime verification or debugging request;
+   ordinary source validation ends after Build/Rebuild.
+4. Reuse a known successful Build or Rebuild for the same profile, solution,
+   target, configuration, and platform when no relevant edit, Clean, failed
+   build, `syncRequired`, or XAE reconnect followed it. Never rebuild merely
+   because activation is next.
+5. When the profile requires a recent build and the existing evidence is known
+   to be invalid, build once. When its age is merely unknown, let
+   `twincat_activate` enforce the fail-closed `RECENT_BUILD_REQUIRED` preflight;
+   build once and retry once only when that code is returned. Never turn a
+   build-only request into activation implicitly.
+6. Call `twincat_activate` with the explicit profile. Use `waitForTcUnit:
    false` unless the requested workflow includes linked TcUnit execution.
-5. Report the completed physical stages: configuration activation, TwinCAT
+7. Report the completed physical stages: configuration activation, TwinCAT
    restart, and verified runtime postcondition.
+
+The normal reuse sequence is `twincat_status` then `twincat_activate`, with no
+intervening build. Use only the exact gateway tool names documented here.
 
 On failure, call `twincat_get_diagnostics` and report the exact failure stage.
 If the runtime is in `Exception`, do not recover it automatically. Preserve
