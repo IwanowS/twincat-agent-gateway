@@ -77,6 +77,7 @@ public sealed class ProjectProfileCatalog
             ExternalChangePolicy = source.ExternalChangePolicy,
             AllowForceSynchronization =
                 source.AllowForceSynchronization,
+            AllowCloseXae = source.AllowCloseXae,
             AllowDirtyDocumentDiscard =
                 source.AllowDirtyDocumentDiscard,
             AutoSynchronizeBeforeOperation =

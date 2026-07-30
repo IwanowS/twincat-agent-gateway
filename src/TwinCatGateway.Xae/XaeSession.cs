@@ -15,6 +15,7 @@ using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using OleServiceProvider =
     Microsoft.VisualStudio.OLE.Interop.IServiceProvider;
+using DiagnosticsProcess = System.Diagnostics.Process;
 
 namespace TwinCatGateway.Xae;
 
@@ -319,6 +320,80 @@ public sealed class XaeSession : IDisposable
                     retryable: true,
                     stage: "xae.verify"));
         return snapshot;
+    }
+
+    public async Task<CloseXaeResult> CloseAttachedAsync(
+        string solutionPath,
+        int processId,
+        XaeSaveMode saveMode,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+        }
+
+        string normalizedSolution =
+            NormalizeSolutionPath(solutionPath);
+        DateTimeOffset deadlineUtc =
+            DateTimeOffset.UtcNow.Add(timeout);
+        using DiagnosticsProcess? process =
+            TryGetProcess(processId);
+        if (process is null)
+        {
+            return new CloseXaeResult
+            {
+                Ok = true,
+                Solution = normalizedSolution,
+                ProcessId = processId,
+                SaveMode = saveMode,
+                ProcessExited = true,
+            };
+        }
+
+        XaeCloseCommandOutcome command =
+            await _dispatcher.InvokeAsync(
+                () => CloseAttachedOnSta(
+                    normalizedSolution,
+                    processId,
+                    saveMode),
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.close.command"),
+                cancellationToken).ConfigureAwait(false);
+        bool processExited =
+            await WaitForProcessExitAsync(
+                process,
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.close.verify"),
+                cancellationToken).ConfigureAwait(false);
+        if (!processExited)
+        {
+            string commandDetails =
+                string.IsNullOrWhiteSpace(command.Error)
+                    ? string.Empty
+                    : $" Command error: {command.Error}";
+            throw new GatewayOperationException(
+                ErrorCodes.XaeCloseFailed,
+                $"XAE process {processId} did not exit before the "
+                    + $"close deadline.{commandDetails}",
+                retryable: true,
+                stage: "xae.close.verify",
+                details: command.Error);
+        }
+
+        return new CloseXaeResult
+        {
+            Ok = true,
+            Solution = normalizedSolution,
+            ProcessId = processId,
+            SaveMode = saveMode,
+            ProcessExited = true,
+            CommandErrorObserved = command.Error is not null,
+        };
     }
 
     public XaeDialogOperationScope BeginDialogOperation(
@@ -2978,6 +3053,162 @@ public sealed class XaeSession : IDisposable
         }
     }
 
+    private XaeCloseCommandOutcome CloseAttachedOnSta(
+        string normalizedSolution,
+        int processId,
+        XaeSaveMode saveMode)
+    {
+        if (_dte is null
+            || _snapshot.SelectedInstance?.ProcessId != processId)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                $"XAE process {processId} is no longer attached.",
+                retryable: true,
+                stage: "xae.close.verify");
+        }
+
+        string? selectedSolution =
+            NormalizeOptionalPath(
+                _snapshot.SelectedInstance.Solution);
+        if (!string.Equals(
+            selectedSolution,
+            normalizedSolution,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.SolutionMismatch,
+                "The selected XAE solution changed before close.",
+                retryable: true,
+                stage: "xae.close.verify");
+        }
+
+        DTE2 automation = _dte;
+        Solution? solution = null;
+        try
+        {
+            solution = automation.Solution;
+            string? actualSolution =
+                NormalizeOptionalPath(solution.FullName);
+            if (!string.Equals(
+                actualSolution,
+                normalizedSolution,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.SolutionMismatch,
+                    "The active XAE solution changed before close.",
+                    retryable: true,
+                    stage: "xae.close.verify");
+            }
+        }
+        catch
+        {
+            ComObject.Release(solution);
+            throw;
+        }
+
+        Exception? commandError = null;
+        try
+        {
+            ReleaseSilentModeLeaseOnSta();
+            switch (saveMode)
+            {
+                case XaeSaveMode.Save:
+                    solution.Close(true);
+                    automation.Quit();
+                    break;
+                case XaeSaveMode.Discard:
+                    solution.Close(false);
+                    automation.Quit();
+                    break;
+                case XaeSaveMode.Prompt:
+                    automation.Quit();
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(
+                        nameof(saveMode));
+            }
+        }
+        catch (Exception exception)
+        {
+            commandError = exception;
+        }
+        finally
+        {
+            ComObject.Release(solution);
+            try
+            {
+                ReleaseSessionOnSta();
+            }
+            catch (Exception exception)
+            {
+                commandError ??= exception;
+            }
+        }
+
+        return new XaeCloseCommandOutcome
+        {
+            Error = commandError is null
+                ? null
+                : $"{commandError.GetType().FullName}: "
+                    + $"{commandError.Message} "
+                    + $"(HRESULT 0x{commandError.HResult:X8})",
+        };
+    }
+
+    private static DiagnosticsProcess? TryGetProcess(int processId)
+    {
+        try
+        {
+            return DiagnosticsProcess.GetProcessById(processId);
+        }
+        catch (ArgumentException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<bool> WaitForProcessExitAsync(
+        DiagnosticsProcess process,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        if (process.HasExited)
+        {
+            return true;
+        }
+
+        TaskCompletionSource<bool> exited =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler handler = (_, _) => exited.TrySetResult(true);
+        process.EnableRaisingEvents = true;
+        process.Exited += handler;
+        try
+        {
+            if (process.HasExited)
+            {
+                return true;
+            }
+
+            Task delay = Task.Delay(timeout, cancellationToken);
+            Task completed =
+                await Task.WhenAny(exited.Task, delay)
+                    .ConfigureAwait(false);
+            if (completed == exited.Task)
+            {
+                return true;
+            }
+
+            await delay.ConfigureAwait(false);
+            return process.HasExited;
+        }
+        finally
+        {
+            process.Exited -= handler;
+        }
+    }
+
     private void ReleaseSessionOnSta()
     {
         Exception? cleanupException = null;
@@ -3030,6 +3261,11 @@ public sealed class XaeSession : IDisposable
         {
             ExceptionDispatchInfo.Capture(cleanupException).Throw();
         }
+    }
+
+    private sealed class XaeCloseCommandOutcome
+    {
+        public string? Error { get; set; }
     }
 
     private TwinCatSilentModeLease? CreateUserSilentModeLease()

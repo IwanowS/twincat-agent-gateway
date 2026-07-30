@@ -25,6 +25,7 @@ public sealed class McpAdapterTests
         "gateway_start",
         "twincat_activate",
         "twincat_build",
+        "twincat_close_xae",
         "twincat_get_diagnostics",
         "twincat_get_test_results",
         "twincat_get_xae_messages",
@@ -160,6 +161,14 @@ public sealed class McpAdapterTests
                     attribute.Name == "twincat_sync");
         Assert.True(synchronization.Destructive);
         Assert.False(synchronization.ReadOnly);
+        McpServerToolAttribute closeXae =
+            Assert.Single(
+                attributes,
+                attribute =>
+                    attribute.Name == "twincat_close_xae");
+        Assert.True(closeXae.Destructive);
+        Assert.False(closeXae.ReadOnly);
+        Assert.False(closeXae.Idempotent);
         McpServerToolAttribute recovery =
             Assert.Single(
                 attributes,
@@ -239,6 +248,31 @@ public sealed class McpAdapterTests
         Assert.False(
             properties.TryGetProperty(
                 "server",
+                out _));
+    }
+
+    [Fact]
+    public void CloseXaeSchemaContainsOnlySaveMode()
+    {
+        FakeGatewayClient client = new();
+        TwinCatTools target = new(
+            client,
+            new GatewayOperationPoller(client));
+        MethodInfo method =
+            typeof(TwinCatTools).GetMethod(
+                nameof(TwinCatTools.CloseXaeAsync))
+            ?? throw new InvalidOperationException(
+                "XAE close tool method was not found.");
+        McpServerTool tool =
+            McpServerTool.Create(method, target);
+        JsonElement properties =
+            tool.ProtocolTool.InputSchema.GetProperty(
+                "properties");
+
+        Assert.Single(properties.EnumerateObject());
+        Assert.True(
+            properties.TryGetProperty(
+                "saveMode",
                 out _));
     }
 
@@ -463,6 +497,48 @@ public sealed class McpAdapterTests
     }
 
     [Fact]
+    public async Task CloseXaeMapsSaveMode()
+    {
+        FakeGatewayClient client = new()
+        {
+            CloseXaeAccepted = Accepted("close-1"),
+        };
+        client.CloseXaeOperations.Enqueue(
+            Operation(
+                "close-1",
+                OperationState.Succeeded,
+                new CloseXaeResult
+                {
+                    Ok = true,
+                    ProcessExited = true,
+                }));
+        TwinCatTools tools = new(
+            client,
+            new GatewayOperationPoller(client));
+
+        await tools.CloseXaeAsync("discard");
+
+        Assert.Equal(
+            XaeSaveMode.Discard,
+            client.CloseXae?.SaveMode);
+        Assert.Equal(120, client.CloseXae?.TimeoutSeconds);
+    }
+
+    [Fact]
+    public async Task CloseXaeRejectsUnsupportedSaveMode()
+    {
+        FakeGatewayClient client = new();
+        TwinCatTools tools = new(
+            client,
+            new GatewayOperationPoller(client));
+
+        await Assert.ThrowsAsync<McpException>(
+            () => tools.CloseXaeAsync("automatic"));
+
+        Assert.Null(client.CloseXae);
+    }
+
+    [Fact]
     public async Task ResourcePreservesContentAndPagingMetadata()
     {
         const string operationId =
@@ -680,6 +756,14 @@ public sealed class McpAdapterTests
             OperationDetails<SynchronizeResult>>>
             SynchronizeOperations { get; } = new();
 
+        public GatewayResponse<OperationAccepted>
+            CloseXaeAccepted { get; set; } =
+                Accepted("close-1");
+
+        public Queue<GatewayResponse<
+            OperationDetails<CloseXaeResult>>>
+            CloseXaeOperations { get; } = new();
+
         public GatewayResponse<GatewayDiagnosticsResult>
             DiagnosticsResponse { get; set; } =
                 new()
@@ -708,6 +792,8 @@ public sealed class McpAdapterTests
         public BuildParameters? Build { get; private set; }
 
         public SynchronizeParameters? Synchronize { get; private set; }
+
+        public CloseXaeParameters? CloseXae { get; private set; }
 
         public GetDiagnosticsParameters? Diagnostics
         {
@@ -822,6 +908,16 @@ public sealed class McpAdapterTests
             return Task.FromResult(SynchronizeAccepted);
         }
 
+        public Task<GatewayResponse<OperationAccepted>>
+            StartCloseXaeAsync(
+                CloseXaeParameters parameters,
+                CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CloseXae = parameters;
+            return Task.FromResult(CloseXaeAccepted);
+        }
+
         public Task<GatewayResponse<
             OperationDetails<TResult>>>
             GetOperationAsync<TResult>(
@@ -832,7 +928,9 @@ public sealed class McpAdapterTests
             object response =
                 typeof(TResult) == typeof(SynchronizeResult)
                     ? SynchronizeOperations.Dequeue()
-                    : BuildOperations.Dequeue();
+                    : typeof(TResult) == typeof(CloseXaeResult)
+                        ? CloseXaeOperations.Dequeue()
+                        : BuildOperations.Dequeue();
             return Task.FromResult(
                 (GatewayResponse<
                     OperationDetails<TResult>>)response);

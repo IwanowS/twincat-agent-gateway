@@ -464,6 +464,8 @@ public sealed class OperationQueue : IDisposable
                 return GetSolutionOpenEventType(state);
             case OperationKind.Build:
                 return GetBuildEventType(state);
+            case OperationKind.CloseXae:
+                return GetXaeCloseEventType(state);
             case OperationKind.Activate:
                 return GetActivationEventType(state);
             case OperationKind.RecoverToConfig:
@@ -534,6 +536,27 @@ public sealed class OperationQueue : IDisposable
                 return GatewayEventTypes.ActivationTimedOut;
             case OperationState.Cancelled:
                 return GatewayEventTypes.ActivationCancelled;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(state));
+        }
+    }
+
+    private static string GetXaeCloseEventType(OperationState state)
+    {
+        switch (state)
+        {
+            case OperationState.Queued:
+                return GatewayEventTypes.XaeCloseQueued;
+            case OperationState.Running:
+                return GatewayEventTypes.XaeCloseStarted;
+            case OperationState.Succeeded:
+                return GatewayEventTypes.XaeCloseSucceeded;
+            case OperationState.Failed:
+                return GatewayEventTypes.XaeCloseFailed;
+            case OperationState.TimedOut:
+                return GatewayEventTypes.XaeCloseTimedOut;
+            case OperationState.Cancelled:
+                return GatewayEventTypes.XaeCloseCancelled;
             default:
                 throw new ArgumentOutOfRangeException(nameof(state));
         }

@@ -322,6 +322,54 @@ public sealed class TwinCatTools
     }
 
     [McpServerTool(
+        Name = "twincat_close_xae",
+        ReadOnly = false,
+        Destructive = true,
+        Idempotent = false,
+        OpenWorld = false)]
+    [Description(
+        "Explicitly close the exact XAE process selected by the active "
+        + "gateway profile. Requires allowCloseXae; discard also requires "
+        + "allowDirtyDocumentDiscard.")]
+    public async Task<string> CloseXaeAsync(
+        [Description("save, discard, or prompt.")]
+        string saveMode,
+        McpServer? server = null,
+        CancellationToken cancellationToken = default)
+    {
+        CloseXaeParameters parameters = new()
+        {
+            SaveMode = McpGatewayJson.ParseEnum<XaeSaveMode>(
+                saveMode,
+                nameof(saveMode)),
+            TimeoutSeconds = DefaultOperationTimeoutSeconds,
+        };
+        GatewayToolSession session =
+            await ResolveSessionAsync(
+                    server,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        GatewayResponse<OperationAccepted> accepted =
+            await session.Client.StartCloseXaeAsync(
+                    parameters,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        if (!accepted.Ok || accepted.Result is null)
+        {
+            return McpGatewayJson.Serialize(accepted);
+        }
+
+        GatewayResponse<OperationDetails<CloseXaeResult>> completed =
+            await session.Poller.WaitAsync<CloseXaeResult>(
+                    accepted.Result.OperationId,
+                    GetClientWaitTimeout(
+                        DefaultOperationTimeoutSeconds),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        return McpGatewayJson.Serialize(completed);
+    }
+
+    [McpServerTool(
         Name = "twincat_activate",
         Destructive = true,
         Idempotent = false,

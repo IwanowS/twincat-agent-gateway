@@ -550,6 +550,100 @@ public sealed class GatewayApplicationServiceTests
     }
 
     [Fact]
+    public void CloseXaeRequiresProfilePermission()
+    {
+        using ServiceFixture fixture = new(
+            activeProfile: new ProjectProfile
+            {
+                Name = "fixture",
+                AllowCloseXae = false,
+            },
+            closeXaeExecutor: SuccessfulCloseXae);
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.StartCloseXae(
+                    new CloseXaeParameters
+                    {
+                        SaveMode = XaeSaveMode.Prompt,
+                    }));
+
+        Assert.Equal(
+            ErrorCodes.XaeCloseNotAllowed,
+            exception.Code);
+    }
+
+    [Fact]
+    public void CloseXaeDiscardRequiresDiscardPermission()
+    {
+        using ServiceFixture fixture = new(
+            activeProfile: new ProjectProfile
+            {
+                Name = "fixture",
+                AllowCloseXae = true,
+                AllowDirtyDocumentDiscard = false,
+            },
+            closeXaeExecutor: SuccessfulCloseXae);
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => fixture.Service.StartCloseXae(
+                    new CloseXaeParameters
+                    {
+                        SaveMode = XaeSaveMode.Discard,
+                    }));
+
+        Assert.Equal(
+            ErrorCodes.XaeCloseDiscardNotAllowed,
+            exception.Code);
+    }
+
+    [Fact]
+    public async Task CloseXaePublishesTypedLifecycle()
+    {
+        using ServiceFixture fixture = new(
+            activeProfile: new ProjectProfile
+            {
+                Name = "fixture",
+                AllowCloseXae = true,
+            },
+            closeXaeExecutor: SuccessfulCloseXae);
+        fixture.Status.Update(status =>
+        {
+            status.Gateway.State = GatewayState.Ready;
+            status.Xae.Connected = true;
+            return status;
+        });
+
+        OperationAccepted accepted =
+            fixture.Service.StartCloseXae(
+                new CloseXaeParameters
+                {
+                    SaveMode = XaeSaveMode.Save,
+                });
+        StoredOperation completed = await WaitForStateAsync(
+            fixture.Operations,
+            accepted.OperationId,
+            OperationState.Succeeded);
+
+        CloseXaeResult result =
+            Assert.IsType<CloseXaeResult>(completed.Result);
+        Assert.True(result.Ok);
+        Assert.Equal(accepted.OperationId, result.OperationId);
+        Assert.Equal(
+            new[]
+            {
+                GatewayEventTypes.XaeCloseQueued,
+                GatewayEventTypes.XaeCloseStarted,
+                GatewayEventTypes.XaeCloseSucceeded,
+            },
+            fixture.Service.GetDiagnostics(
+                    new GetDiagnosticsParameters())
+                .Events.Select(gatewayEvent =>
+                    gatewayEvent.Type));
+    }
+
+    [Fact]
     public void ActivationFailsClosedWhenProfileDisablesIt()
     {
         ProjectProfile profile = CreateActivationProfile();
@@ -1278,6 +1372,22 @@ public sealed class GatewayApplicationServiceTests
         await completed;
     }
 
+    private static Task<CloseXaeResult> SuccessfulCloseXae(
+        string operationId,
+        CloseXaeParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return Task.FromResult(
+            new CloseXaeResult
+            {
+                Ok = true,
+                OperationId = operationId,
+                SaveMode = parameters.SaveMode,
+                ProcessExited = true,
+            });
+    }
+
     private sealed class ServiceFixture : IDisposable
     {
         private readonly string _temporaryDirectory;
@@ -1294,7 +1404,8 @@ public sealed class GatewayApplicationServiceTests
             SynchronizeOperationExecutor? synchronizeExecutor = null,
             RecoveryOperationExecutor? recoveryExecutor = null,
             XaeMessagesProvider? xaeMessagesProvider = null,
-            Func<string?>? currentLogPathProvider = null)
+            Func<string?>? currentLogPathProvider = null,
+            CloseXaeOperationExecutor? closeXaeExecutor = null)
         {
             _temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -1327,7 +1438,8 @@ public sealed class GatewayApplicationServiceTests
                 synchronizeExecutor,
                 recoveryExecutor,
                 xaeMessagesProvider,
-                currentLogPathProvider);
+                currentLogPathProvider,
+                closeXaeExecutor);
         }
 
         public GatewayStatusSnapshotStore Status { get; }

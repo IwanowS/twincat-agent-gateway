@@ -14,6 +14,52 @@ namespace TwinCatGateway.IntegrationTests;
 
 public sealed class XaeEnvironmentTests
 {
+    [XaeLaunchFact]
+    public async Task GatewayLaunchedXaeClosesByExactProcessIdentity()
+    {
+        string solution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        using XaeSession session = new();
+        XaeSessionSnapshot snapshot =
+            await session.LaunchAsync(
+                solution,
+                Environment.GetEnvironmentVariable(
+                    "TWINCAT_GATEWAY_XAE_PROGID"),
+                TimeSpan.FromSeconds(60),
+                CancellationToken.None);
+        int processId = Assert.IsType<int>(
+            snapshot.SelectedInstance?.ProcessId);
+        bool closed = false;
+        try
+        {
+            CloseXaeResult result =
+                await session.CloseAttachedAsync(
+                    solution,
+                    processId,
+                    XaeSaveMode.Discard,
+                    TimeSpan.FromSeconds(60),
+                    CancellationToken.None);
+
+            closed = result.ProcessExited;
+            Assert.True(result.Ok);
+            Assert.True(result.ProcessExited);
+            Assert.Equal(processId, result.ProcessId);
+            Assert.Equal(XaeSaveMode.Discard, result.SaveMode);
+            Assert.Throws<ArgumentException>(
+                () => Process.GetProcessById(processId));
+        }
+        finally
+        {
+            if (!closed)
+            {
+                await session.CloseGatewayLaunchedAsync(
+                    TimeSpan.FromSeconds(15),
+                    CancellationToken.None);
+            }
+        }
+    }
+
     [XaeFact]
     public async Task RunningXaeIsDiscoverableWithoutLaunching()
     {

@@ -52,6 +52,17 @@ public interface ITwinCatGatewayClient
     }
 
     Task<GatewayResponse<OperationAccepted>>
+        StartCloseXaeAsync(
+            CloseXaeParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        return Task.FromException<
+            GatewayResponse<OperationAccepted>>(
+            new NotSupportedException(
+                "XAE close is not implemented by this client."));
+    }
+
+    Task<GatewayResponse<OperationAccepted>>
         StartActivationAsync(
             ActivateParameters parameters,
             CancellationToken cancellationToken = default);

@@ -23,8 +23,9 @@
       "xaeProgId": "TcXaeShell.DTE.15.0",
       "assumeAttachedXaeSynchronized": true,
       "externalChangePolicy": "reloadModified",
-      "allowAgentForceSynchronization": false,
-      "allowDirtyDocumentDiscard": false,
+      "allowForceSynchronization": true,
+      "allowCloseXae": true,
+      "allowDirtyDocumentDiscard": true,
       "allowActivation": true,
       "expectedTarget": {
         "name": "WIN-T077ADA",
@@ -32,7 +33,7 @@
       },
       "configuration": "Debug",
       "platform": "TwinCAT RT (x64)",
-      "requireRecentSuccessfulBuild": true,
+      "requireRecentSuccessfulBuild": false,
       "recentBuildMaxAgeSeconds": 600,
       "autoWaitForTcUnit": true,
       "tcUnit": {

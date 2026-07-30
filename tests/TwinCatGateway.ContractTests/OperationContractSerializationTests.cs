@@ -45,4 +45,27 @@ public sealed class OperationContractSerializationTests
         Assert.Contains("\"kind\":\"recoverToConfig\"", json);
         Assert.Contains("\"state\":\"timedOut\"", json);
     }
+
+    [Fact]
+    public void XaeCloseContractsUseStableCamelCaseValues()
+    {
+        CloseXaeParameters parameters = new()
+        {
+            SaveMode = XaeSaveMode.Discard,
+            TimeoutSeconds = 45,
+        };
+
+        string json = JsonSerializer.Serialize(
+            parameters,
+            ContractJson.SerializerOptions);
+        CloseXaeParameters? result =
+            JsonSerializer.Deserialize<CloseXaeParameters>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(XaeSaveMode.Discard, result.SaveMode);
+        Assert.Equal(45, result.TimeoutSeconds);
+        Assert.Contains("\"saveMode\":\"discard\"", json);
+    }
 }

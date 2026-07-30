@@ -46,6 +46,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private int? _lastHResult;
     private string? _lastFailureSignature;
     private bool _wasConnected;
+    private int _autoLaunchSuppressed;
     private int _reconnectRequested;
     private int _disposed;
 
@@ -122,7 +123,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         cancellationToken).ConfigureAwait(false)
                     : await _session.EnsureAttachedAsync(
                         _profile.Solution,
-                        _profile.AllowXaeLaunch,
+                        _profile.AllowXaeLaunch
+                            && Volatile.Read(
+                                ref _autoLaunchSuppressed) == 0,
                         _profile.XaeProgId,
                         _profile.AssumeAttachedXaeSynchronized,
                         AttachTimeout,
@@ -520,6 +523,53 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 DateTimeOffset.UtcNow - startedAtUtc)
                 .TotalMilliseconds,
         };
+    }
+
+    public async Task<CloseXaeResult> ExecuteCloseXaeAsync(
+        string operationId,
+        CloseXaeParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
+        DateTimeOffset deadlineUtc = startedAtUtc.AddSeconds(
+            parameters.TimeoutSeconds ?? 120);
+        XaeSessionSnapshot snapshot =
+            await _session.VerifyAttachedAsync(
+                _profile.Solution,
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.close.verify"),
+                cancellationToken).ConfigureAwait(false);
+        DteInstanceInfo selected = snapshot.SelectedInstance
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "The selected XAE process is unavailable.",
+                retryable: true,
+                stage: "xae.close.verify");
+        int processId = selected.ProcessId
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "The selected XAE process identity is unavailable.",
+                retryable: true,
+                stage: "xae.close.verify");
+
+        Interlocked.Exchange(ref _autoLaunchSuppressed, 1);
+        CloseXaeResult result =
+            await _session.CloseAttachedAsync(
+                _profile.Solution,
+                processId,
+                parameters.SaveMode,
+                GetRemaining(
+                    deadlineUtc,
+                    "xae.close.command"),
+                cancellationToken).ConfigureAwait(false);
+        result.OperationId = operationId;
+        result.Profile = _profile.Name;
+        result.DurationMs = (long)(
+            DateTimeOffset.UtcNow - startedAtUtc)
+            .TotalMilliseconds;
+        PublishClosed(processId, parameters.SaveMode);
+        return result;
     }
 
     public async Task<ActivationResult> ExecuteActivationAsync(
@@ -1329,6 +1379,57 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 DateTimeOffset.UtcNow);
         }
 
+    }
+
+    private void PublishClosed(
+        int processId,
+        XaeSaveMode saveMode)
+    {
+        lock (_sync)
+        {
+            _lastSnapshot = new XaeSessionSnapshot();
+            _lastComDiagnostics =
+                CloneCom(_session.GetComDiagnostics());
+            _lastFailureSignature = null;
+            _wasConnected = false;
+        }
+
+        _errorListSnapshots.Replace(
+            Array.Empty<BuildDiagnostic>());
+        _status.Update(status =>
+        {
+            status.Xae.Connected = false;
+            status.Xae.Version = null;
+            status.Xae.Solution = null;
+            status.Xae.AgentWorkspaceOwned = false;
+            status.Xae.DiscardedDocumentCount = 0;
+            status.Xae.SynchronizationState =
+                SynchronizationState.Uninitialized;
+            status.Xae.DirtyDocumentCount = 0;
+            return status;
+        });
+        Dictionary<string, string> properties = new()
+        {
+            ["processId"] = processId.ToString(
+                CultureInfo.InvariantCulture),
+            ["saveMode"] = saveMode.ToString(),
+            ["autoLaunchSuppressed"] = bool.TrueString,
+        };
+        _logger.Write(
+            LogLevel.Information,
+            "xae.closed",
+            "The selected XAE process exited.",
+            properties: properties);
+        _events.Record(
+            new GatewayEvent
+            {
+                Type = GatewayEventTypes.XaeDisconnected,
+                Severity = DiagnosticSeverity.Info,
+                Stage = "xae.close.verify",
+                Message = "The selected XAE process exited.",
+                Properties = properties,
+            },
+            DateTimeOffset.UtcNow);
     }
 
     private void PublishFailure(

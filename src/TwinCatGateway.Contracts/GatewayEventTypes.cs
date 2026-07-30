@@ -56,6 +56,18 @@ public static class GatewayEventTypes
 
     public const string BuildCancelled = "build.cancelled";
 
+    public const string XaeCloseQueued = "xae.closeQueued";
+
+    public const string XaeCloseStarted = "xae.closeStarted";
+
+    public const string XaeCloseSucceeded = "xae.closeSucceeded";
+
+    public const string XaeCloseFailed = "xae.closeFailed";
+
+    public const string XaeCloseTimedOut = "xae.closeTimedOut";
+
+    public const string XaeCloseCancelled = "xae.closeCancelled";
+
     public const string ActivationQueued = "activation.queued";
 
     public const string ActivationStarted = "activation.started";

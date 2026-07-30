@@ -72,6 +72,7 @@ disabled until the operator deliberately changes `allowActivation`.
       "assumeAttachedXaeSynchronized": true,
       "externalChangePolicy": "reloadModified",
       "allowForceSynchronization": false,
+      "allowCloseXae": false,
       "allowDirtyDocumentDiscard": false,
       "autoSynchronizeBeforeOperation": true,
       "requireRecentSuccessfulBuild": true,
@@ -181,7 +182,8 @@ inside the gateway and do not create events or consume model tokens.
 | `assumeAttachedXaeSynchronized` | Boolean, `true` | When attaching to an already open exact XAE solution with no dirty project documents, accepts the current disk graph as the initial baseline without reloading XAE. The operator is responsible for ensuring that the XAE in-memory project model is not stale. `false` requires an explicit synchronization before Build/Rebuild/Clean. |
 | `externalChangePolicy` | `reloadAll`, `reloadModified`, or `error`; `reloadModified` | Reaction to non-generated disk changes found by the authoritative project-graph fingerprint scan. `reloadModified` reloads only modified `.TcPOU`/`.TcGVL`/`.TcDUT` and rejects graph or metadata changes. `reloadAll` permits them and reloads the selected TwinCAT project. `error` rejects every non-noise difference. |
 | `allowForceSynchronization` | Boolean, `false` | Permits the destructive MCP `twincat_sync` operation. The desktop UI may always request synchronization for the selected profile. |
-| `allowDirtyDocumentDiscard` | Boolean, `false` | Allows an explicit build/sync request with `discardDirtyDocuments=true` to close dirty project documents without saving. It never enables automatic saving or automatic discard. |
+| `allowCloseXae` | Boolean, `false` | Permits the destructive MCP `twincat_close_xae` operation to close the exact XAE process selected by normalized `Solution.FullName`. It does not permit force-killing a process. |
+| `allowDirtyDocumentDiscard` | Boolean, `false` | Allows an explicit build/sync request with `discardDirtyDocuments=true`, and is additionally required for `twincat_close_xae(saveMode="discard")`. It never enables automatic discard. |
 | `autoSynchronizeBeforeOperation` | Boolean, `true` | Runs the authoritative fingerprint scan and policy-controlled typed reload before Build/Rebuild/Clean and activation. It never saves or automatically discards dirty XAE documents. Set to `false` only when the operator deliberately accepts responsibility for keeping the XAE project model synchronized with disk. |
 | `requireRecentSuccessfulBuild` | Boolean, `true` | Requires a recent successful build before activation. |
 | `recentBuildMaxAgeSeconds` | integer, `600` | Maximum age of that build. Must be positive when the recent-build requirement is enabled. |
@@ -224,10 +226,18 @@ Pass/fail comes from the fresh xUnit report, not from XAE/VSTest exit code.
 - Keep `autoSynchronizeBeforeOperation=true` when agents edit PLC project files
   externally. Disabling it means Build and activation use the current XAE
   project model without automatic pre-action change detection or typed reload.
-- Keep `allowForceSynchronization` and `allowDirtyDocumentDiscard` false
-  unless the operator deliberately accepts those independent capabilities.
-- The gateway never saves an XAE editor buffer. Dirty documents fail with
-  `DIRTY_XAE_DOCUMENT` unless discard was explicitly requested and allowed.
+- Keep `allowForceSynchronization`, `allowCloseXae`, and
+  `allowDirtyDocumentDiscard` false unless the operator deliberately accepts
+  those independent capabilities.
+- Build and synchronization never save an XAE editor buffer. Dirty documents
+  fail with `DIRTY_XAE_DOCUMENT` unless discard was explicitly requested and
+  allowed. The separate explicit close operation may save only when invoked
+  with `saveMode="save"`.
+- `twincat_close_xae` accepts `save`, `discard`, or `prompt`. `prompt` leaves
+  the native XAE save decision to the user. Success requires the originally
+  selected PID to exit; the gateway never force-kills it. After a successful
+  explicit close, automatic XAE launch stays suppressed until the gateway is
+  restarted, although a manually opened exact solution can be attached.
 - Local activation, restart, runtime state changes, ADS writes, and arbitrary
   symbol access are outside the MVP.
 - The agent may select a configured profile but may not supply a different

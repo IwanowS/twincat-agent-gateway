@@ -684,6 +684,8 @@ gateway_start
 gateway_shutdown
 twincat_status
 twincat_build
+twincat_sync
+twincat_close_xae
 twincat_activate
 twincat_recover_to_config
 twincat_get_diagnostics

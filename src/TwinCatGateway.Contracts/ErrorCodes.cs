@@ -34,6 +34,11 @@ public static class ErrorCodes
     public const string XaeMultipleMatches = "XAE_MULTIPLE_MATCHES";
     public const string XaeProgIdNotRegistered = "XAE_PROGID_NOT_REGISTERED";
     public const string XaeLaunchFailed = "XAE_LAUNCH_FAILED";
+    public const string XaeCloseNotAllowed =
+        "XAE_CLOSE_NOT_ALLOWED";
+    public const string XaeCloseDiscardNotAllowed =
+        "XAE_CLOSE_DISCARD_NOT_ALLOWED";
+    public const string XaeCloseFailed = "XAE_CLOSE_FAILED";
     public const string XaeSilentModeFailed = "XAE_SILENT_MODE_FAILED";
     public const string XaeWorkspaceOwnershipFailed =
         "XAE_WORKSPACE_OWNERSHIP_FAILED";

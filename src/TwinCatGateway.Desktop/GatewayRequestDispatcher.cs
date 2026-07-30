@@ -153,6 +153,15 @@ public sealed class GatewayRequestDispatcher
                         agentRequest: true);
                 }
 
+            case GatewayMethods.CloseXae:
+                {
+                    CloseXaeParameters parameters =
+                        request.DeserializeParameters<
+                            CloseXaeParameters>(
+                            _serializerOptions);
+                    return _service.StartCloseXae(parameters);
+                }
+
             case GatewayMethods.Activate:
                 {
                     ActivateParameters parameters =

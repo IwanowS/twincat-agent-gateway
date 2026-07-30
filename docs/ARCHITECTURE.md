@@ -1067,6 +1067,18 @@ Dirty XAE buffers всегда имеют приоритет как конфли
 `discardDirtyDocuments=true` и profile
 `allowDirtyDocumentDiscard=true`; результат сообщает paths/count.
 
+Явное закрытие XAE — отдельная destructive operation
+`twincat_close_xae(saveMode)`. Она разрешена только при
+`allowCloseXae=true`, всегда повторно проверяет exact normalized
+`Solution.FullName` и исходный PID. Режим `discard` дополнительно требует
+`allowDirtyDocumentDiscard=true`; `save` сохраняет solution перед `Quit`, а
+`prompt` вызывает штатный XAE prompt без автоматического выбора. Успех
+определяется исчезновением именно захваченного процесса, даже если DTE
+сообщил ошибку во время завершения. Gateway не вызывает `Process.Kill`.
+После explicit close автоматический launch подавлен до перезапуска gateway,
+чтобы coordinator не открыл только что закрытый XAE заново; вручную открытая
+exact solution по-прежнему может быть присоединена.
+
 После проверки exact `Solution.FullName` и построения выбранного project graph
 gateway до публикации `Ready` захватывает attach-scoped file-change guard:
 
@@ -1372,6 +1384,7 @@ gateway_shutdown
 twincat_status
 twincat_build
 twincat_sync
+twincat_close_xae
 twincat_activate
 twincat_recover_to_config
 twincat_get_diagnostics

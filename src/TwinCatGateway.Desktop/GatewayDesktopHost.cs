@@ -115,6 +115,10 @@ public sealed class GatewayDesktopHost : IDisposable
             _xaeCoordinator is null
                 ? null
                 : _xaeCoordinator.ExecuteSynchronizationAsync;
+        CloseXaeOperationExecutor? closeXaeExecutor =
+            _xaeCoordinator is null
+                ? null
+                : _xaeCoordinator.ExecuteCloseXaeAsync;
         TcUnitPreparationExecutor?
             tcUnitPreparationExecutor =
                 _xaeCoordinator is null
@@ -146,7 +150,8 @@ public sealed class GatewayDesktopHost : IDisposable
             synchronizeExecutor: synchronizeExecutor,
             recoveryExecutor: recoveryExecutor,
             xaeMessagesProvider: xaeMessagesProvider,
-            currentLogPathProvider: () => _logging.Path);
+            currentLogPathProvider: () => _logging.Path,
+            closeXaeExecutor: closeXaeExecutor);
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
             Configuration.AgentProcessControl.AllowShutdown,

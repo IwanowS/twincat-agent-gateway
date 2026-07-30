@@ -9,6 +9,7 @@ public static class GatewayMethods
     public const string GetXaeMessages = "getXaeMessages";
     public const string Build = "build";
     public const string Synchronize = "synchronize";
+    public const string CloseXae = "closeXae";
     public const string Activate = "activate";
     public const string RecoverToConfig = "recoverToConfig";
     public const string GetTestResults = "getTestResults";

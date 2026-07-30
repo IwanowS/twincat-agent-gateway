@@ -28,6 +28,11 @@ public delegate Task<SynchronizeResult> SynchronizeOperationExecutor(
     SynchronizeParameters parameters,
     CancellationToken cancellationToken);
 
+public delegate Task<CloseXaeResult> CloseXaeOperationExecutor(
+    string operationId,
+    CloseXaeParameters parameters,
+    CancellationToken cancellationToken);
+
 public delegate Task<XaeMessagesResult> XaeMessagesProvider(
     GetXaeMessagesParameters parameters,
     CancellationToken cancellationToken);
@@ -44,6 +49,7 @@ public sealed class GatewayApplicationService
     private readonly BuildOperationExecutor? _buildExecutor;
     private readonly ActivationOperationExecutor? _activationExecutor;
     private readonly SynchronizeOperationExecutor? _synchronizeExecutor;
+    private readonly CloseXaeOperationExecutor? _closeXaeExecutor;
     private readonly RecoveryOperationExecutor? _recoveryExecutor;
     private readonly XaeMessagesProvider? _xaeMessagesProvider;
     private readonly TcUnitPreparationExecutor?
@@ -73,7 +79,8 @@ public sealed class GatewayApplicationService
         SynchronizeOperationExecutor? synchronizeExecutor = null,
         RecoveryOperationExecutor? recoveryExecutor = null,
         XaeMessagesProvider? xaeMessagesProvider = null,
-        Func<string?>? currentLogPathProvider = null)
+        Func<string?>? currentLogPathProvider = null,
+        CloseXaeOperationExecutor? closeXaeExecutor = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -89,6 +96,7 @@ public sealed class GatewayApplicationService
         _buildExecutor = buildExecutor;
         _activationExecutor = activationExecutor;
         _synchronizeExecutor = synchronizeExecutor;
+        _closeXaeExecutor = closeXaeExecutor;
         _recoveryExecutor = recoveryExecutor;
         _xaeMessagesProvider = xaeMessagesProvider;
         _tcUnitPreparationExecutor =
@@ -520,6 +528,74 @@ public sealed class GatewayApplicationService
                 captured.TimeoutSeconds ?? 120));
     }
 
+    public OperationAccepted StartCloseXae(
+        CloseXaeParameters parameters)
+    {
+        if (parameters is null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (_closeXaeExecutor is null || _activeProfile is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "The XAE close executor is unavailable.",
+                retryable: true,
+                stage: "xae.close.enqueue");
+        }
+
+        if (!_activeProfile.AllowCloseXae)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeCloseNotAllowed,
+                $"Closing XAE is disabled for profile "
+                    + $"'{_activeProfile.Name}'.",
+                stage: "xae.close.policy");
+        }
+
+        if (!Enum.IsDefined(
+            typeof(XaeSaveMode),
+            parameters.SaveMode))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "The XAE save mode is not supported.",
+                stage: "xae.close.validate");
+        }
+
+        if (parameters.SaveMode == XaeSaveMode.Discard
+            && !_activeProfile.AllowDirtyDocumentDiscard)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeCloseDiscardNotAllowed,
+                "Closing XAE with saveMode=discard requires "
+                    + "allowDirtyDocumentDiscard=true.",
+                stage: "xae.close.policy");
+        }
+
+        if (parameters.TimeoutSeconds.HasValue
+            && parameters.TimeoutSeconds.Value <= 0)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "XAE close timeout must be positive.",
+                stage: "xae.close.validate");
+        }
+
+        CloseXaeParameters captured =
+            CloneCloseXaeParameters(parameters);
+        return _queue.Enqueue(
+            OperationKind.CloseXae,
+            (operationId, cancellationToken) =>
+                ExecuteCloseXaeAsync(
+                    operationId,
+                    captured,
+                    cancellationToken),
+            TimeSpan.FromSeconds(
+                (captured.TimeoutSeconds ?? 120) + 5d));
+    }
+
     public OperationDetails<object> GetOperation(string operationId)
     {
         if (string.IsNullOrWhiteSpace(operationId))
@@ -834,6 +910,58 @@ public sealed class GatewayApplicationService
                         SynchronizationState.SyncRequired;
                 }
 
+                return status;
+            });
+        }
+    }
+
+    private async Task<OperationExecutionResult> ExecuteCloseXaeAsync(
+        string operationId,
+        CloseXaeParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        DateTimeOffset startedAtUtc = _clock.UtcNow;
+        _status.Update(status =>
+        {
+            status.Gateway.State = GatewayState.ClosingXae;
+            status.CurrentOperation = new OperationSummary
+            {
+                OperationId = operationId,
+                Kind = OperationKind.CloseXae,
+                State = OperationState.Running,
+                QueuedAtUtc = startedAtUtc,
+                StartedAtUtc = startedAtUtc,
+            };
+            return status;
+        });
+        try
+        {
+            CloseXaeResult result =
+                await _closeXaeExecutor!(
+                    operationId,
+                    parameters,
+                    cancellationToken).ConfigureAwait(false);
+            result.OperationId = operationId;
+            return result.Ok
+                ? OperationExecutionResult.Success(result)
+                : OperationExecutionResult.Failure(
+                    new GatewayError
+                    {
+                        Code = ErrorCodes.XaeCloseFailed,
+                        Message =
+                            "XAE close did not satisfy its postcondition.",
+                        Stage = "xae.close.verify",
+                    },
+                    result);
+        }
+        finally
+        {
+            _status.Update(status =>
+            {
+                status.CurrentOperation = null;
+                status.Gateway.State = status.Xae.Connected
+                    ? GatewayState.Ready
+                    : GatewayState.Disconnected;
                 return status;
             });
         }
@@ -1156,6 +1284,16 @@ public sealed class GatewayApplicationService
             Profile = source.Profile,
             RunAfterActivation = source.RunAfterActivation,
             WaitForTcUnit = source.WaitForTcUnit,
+            TimeoutSeconds = source.TimeoutSeconds,
+        };
+    }
+
+    private static CloseXaeParameters CloneCloseXaeParameters(
+        CloseXaeParameters source)
+    {
+        return new CloseXaeParameters
+        {
+            SaveMode = source.SaveMode,
             TimeoutSeconds = source.TimeoutSeconds,
         };
     }

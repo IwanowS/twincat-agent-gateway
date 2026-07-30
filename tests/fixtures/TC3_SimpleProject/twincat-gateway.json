@@ -21,6 +21,7 @@
       "allowXaeLaunch": true,
       "externalChangePolicy": "reloadModified",
       "allowForceSynchronization": false,
+      "allowCloseXae": false,
       "allowDirtyDocumentDiscard": false,
       "allowActivation": false,
       "requireRecentSuccessfulBuild": true,

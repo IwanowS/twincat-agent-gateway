@@ -11,6 +11,15 @@ namespace TwinCatGateway.UnitTests;
 public sealed class GatewayConfigurationTests
 {
     [Fact]
+    public void XaeClosePermissionsDefaultToFalse()
+    {
+        ProjectProfile profile = new();
+
+        Assert.False(profile.AllowCloseXae);
+        Assert.False(profile.AllowDirtyDocumentDiscard);
+    }
+
+    [Fact]
     public void NewProfileEnablesAutomaticPreOperationSynchronization()
     {
         Assert.True(
@@ -60,6 +69,8 @@ public sealed class GatewayConfigurationTests
             profile.Solution,
             ignoreCase: true);
         Assert.False(profile.AllowActivation);
+        Assert.False(profile.AllowCloseXae);
+        Assert.False(profile.AllowDirtyDocumentDiscard);
         Assert.True(profile.AssumeAttachedXaeSynchronized);
         Assert.Null(profile.ExpectedTarget);
         Assert.Null(profile.TcUnit);
@@ -169,6 +180,7 @@ public sealed class GatewayConfigurationTests
                       "assumeAttachedXaeSynchronized": false,
                       "externalChangePolicy": "reloadAll",
                       "allowForceSynchronization": true,
+                      "allowCloseXae": true,
                       "allowDirtyDocumentDiscard": true,
                       "autoSynchronizeBeforeOperation": false,
                       "expectedTarget": {
@@ -199,6 +211,7 @@ public sealed class GatewayConfigurationTests
                 profile.ExternalChangePolicy);
             Assert.True(
                 profile.AllowForceSynchronization);
+            Assert.True(profile.AllowCloseXae);
             Assert.True(profile.AllowDirtyDocumentDiscard);
             Assert.False(profile.AutoSynchronizeBeforeOperation);
             Assert.Equal("192.168.3.31.1.1", profile.ExpectedTarget?.AmsNetId);
@@ -488,6 +501,7 @@ public sealed class GatewayConfigurationTests
         Assert.False(
             second.AssumeAttachedXaeSynchronized);
         Assert.True(second.AllowForceSynchronization);
+        Assert.True(second.AllowCloseXae);
         Assert.True(second.AllowDirtyDocumentDiscard);
         Assert.False(second.AutoSynchronizeBeforeOperation);
     }
@@ -509,6 +523,7 @@ public sealed class GatewayConfigurationTests
                     ExternalChangePolicy =
                         ExternalChangePolicy.ReloadAll,
                     AllowForceSynchronization = true,
+                    AllowCloseXae = true,
                     AllowDirtyDocumentDiscard = true,
                     AutoSynchronizeBeforeOperation = false,
                     ExpectedTarget = new TargetIdentity

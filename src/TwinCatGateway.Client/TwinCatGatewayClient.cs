@@ -135,6 +135,22 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
     }
 
     public Task<GatewayResponse<OperationAccepted>>
+        StartCloseXaeAsync(
+            CloseXaeParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(parameters);
+
+        return _client.SendAsync<
+            CloseXaeParameters,
+            OperationAccepted>(
+            GatewayMethods.CloseXae,
+            parameters,
+            wait: false,
+            cancellationToken);
+    }
+
+    public Task<GatewayResponse<OperationAccepted>>
         StartRecoverToConfigAsync(
             RecoverToConfigParameters parameters,
             CancellationToken cancellationToken = default)

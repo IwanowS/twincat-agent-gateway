@@ -8,6 +8,7 @@ public enum GatewayState
     OpeningSolution,
     Ready,
     Building,
+    ClosingXae,
     Activating,
     RecoveringToConfig,
     Testing,

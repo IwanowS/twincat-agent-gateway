@@ -1,5 +1,13 @@
 # Release notes
 
+## Unreleased
+
+- Added permission-gated `twincat_close_xae` with `save`, `discard`, and
+  user-driven `prompt` modes. The operation targets the exact selected XAE PID,
+  never force-kills it, and requires `allowDirtyDocumentDiscard` for discard.
+- Renamed `allowAgentForceSynchronization` to
+  `allowForceSynchronization`.
+
 ## 0.1.22
 
 - Added the read-only `twincat_get_xae_messages` MCP tool for bounded

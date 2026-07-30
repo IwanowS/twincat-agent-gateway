@@ -113,6 +113,8 @@ public sealed class ProjectProfile
 
     public bool AllowForceSynchronization { get; set; }
 
+    public bool AllowCloseXae { get; set; }
+
     public bool AllowDirtyDocumentDiscard { get; set; }
 
     public bool AutoSynchronizeBeforeOperation { get; set; } = true;
