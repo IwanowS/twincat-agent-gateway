@@ -15,6 +15,12 @@ namespace TwinCatGateway.Xae;
 
 public sealed class ExternalChangeSynchronizationResult
 {
+    internal static ExternalChangeSynchronizationResult None { get; } =
+        new(
+            Array.Empty<ProjectFileChange>(),
+            Array.Empty<string>(),
+            Array.Empty<string>());
+
     internal ExternalChangeSynchronizationResult(
         IEnumerable<ProjectFileChange> detectedChanges,
         IEnumerable<string> synchronizedDocuments,

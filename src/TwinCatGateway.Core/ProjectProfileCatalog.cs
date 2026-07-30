@@ -79,6 +79,8 @@ public sealed class ProjectProfileCatalog
                 source.AllowAgentForceSynchronization,
             AllowDirtyDocumentDiscard =
                 source.AllowDirtyDocumentDiscard,
+            AutoSynchronizeBeforeOperation =
+                source.AutoSynchronizeBeforeOperation,
             RequireRecentSuccessfulBuild = source.RequireRecentSuccessfulBuild,
             RecentBuildMaxAgeSeconds = source.RecentBuildMaxAgeSeconds,
             AutoWaitForTcUnit = source.AutoWaitForTcUnit,

@@ -115,6 +115,8 @@ public sealed class ProjectProfile
 
     public bool AllowDirtyDocumentDiscard { get; set; }
 
+    public bool AutoSynchronizeBeforeOperation { get; set; } = true;
+
     public bool RequireRecentSuccessfulBuild { get; set; } = true;
 
     public int RecentBuildMaxAgeSeconds { get; set; } = 600;

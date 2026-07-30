@@ -398,6 +398,7 @@ public sealed class MvpContractSerializationTests
             XaeProgId = "VisualStudio.DTE.16.0",
             AllowActivation = true,
             AssumeAttachedXaeSynchronized = false,
+            AutoSynchronizeBeforeOperation = false,
             ExpectedTarget = new TargetIdentity
             {
                 Name = "WIN-T077ADA",
@@ -419,8 +420,12 @@ public sealed class MvpContractSerializationTests
         Assert.DoesNotContain("\"unsavedDocuments\"", json);
         Assert.True(result.AllowActivation);
         Assert.False(result.AssumeAttachedXaeSynchronized);
+        Assert.False(result.AutoSynchronizeBeforeOperation);
         Assert.Contains(
             "\"assumeAttachedXaeSynchronized\":false",
+            json);
+        Assert.Contains(
+            "\"autoSynchronizeBeforeOperation\":false",
             json);
         Assert.Equal("WIN-T077ADA", result.ExpectedTarget?.Name);
         Assert.Equal("192.168.3.31.1.1", result.ExpectedTarget?.AmsNetId);

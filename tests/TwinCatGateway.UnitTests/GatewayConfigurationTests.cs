@@ -11,6 +11,13 @@ namespace TwinCatGateway.UnitTests;
 public sealed class GatewayConfigurationTests
 {
     [Fact]
+    public void NewProfileEnablesAutomaticPreOperationSynchronization()
+    {
+        Assert.True(
+            new ProjectProfile().AutoSynchronizeBeforeOperation);
+    }
+
+    [Fact]
     public void ShippedExampleIsValidAndActivationSafe()
     {
         string path = Path.Combine(
@@ -163,6 +170,7 @@ public sealed class GatewayConfigurationTests
                       "externalChangePolicy": "reloadAll",
                       "allowAgentForceSynchronization": true,
                       "allowDirtyDocumentDiscard": true,
+                      "autoSynchronizeBeforeOperation": false,
                       "expectedTarget": {
                         "name": "WIN-T077ADA",
                         "amsNetId": "192.168.3.31.1.1"
@@ -192,6 +200,7 @@ public sealed class GatewayConfigurationTests
             Assert.True(
                 profile.AllowAgentForceSynchronization);
             Assert.True(profile.AllowDirtyDocumentDiscard);
+            Assert.False(profile.AutoSynchronizeBeforeOperation);
             Assert.Equal("192.168.3.31.1.1", profile.ExpectedTarget?.AmsNetId);
             Assert.Equal(ZeroTestsPolicy.Warn, profile.TcUnit?.ZeroTests);
         }
@@ -480,6 +489,7 @@ public sealed class GatewayConfigurationTests
             second.AssumeAttachedXaeSynchronized);
         Assert.True(second.AllowAgentForceSynchronization);
         Assert.True(second.AllowDirtyDocumentDiscard);
+        Assert.False(second.AutoSynchronizeBeforeOperation);
     }
 
     private static GatewayConfiguration CreateValidConfiguration()
@@ -500,6 +510,7 @@ public sealed class GatewayConfigurationTests
                         ExternalChangePolicy.ReloadAll,
                     AllowAgentForceSynchronization = true,
                     AllowDirtyDocumentDiscard = true,
+                    AutoSynchronizeBeforeOperation = false,
                     ExpectedTarget = new TargetIdentity
                     {
                         Name = "WIN-T077ADA",

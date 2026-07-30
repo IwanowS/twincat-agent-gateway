@@ -690,10 +690,14 @@ Gateway намеренно использует DTE command identity
 7. Если runtime находится в `Exception`, завершить activation с
    `RUNTIME_RECOVERY_REQUIRED`. Не выполнять скрытый `RecoverToConfig`:
    пользователь или агент должен отдельно запросить явный переход в Config.
-8. Повторно проверить solution и AMS NetId и один раз вызвать
+8. При `autoSynchronizeBeforeOperation=true` выполнить тот же authoritative
+   fingerprint scan и policy-controlled typed reload, что и перед build.
+   Dirty XAE documents и изменения, запрещённые `externalChangePolicy`,
+   завершают operation до вызова activation command.
+9. Повторно проверить solution и AMS NetId и один раз вызвать
    `DTE2.ExecuteCommand("TwinCAT.ActivateConfiguration")` при выключенном
    Silent Mode.
-9. Обработать только известную последовательность dialogs точного XAE PID:
+10. Обработать только известную последовательность dialogs точного XAE PID:
    - platform mismatch: нажать Cancel и вернуть подробную ошибку;
    - `Activate Configuration`: прочитать tri-state Autostart, не менять его
      и нажать OK;
@@ -702,32 +706,33 @@ Gateway намеренно использует DTE command identity
    - fatal dialog: безопасно закрыть и вернуть ошибку;
    - неизвестный dialog: ничего не подтверждать и завершить operation
      fail-closed.
-10. Не выполнять отдельный `StartRestartTwinCAT()`. При
+11. Не выполнять отдельный `StartRestartTwinCAT()`. При
    `runAfterActivation=true` наблюдать переход, не считая сохранённое до
    команды состояние `Run` доказательством нового запуска. При `false`
    отменить только финальный запрос перехода в Run, не выполнять
    принудительный переход в Config и вернуть фактически наблюдаемое runtime
    state вместе с `activeConfigurationVerified=false`. Состояние `Exception`
    является немедленным terminal failure, а не причиной ждать общий timeout.
-11. При `runAfterActivation=true` определить через XAE PLC projects с
+12. При `runAfterActivation=true` определить через XAE PLC projects с
     `BootProjectAutostart=true` и проверить
     online state каждого такого PLC. Успех требует стабильного `Run` System
     Service и отсутствия `Exception` у всех обязательных Auto Boot PLC.
-12. Прочитать дельту XAE Error List и `GetLastErrorMessages()`. Runtime
+13. Прочитать дельту XAE Error List и `GetLastErrorMessages()`. Runtime
     exception/page fault и связанные ошибки портов являются fatal; warnings
     возвращаются в diagnostics, но сами по себе не делают activation
     неуспешной.
-13. Повторно проверить solution и AMS NetId и обновить XAE/runtime diagnostics.
-14. Записать activation resource и stage events в общую event stream.
-15. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
+14. Повторно проверить solution и AMS NetId и обновить XAE/runtime diagnostics.
+15. Записать activation resource и stage events в общую event stream.
+16. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
 
 Gateway не вызывает `SaveAll` перед activation: при agent-owned workspace
-источником истины являются внешние файлы, синхронизированные и собранные
-предшествующей build operation. Standalone Build и activation остаются
-разными явными операциями: Build никогда не запускает activation. При этом
-сама XAE-команда `TwinCAT.ActivateConfiguration` выполняет внутреннюю сборку
-как обязательную часть UI activation workflow; её diagnostics входят в
-activation result.
+источником истины являются внешние файлы. По умолчанию они сверяются по
+fingerprint и синхронизируются typed reload непосредственно перед каждой
+Build/Rebuild/Clean или activation operation. Standalone Build и activation
+остаются разными явными операциями: Build никогда не запускает activation.
+При этом сама XAE-команда `TwinCAT.ActivateConfiguration` выполняет внутреннюю
+сборку как обязательную часть UI activation workflow; её diagnostics входят
+в activation result.
 
 Error List нельзя трактовать как простой счётчик. Gateway сравнивает снимки до
 и после activation и классифицирует новые строки. Например, TcUnit может

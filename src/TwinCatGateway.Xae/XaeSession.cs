@@ -731,6 +731,7 @@ public sealed class XaeSession : IDisposable
             ExternalChangePolicy.ReloadModified,
             discardDirtyDocuments: false,
             allowDirtyDocumentDiscard: false,
+            autoSynchronizeBeforeOperation: true,
             timeout,
             cancellationToken).ConfigureAwait(false);
     }
@@ -743,22 +744,25 @@ public sealed class XaeSession : IDisposable
         ExternalChangePolicy externalChangePolicy,
         bool discardDirtyDocuments,
         bool allowDirtyDocumentDiscard,
+        bool autoSynchronizeBeforeOperation,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
         DateTimeOffset deadlineUtc = CreateDeadline(timeout);
         ExternalChangeSynchronizationResult synchronization =
-            await SynchronizeExternalChangesAsync(
-                changedPaths,
-                externalChangePolicy,
-                discardDirtyDocuments,
-                allowDirtyDocumentDiscard,
-                force: false,
-                GetRemaining(
-                    deadlineUtc,
-                    "xae.build.synchronize"),
-                cancellationToken).ConfigureAwait(false);
+            autoSynchronizeBeforeOperation
+                ? await SynchronizeExternalChangesAsync(
+                    changedPaths,
+                    externalChangePolicy,
+                    discardDirtyDocuments,
+                    allowDirtyDocumentDiscard,
+                    force: false,
+                    GetRemaining(
+                        deadlineUtc,
+                        "xae.build.synchronize"),
+                    cancellationToken).ConfigureAwait(false)
+                : ExternalChangeSynchronizationResult.None;
         using XaeProjectGraphChangeScope projectChanges =
             BeginProjectGraphChangeTracking();
         Task<XaeBuildEventEvidence> completion =

@@ -23,6 +23,7 @@
       "solution": "Machine.sln",
       "allowXaeLaunch": true,
       "allowActivation": false,
+      "autoSynchronizeBeforeOperation": true,
       "requireRecentSuccessfulBuild": true,
       "recentBuildMaxAgeSeconds": 600,
       "autoWaitForTcUnit": false

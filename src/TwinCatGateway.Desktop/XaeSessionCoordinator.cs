@@ -329,6 +329,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     _profile.ExternalChangePolicy,
                     parameters.DiscardDirtyDocuments,
                     _profile.AllowDirtyDocumentDiscard,
+                    _profile.AutoSynchronizeBeforeOperation,
                     GetRemaining(deadlineUtc, "xae.build"),
                     cancellationToken))
                 .ConfigureAwait(false);
@@ -604,6 +605,35 @@ internal sealed class XaeSessionCoordinator : IDisposable
             initialRuntimeMode,
             details: runtimeExceptionDetails);
         const bool recoveryAttempted = false;
+
+        if (_profile.AutoSynchronizeBeforeOperation)
+        {
+            dialogScope.SetStage("activation.synchronize");
+            try
+            {
+                await dialogScope.ObserveAsync(
+                    _session.SynchronizeExternalChangesAsync(
+                        changedPaths: null,
+                        _profile.ExternalChangePolicy,
+                        discardDirtyDocuments: false,
+                        _profile.AllowDirtyDocumentDiscard,
+                        force: false,
+                        GetRemaining(
+                            deadlineUtc,
+                            "activation.synchronize"),
+                        cancellationToken)).ConfigureAwait(false);
+            }
+            catch (GatewayOperationException exception) when (
+                RequiresSynchronization(exception.Code)
+                || string.Equals(
+                    exception.Stage,
+                    "xae.workspace.settle",
+                    StringComparison.Ordinal))
+            {
+                PublishSynchronizationRequired();
+                throw;
+            }
+        }
 
         dialogScope.SetStage("activation.activateConfiguration");
         RecordActivationEvent(
