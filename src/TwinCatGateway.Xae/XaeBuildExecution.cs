@@ -79,6 +79,7 @@ internal sealed class XaeBuildEventLease : IDisposable
     private readonly SolutionBuild _solutionBuild;
     private readonly XaeOutputSnapshot _outputSnapshot;
     private readonly XaeProjectFileChangeLease _projectFileLease;
+    private readonly bool _requireSolutionScope;
     private readonly IReadOnlyList<BuildDiagnostic>
         _errorListBaseline = Array.Empty<BuildDiagnostic>();
     private vsBuildAction _expectedAction;
@@ -87,10 +88,12 @@ internal sealed class XaeBuildEventLease : IDisposable
     private XaeBuildEventLease(
         DTE2 dte,
         BuildAction requestedAction,
+        bool requireSolutionScope,
         IXaeProjectFileChangeGuard? workspaceGuard)
     {
         _dte = dte;
         _requestedAction = requestedAction;
+        _requireSolutionScope = requireSolutionScope;
         _events = dte.Events;
         _buildEvents = _events.BuildEvents;
         _solution = dte.Solution;
@@ -143,8 +146,32 @@ internal sealed class XaeBuildEventLease : IDisposable
             lease = new XaeBuildEventLease(
                 dte,
                 action,
+                requireSolutionScope: true,
                 workspaceGuard);
             lease.StartFirstPhase();
+            return lease;
+        }
+        catch
+        {
+            lease?.Dispose();
+            throw;
+        }
+    }
+
+    public static XaeBuildEventLease ObserveNext(
+        DTE2 dte,
+        BuildAction action,
+        IXaeProjectFileChangeGuard? workspaceGuard = null)
+    {
+        XaeBuildEventLease? lease = null;
+        try
+        {
+            lease = new XaeBuildEventLease(
+                dte,
+                action,
+                requireSolutionScope: false,
+                workspaceGuard);
+            lease.SetExpectedAction();
             return lease;
         }
         catch
@@ -273,23 +300,18 @@ internal sealed class XaeBuildEventLease : IDisposable
                 stage: "xae.build.start");
         }
 
+        SetExpectedAction();
         switch (_requestedAction)
         {
             case BuildAction.Build:
-                _expectedAction =
-                    vsBuildAction.vsBuildActionBuild;
                 _solutionBuild.Build(
                     WaitForBuildToFinish: false);
                 break;
             case BuildAction.Clean:
-                _expectedAction =
-                    vsBuildAction.vsBuildActionClean;
                 _solutionBuild.Clean(
                     WaitForCleanToFinish: false);
                 break;
             case BuildAction.Rebuild:
-                _expectedAction =
-                    vsBuildAction.vsBuildActionRebuildAll;
                 _dte.ExecuteCommand(
                     "Build.RebuildSolution");
                 break;
@@ -299,26 +321,31 @@ internal sealed class XaeBuildEventLease : IDisposable
         }
     }
 
+    private void SetExpectedAction()
+    {
+        _expectedAction = _requestedAction switch
+        {
+            BuildAction.Build =>
+                vsBuildAction.vsBuildActionBuild,
+            BuildAction.Clean =>
+                vsBuildAction.vsBuildActionClean,
+            BuildAction.Rebuild =>
+                vsBuildAction.vsBuildActionRebuildAll,
+            _ => throw new ArgumentOutOfRangeException(
+                nameof(_requestedAction)),
+        };
+    }
+
     private void OnBuildDone(
         vsBuildScope scope,
         vsBuildAction action)
     {
-        if (action != _expectedAction)
-        {
-            return;
-        }
-
-        if ((action == vsBuildAction.vsBuildActionBuild
-                || action
-                    == vsBuildAction.vsBuildActionRebuildAll)
-            && scope != vsBuildScope.vsBuildScopeSolution)
-        {
-            return;
-        }
-
-        if (action == vsBuildAction.vsBuildActionClean
-            && _solutionBuild.BuildState
-                != vsBuildState.vsBuildStateDone)
+        if (!IsCompletionEvent(
+                _requireSolutionScope,
+                _expectedAction,
+                scope,
+                action,
+                _solutionBuild.BuildState))
         {
             return;
         }
@@ -334,6 +361,32 @@ internal sealed class XaeBuildEventLease : IDisposable
         {
             _completion.TrySetException(exception);
         }
+    }
+
+    internal static bool IsCompletionEvent(
+        bool requireSolutionScope,
+        vsBuildAction expectedAction,
+        vsBuildScope scope,
+        vsBuildAction action,
+        vsBuildState buildState)
+    {
+        if (action != expectedAction)
+        {
+            return false;
+        }
+
+        if (requireSolutionScope
+            && (action == vsBuildAction.vsBuildActionBuild
+                || action
+                    == vsBuildAction.vsBuildActionRebuildAll)
+            && scope != vsBuildScope.vsBuildScopeSolution)
+        {
+            return false;
+        }
+
+        return (requireSolutionScope
+                && action != vsBuildAction.vsBuildActionClean)
+            || buildState == vsBuildState.vsBuildStateDone;
     }
 
     private static bool IsEquivalentDiagnostic(

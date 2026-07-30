@@ -457,6 +457,37 @@ public sealed class MvpContractSerializationTests
             ObservedRuntimeMode = RuntimeMode.Run,
             AutostartBootProjects =
                 AutostartBootProjectSelection.PartiallyEnabled,
+            Compile = new ActivationCompileResult
+            {
+                Completed = true,
+                Ok = false,
+                DurationMs = 321,
+                FailedProjects = 1,
+                Counts = new DiagnosticCounts
+                {
+                    Errors = 1,
+                    Warnings = 2,
+                },
+                Diagnostics =
+                {
+                    new BuildDiagnostic
+                    {
+                        Severity = DiagnosticSeverity.Error,
+                        Code = "C0001",
+                        Message = "Expected ';'.",
+                        File = @"C:\Projects\Machine\MAIN.TcPOU",
+                        Line = 12,
+                        Column = 7,
+                    },
+                },
+                Log = new ResourceReference
+                {
+                    Uri =
+                        "twincat-log://operation-activate/build",
+                    OperationId = "operation-activate",
+                    Kind = ResourceKind.BuildLog,
+                },
+            },
             Resources =
             {
                 new ResourceReference
@@ -491,6 +522,16 @@ public sealed class MvpContractSerializationTests
         Assert.Equal(
             AutostartBootProjectSelection.PartiallyEnabled,
             result.AutostartBootProjects);
+        Assert.NotNull(result.Compile);
+        Assert.True(result.Compile.Completed);
+        Assert.False(result.Compile.Ok);
+        Assert.Equal(1, result.Compile.Counts.Errors);
+        Assert.Equal(
+            @"C:\Projects\Machine\MAIN.TcPOU",
+            Assert.Single(result.Compile.Diagnostics).File);
+        Assert.Equal(
+            ResourceKind.BuildLog,
+            result.Compile.Log?.Kind);
         Assert.Contains(
             "\"completion\":\"restartSkipped\"",
             json);
@@ -500,9 +541,10 @@ public sealed class MvpContractSerializationTests
         Assert.Contains(
             "\"autostartBootProjects\":\"partiallyEnabled\"",
             json);
-        Assert.Equal(
-            ResourceKind.ActivationLog,
-            Assert.Single(result.Resources).Kind);
+        Assert.Contains(
+            result.Resources,
+            resource =>
+                resource.Kind == ResourceKind.ActivationLog);
         Assert.DoesNotContain("\"timeline\"", json);
     }
 

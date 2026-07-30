@@ -788,6 +788,122 @@ public sealed class GatewayApplicationServiceTests
     }
 
     [Fact]
+    public async Task ActivationCompileFailureIsNotActivated()
+    {
+        DateTimeOffset now = new(
+            2026,
+            7,
+            28,
+            2,
+            0,
+            0,
+            TimeSpan.Zero);
+        ProjectProfile profile = CreateActivationProfile();
+        const string buildLog =
+            "twincat-log://operation-placeholder/build";
+        using ServiceFixture fixture = new(
+            activationExecutor: (
+                operationId,
+                parameters,
+                cancellationToken) =>
+                Task.FromResult(
+                    new ActivationResult
+                    {
+                        Ok = false,
+                        OperationId = operationId,
+                        Profile = parameters.Profile,
+                        Completion = ActivationCompletion.Unknown,
+                        ActiveConfigurationVerified = false,
+                        Compile = new ActivationCompileResult
+                        {
+                            Completed = true,
+                            Ok = false,
+                            FailedProjects = 1,
+                            Counts = new DiagnosticCounts
+                            {
+                                Errors = 1,
+                            },
+                            Diagnostics =
+                            {
+                                new BuildDiagnostic
+                                {
+                                    Severity =
+                                        DiagnosticSeverity.Error,
+                                    Code = "C0001",
+                                    Message = "Expected ';'.",
+                                },
+                            },
+                            Log = new ResourceReference
+                            {
+                                Uri = buildLog,
+                                OperationId = operationId,
+                                Kind = ResourceKind.BuildLog,
+                            },
+                        },
+                        Resources =
+                        {
+                            new ResourceReference
+                            {
+                                Uri = buildLog,
+                                OperationId = operationId,
+                                Kind = ResourceKind.BuildLog,
+                            },
+                        },
+                    }),
+            activeProfile: profile,
+            clock: new TestClock(now));
+        SeedBuild(
+            fixture.Operations,
+            "build-success",
+            BuildAction.Build,
+            now.AddMinutes(-1));
+        fixture.Status.Update(status =>
+        {
+            status.Xae.Connected = true;
+            status.Gateway.State = GatewayState.Ready;
+            return status;
+        });
+
+        OperationAccepted accepted =
+            fixture.Service.StartActivation(
+                new ActivateParameters
+                {
+                    Profile = profile.Name,
+                });
+        StoredOperation completed = await WaitForStateAsync(
+            fixture.Operations,
+            accepted.OperationId,
+            OperationState.Failed);
+
+        Assert.Equal(
+            ErrorCodes.BuildFailed,
+            completed.Summary.Error?.Code);
+        Assert.Equal(
+            "activation.compile",
+            completed.Summary.Error?.Stage);
+        Assert.Equal(
+            buildLog,
+            completed.Summary.Error?.RawLogRef);
+        ActivationResult result =
+            Assert.IsType<ActivationResult>(completed.Result);
+        Assert.False(result.Ok);
+        Assert.Equal(
+            ActivationCompletion.Unknown,
+            result.Completion);
+        Assert.False(result.ActiveConfigurationVerified);
+        Assert.False(result.Compile?.Ok);
+        Assert.Equal(
+            GatewayEventTypes.ActivationFailed,
+            fixture.Events
+                .ReadAfter(null, 0, 100)
+                .Events
+                .Last(gatewayEvent =>
+                    gatewayEvent.OperationId
+                    == accepted.OperationId)
+                .Type);
+    }
+
+    [Fact]
     public async Task ActivationPublishesLifecycleAndSummary()
     {
         DateTimeOffset now = new(

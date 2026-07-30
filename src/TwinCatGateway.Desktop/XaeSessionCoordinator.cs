@@ -697,6 +697,89 @@ internal sealed class XaeSessionCoordinator : IDisposable
             }
         }
 
+        XaeBuildExecutionResult activationBuild =
+            command.Build
+            ?? throw new GatewayOperationException(
+                ErrorCodes.BuildResultInconsistent,
+                "XAE activation completed without internal build evidence.",
+                retryable: true,
+                stage: "activation.compile.verify");
+        ActivationCompileResult compile =
+            CreateActivationCompileResult(
+                operationId,
+                activationBuild);
+        if (!compile.Ok)
+        {
+            runtime = ReadRuntimeStatus(snapshot);
+            long failedDurationMs = Math.Max(
+                0,
+                (long)(DateTimeOffset.UtcNow - startedAtUtc)
+                    .TotalMilliseconds);
+            ResourceReference failedLog = _logs.WriteText(
+                operationId,
+                ResourceKind.ActivationLog,
+                FormatActivationLog(
+                    operationId,
+                    expectedAmsNetId,
+                    recoveryAttempted,
+                    initialRuntimeMode,
+                    parameters.RunAfterActivation,
+                    command.AutostartSelection,
+                    command.Dialogs,
+                    compile,
+                    ActivationCompletion.Unknown,
+                    activeConfigurationVerified: false,
+                    runtime,
+                    failedDurationMs));
+            ActivationResult failed = new()
+            {
+                Ok = false,
+                OperationId = operationId,
+                DurationMs = failedDurationMs,
+                Profile = _profile.Name,
+                Solution = _profile.Solution,
+                Target = new TargetIdentity
+                {
+                    Name = _profile.ExpectedTarget?.Name,
+                    AmsNetId = expectedAmsNetId,
+                },
+                RecoveryAttempted = recoveryAttempted,
+                RunAfterActivation =
+                    parameters.RunAfterActivation,
+                Completion = ActivationCompletion.Unknown,
+                ActiveConfigurationVerified = false,
+                ObservedRuntimeMode = runtime.Status.Mode,
+                AutostartBootProjects =
+                    command.AutostartSelection,
+                Compile = compile,
+                Resources =
+                {
+                    failedLog,
+                    compile.Log!,
+                },
+            };
+            _logger.Write(
+                LogLevel.Warning,
+                "activation.compile.failed",
+                "TwinCAT activation stopped because its internal build "
+                    + "completed with errors.",
+                operationId,
+                properties: new Dictionary<string, string>
+                {
+                    ["profile"] = _profile.Name,
+                    ["solution"] = _profile.Solution,
+                    ["amsNetId"] = expectedAmsNetId,
+                    ["errors"] = compile.Counts.Errors.ToString(
+                        CultureInfo.InvariantCulture),
+                    ["warnings"] = compile.Counts.Warnings.ToString(
+                        CultureInfo.InvariantCulture),
+                    ["failedProjects"] =
+                        compile.FailedProjects.ToString(
+                            CultureInfo.InvariantCulture),
+                });
+            return failed;
+        }
+
         dialogScope.SetStage("activation.verify");
         if (parameters.RunAfterActivation)
         {
@@ -779,6 +862,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 parameters.RunAfterActivation,
                 command.AutostartSelection,
                 command.Dialogs,
+                compile,
                 completion,
                 activeConfigurationVerified,
                 runtime,
@@ -804,9 +888,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ObservedRuntimeMode = runtime.Status.Mode,
             AutostartBootProjects =
                 command.AutostartSelection,
+            Compile = compile,
             Resources =
             {
                 log,
+                compile.Log!,
             },
         };
         _logger.Write(
@@ -2052,6 +2138,61 @@ internal sealed class XaeSessionCoordinator : IDisposable
         });
     }
 
+    private ActivationCompileResult CreateActivationCompileResult(
+        string operationId,
+        XaeBuildExecutionResult execution)
+    {
+        List<BuildDiagnostic> diagnostics =
+            execution.Diagnostics.ToList();
+        int errors = diagnostics.Count(diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Error);
+        if (execution.FailedProjects > 0
+            && errors == 0)
+        {
+            diagnostics.Add(
+                new BuildDiagnostic
+                {
+                    Severity = DiagnosticSeverity.Error,
+                    Source = "xae-activation-build",
+                    Message = execution.FailedProjects == 1
+                        ? "One project failed during activation; XAE Error "
+                            + "List did not expose compiler diagnostics."
+                        : $"{execution.FailedProjects} projects failed "
+                            + "during activation; XAE Error List did not "
+                            + "expose compiler diagnostics.",
+                });
+            errors = 1;
+        }
+
+        int warnings = diagnostics.Count(diagnostic =>
+            diagnostic.Severity == DiagnosticSeverity.Warning);
+        const int maximumDiagnostics = 50;
+        ResourceReference log = _logs.WriteText(
+            operationId,
+            ResourceKind.BuildLog,
+            FormatBuildOutput(execution.Output));
+        return new ActivationCompileResult
+        {
+            Completed = true,
+            Ok = execution.FailedProjects == 0
+                && errors == 0,
+            DurationMs = execution.DurationMs,
+            FailedProjects = execution.FailedProjects,
+            Counts = new DiagnosticCounts
+            {
+                Errors = errors,
+                Warnings = warnings,
+            },
+            Diagnostics = diagnostics
+                .Take(maximumDiagnostics)
+                .ToList(),
+            MoreDiagnostics = Math.Max(
+                0,
+                diagnostics.Count - maximumDiagnostics),
+            Log = log,
+        };
+    }
+
     private string FormatActivationLog(
         string operationId,
         string amsNetId,
@@ -2060,6 +2201,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         bool runAfterActivation,
         AutostartBootProjectSelection autostartSelection,
         IReadOnlyList<XaeDialogObservation> dialogs,
+        ActivationCompileResult compile,
         ActivationCompletion completion,
         bool activeConfigurationVerified,
         AdsRuntimeStatusReadResult runtime,
@@ -2083,6 +2225,15 @@ internal sealed class XaeSessionCoordinator : IDisposable
             $"RunAfterActivation: {runAfterActivation}");
         builder.AppendLine(
             $"AutostartBootProjects: {autostartSelection}");
+        builder.AppendLine(
+            $"CompileCompleted: {compile.Completed}");
+        builder.AppendLine($"CompileOk: {compile.Ok}");
+        builder.AppendLine(
+            $"CompileFailedProjects: {compile.FailedProjects}");
+        builder.AppendLine(
+            $"CompileErrors: {compile.Counts.Errors}");
+        builder.AppendLine(
+            $"CompileWarnings: {compile.Counts.Warnings}");
         builder.AppendLine($"Completion: {completion}");
         builder.AppendLine(
             $"ActiveConfigurationVerified: "

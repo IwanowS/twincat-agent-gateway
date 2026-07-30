@@ -137,13 +137,22 @@ public sealed class DesktopGatewayActivationTests
             expectedAmsNetId,
             completed.Result?.Target.AmsNetId);
         Assert.Null(completed.Result?.Target.Name);
+        Assert.True(completed.Result?.Compile?.Completed);
+        Assert.True(completed.Result?.Compile?.Ok);
+        Assert.Equal(
+            0,
+            completed.Result?.Compile?.Counts.Errors);
         Assert.Equal(
             RuntimeMode.Run,
             diagnostics.Status.TwinCat.Mode);
-        Assert.Equal(
-            ResourceKind.ActivationLog,
-            Assert.Single(
-                completed.Result!.Resources).Kind);
+        Assert.Contains(
+            completed.Result!.Resources,
+            resource =>
+                resource.Kind == ResourceKind.ActivationLog);
+        Assert.Contains(
+            completed.Result.Resources,
+            resource =>
+                resource.Kind == ResourceKind.BuildLog);
         Assert.Equal(
             new[]
             {
@@ -248,9 +257,17 @@ public sealed class DesktopGatewayActivationTests
                 RuntimeMode.Config,
             });
         Assert.Null(result.TestOperationId);
-        Assert.Equal(
-            ResourceKind.ActivationLog,
-            Assert.Single(result.Resources).Kind);
+        Assert.True(result.Compile?.Completed);
+        Assert.True(result.Compile?.Ok);
+        Assert.Equal(0, result.Compile?.Counts.Errors);
+        Assert.Contains(
+            result.Resources,
+            resource =>
+                resource.Kind == ResourceKind.ActivationLog);
+        Assert.Contains(
+            result.Resources,
+            resource =>
+                resource.Kind == ResourceKind.BuildLog);
 
         GatewayEvent runDialog = Assert.Single(
             diagnostics.Events,
@@ -301,6 +318,108 @@ public sealed class DesktopGatewayActivationTests
         Assert.DoesNotContain(
             GatewayEventTypes.ActivationRestartRequested,
             eventTypes);
+    }
+
+    [RemoteActivationLaunchFact]
+    public async Task ActivationCompileFailureIsReturnedWithoutActivation()
+    {
+        using TemporaryDirectory temporary = new();
+        string solutionPath = GetSolutionPath();
+        string sourcePath =
+            GetFaultInjectionSourcePath(solutionPath);
+        byte[] originalSource =
+            File.ReadAllBytes(sourcePath);
+        byte[] invalidSource =
+            ReplaceUniqueAsciiToken(
+                originalSource,
+                "TcUnit.RUN();",
+                "TcUnit.RUN(;)");
+        string expectedAmsNetId =
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_REMOTE_AMS_NET_ID")!;
+        string pipeName = CreatePipeName();
+        string configurationPath = WriteConfiguration(
+            temporary.Path,
+            pipeName,
+            solutionPath,
+            expectedAmsNetId,
+            requireRecentBuild: false,
+            allowXaeLaunch: true);
+        using GatewayDesktopHost host = StartHost(
+            configurationPath);
+        using GatewayOwnedXaeCleanup cleanup = new(host);
+        await WaitForStateAsync(
+            host,
+            GatewayState.Ready,
+            TimeSpan.FromSeconds(60));
+        NamedPipeGatewayClient client = new(pipeName);
+        await SynchronizeDiskAsync(host, client);
+
+        OperationDetails<ActivationResult>? completed = null;
+        try
+        {
+            File.WriteAllBytes(
+                sourcePath,
+                invalidSource);
+            OperationAccepted accepted =
+                await StartActivationAsync(
+                    client,
+                    TimeSpan.FromSeconds(180));
+            completed =
+                await WaitForOperationAsync<ActivationResult>(
+                    client,
+                    accepted.OperationId,
+                    TimeSpan.FromSeconds(195));
+
+            Assert.Equal(
+                OperationState.Failed,
+                completed.Operation.State);
+            Assert.Equal(
+                ErrorCodes.BuildFailed,
+                completed.Operation.Error?.Code);
+            Assert.Equal(
+                "activation.compile",
+                completed.Operation.Error?.Stage);
+            ActivationResult result =
+                Assert.IsType<ActivationResult>(
+                    completed.Result);
+            Assert.False(result.Ok);
+            Assert.Equal(
+                ActivationCompletion.Unknown,
+                result.Completion);
+            Assert.False(
+                result.ActiveConfigurationVerified);
+            Assert.Null(result.TestOperationId);
+            Assert.True(result.Compile?.Completed);
+            Assert.False(result.Compile?.Ok);
+            Assert.True(
+                result.Compile?.Counts.Errors > 0);
+            Assert.NotEmpty(
+                result.Compile!.Diagnostics);
+            Assert.Equal(
+                ResourceKind.BuildLog,
+                result.Compile.Log?.Kind);
+            Assert.DoesNotContain(
+                GatewayEventTypes.ActivationConfigurationActivated,
+                GetOperationEventTypes(
+                    host.ApplicationService.GetDiagnostics(),
+                    accepted.OperationId));
+        }
+        finally
+        {
+            File.WriteAllBytes(
+                sourcePath,
+                originalSource);
+            await SynchronizeDiskAsync(host, client);
+        }
+
+        GatewayDiagnosticsResult diagnostics =
+            host.ApplicationService.GetDiagnostics();
+        int processId = GetSelectedProcessId(diagnostics);
+        Assert.Empty(
+            XaeWindowProbe.FindModalDialogs(processId));
+        await cleanup.CloseAsync();
+        Assert.NotNull(completed);
     }
 
     [RemoteFaultRecoveryFact]

@@ -54,9 +54,30 @@ public sealed class ActivationResult
 
     public AutostartBootProjectSelection AutostartBootProjects { get; set; }
 
+    public ActivationCompileResult? Compile { get; set; }
+
     public string? TestOperationId { get; set; }
 
     public List<ResourceReference> Resources { get; set; } = new();
+}
+
+public sealed class ActivationCompileResult
+{
+    public bool Completed { get; set; }
+
+    public bool Ok { get; set; }
+
+    public long DurationMs { get; set; }
+
+    public int FailedProjects { get; set; }
+
+    public DiagnosticCounts Counts { get; set; } = new();
+
+    public List<BuildDiagnostic> Diagnostics { get; set; } = new();
+
+    public int MoreDiagnostics { get; set; }
+
+    public ResourceReference? Log { get; set; }
 }
 
 public sealed class ActivationSummary

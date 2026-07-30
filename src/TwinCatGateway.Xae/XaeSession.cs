@@ -386,47 +386,94 @@ public sealed class XaeSession : IDisposable
         string normalizedSolution =
             NormalizeSolutionPath(solutionPath);
         DateTimeOffset deadlineUtc = CreateDeadline(timeout);
-        Task activation = _dispatcher.InvokeAsync(
-            () =>
-            {
-                ActivateConfigurationOnSta(
-                    normalizedSolution,
-                    expectedAmsNetId);
-                return true;
-            },
-            GetRemaining(
+        Task<XaeBuildEventEvidence> buildCompletion =
+            await _dispatcher.InvokeAsync(
+                () => StartBuildObservationOnSta(
+                    BuildAction.Build),
+                GetRemaining(
+                    deadlineUtc,
+                    "activation.compile.observe"),
+                cancellationToken).ConfigureAwait(false);
+        try
+        {
+            Task activation = _dispatcher.InvokeAsync(
+                () =>
+                {
+                    ActivateConfigurationOnSta(
+                        normalizedSolution,
+                        expectedAmsNetId);
+                    return true;
+                },
+                GetRemaining(
+                    deadlineUtc,
+                    "activation.activateConfiguration"),
+                cancellationToken);
+            await dialogScope.ObserveAsync(activation)
+                .ConfigureAwait(false);
+            TimeSpan dialogSettleTimeout = GetRemaining(
                 deadlineUtc,
-                "activation.activateConfiguration"),
-            cancellationToken);
-        await dialogScope.ObserveAsync(activation)
-            .ConfigureAwait(false);
-        TimeSpan dialogSettleTimeout = GetRemaining(
-            deadlineUtc,
-            "activation.dialog");
-        if (dialogSettleTimeout > ActivationDialogSettleTimeout)
-        {
-            dialogSettleTimeout =
-                ActivationDialogSettleTimeout;
-        }
+                "activation.dialog");
+            if (dialogSettleTimeout > ActivationDialogSettleTimeout)
+            {
+                dialogSettleTimeout =
+                    ActivationDialogSettleTimeout;
+            }
 
-        await dialogScope.WaitForActivationDialogOutcomeAsync(
-            dialogSettleTimeout,
-            cancellationToken).ConfigureAwait(false);
-        XaeActivationCommandResult result =
-            dialogScope.GetActivationResult();
-        if (!result.ActivationConfirmed
-            || !result.RunDecisionHandled)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ActivateConfigurationFailed,
-                "The TwinCAT Activate Configuration command did not "
-                + "present the expected activation and Run confirmation "
-                + "dialogs.",
-                retryable: false,
-                stage: "activation.dialog");
-        }
+            await dialogScope.WaitForActivationDialogOutcomeAsync(
+                dialogSettleTimeout,
+                cancellationToken).ConfigureAwait(false);
+            XaeActivationCommandResult result =
+                dialogScope.GetActivationResult();
+            if (!result.ActivationConfirmed)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.ActivateConfigurationFailed,
+                    "The TwinCAT Activate Configuration command did not "
+                    + "present the expected activation confirmation "
+                    + "dialog.",
+                    retryable: false,
+                    stage: "activation.dialog");
+            }
 
-        return result;
+            XaeBuildEventEvidence evidence =
+                await WaitForBuildEventAsync(
+                    buildCompletion,
+                    deadlineUtc,
+                    cancellationToken).ConfigureAwait(false);
+            result.Build = await _dispatcher.InvokeAsync(
+                () => CompleteBuildOnSta(
+                    evidence,
+                    ExternalChangeSynchronizationResult.None),
+                GetRemaining(
+                    deadlineUtc,
+                    "activation.compile.verify"),
+                cancellationToken).ConfigureAwait(false);
+            if (result.Build.FailedProjects > 0
+                || result.Build.Diagnostics.Any(
+                    diagnostic =>
+                        diagnostic.Severity
+                            == DiagnosticSeverity.Error))
+            {
+                return result;
+            }
+
+            if (!result.RunDecisionHandled)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.ActivateConfigurationFailed,
+                    "The TwinCAT Activate Configuration command did not "
+                    + "present the expected Run confirmation dialog.",
+                    retryable: false,
+                    stage: "activation.dialog");
+            }
+
+            return result;
+        }
+        catch
+        {
+            await TryAbortActiveBuildAsync().ConfigureAwait(false);
+            throw;
+        }
     }
 
     public async Task RestartTwinCatConfigModeAsync(
@@ -2011,6 +2058,31 @@ public sealed class XaeSession : IDisposable
                 retryable: true,
                 stage: "xae.build.start");
         _activeBuild = XaeBuildEventLease.Start(
+            dte,
+            action,
+            _workspaceFileChangeGuard);
+        return _activeBuild.Completion;
+    }
+
+    private Task<XaeBuildEventEvidence>
+        StartBuildObservationOnSta(BuildAction action)
+    {
+        if (_activeBuild is not null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeBusy,
+                "An XAE build operation is already active.",
+                retryable: true,
+                stage: "activation.compile.observe");
+        }
+
+        DTE2 dte = _dte
+            ?? throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                "No XAE session is currently attached.",
+                retryable: true,
+                stage: "activation.compile.observe");
+        _activeBuild = XaeBuildEventLease.ObserveNext(
             dte,
             action,
             _workspaceFileChangeGuard);

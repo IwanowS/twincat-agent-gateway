@@ -143,6 +143,24 @@ Success requires the recorded `cancel-run` dialog action, completion
 runtime mode. The test does not require or imply that the newly transferred
 configuration is active.
 
+The activation compile-failure acceptance uses the same remote and XAE-launch
+opt-ins, but deliberately introduces only a temporary PLC syntax error. It
+calls activation without a preceding Build to verify automatic fingerprint
+scan/typed reload and observation of XAE's internal activation build:
+
+```powershell
+dotnet vstest `
+  'tests\TwinCatGateway.IntegrationTests\bin\Debug\net48\TwinCatGateway.IntegrationTests.dll' `
+  '/Platform:x86' `
+  '/TestCaseFilter:FullyQualifiedName~DesktopGatewayActivationTests.ActivationCompileFailureIsReturnedWithoutActivation'
+```
+
+Success is `BUILD_FAILED` at `activation.compile`, structured compile
+diagnostics, `completion=unknown`, and
+`activeConfigurationVerified=false`, with no activation-success event, Run
+transition, or TcUnit operation. The test restores the exact original source
+bytes and explicitly synchronizes XAE in `finally`.
+
 The runtime fault/recovery acceptance is a separate destructive opt-in for the
 repository fixture and the dedicated remote bench. It also launches and owns
 its exact-solution XAE instance. In addition to the no-Run variables above, it

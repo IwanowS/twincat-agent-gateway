@@ -706,24 +706,30 @@ Gateway намеренно использует DTE command identity
    - fatal dialog: безопасно закрыть и вернуть ошибку;
    - неизвестный dialog: ничего не подтверждать и завершить operation
      fail-closed.
-11. Не выполнять отдельный `StartRestartTwinCAT()`. При
+11. Наблюдать внутреннюю сборку activation через `BuildEvents`, `LastBuildInfo`,
+    Error List delta и Build Output. Если она завершилась с compile errors,
+    вернуть `BUILD_FAILED` на stage `activation.compile`, structured
+    `ActivationResult.compile` и raw build log. Такой результат всегда имеет
+    `completion=unknown` и `activeConfigurationVerified=false`; Run
+    postcondition и TcUnit не запускаются.
+12. Не выполнять отдельный `StartRestartTwinCAT()`. При
    `runAfterActivation=true` наблюдать переход, не считая сохранённое до
    команды состояние `Run` доказательством нового запуска. При `false`
    отменить только финальный запрос перехода в Run, не выполнять
    принудительный переход в Config и вернуть фактически наблюдаемое runtime
    state вместе с `activeConfigurationVerified=false`. Состояние `Exception`
    является немедленным terminal failure, а не причиной ждать общий timeout.
-12. При `runAfterActivation=true` определить через XAE PLC projects с
+13. При `runAfterActivation=true` определить через XAE PLC projects с
     `BootProjectAutostart=true` и проверить
     online state каждого такого PLC. Успех требует стабильного `Run` System
     Service и отсутствия `Exception` у всех обязательных Auto Boot PLC.
-13. Прочитать дельту XAE Error List и `GetLastErrorMessages()`. Runtime
+14. Прочитать дельту XAE Error List и `GetLastErrorMessages()`. Runtime
     exception/page fault и связанные ошибки портов являются fatal; warnings
     возвращаются в diagnostics, но сами по себе не делают activation
     неуспешной.
-14. Повторно проверить solution и AMS NetId и обновить XAE/runtime diagnostics.
-15. Записать activation resource и stage events в общую event stream.
-16. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
+15. Повторно проверить solution и AMS NetId и обновить XAE/runtime diagnostics.
+16. Записать activation resource и stage events в общую event stream.
+17. Если это включено profile, запустить связанную test operation: дождаться ADS completion signal и затем свежего TcUnit report.
 
 Gateway не вызывает `SaveAll` перед activation: при agent-owned workspace
 источником истины являются внешние файлы. По умолчанию они сверяются по
@@ -731,8 +737,11 @@ fingerprint и синхронизируются typed reload непосредс�
 Build/Rebuild/Clean или activation operation. Standalone Build и activation
 остаются разными явными операциями: Build никогда не запускает activation.
 При этом сама XAE-команда `TwinCAT.ActivateConfiguration` выполняет внутреннюю
-сборку как обязательную часть UI activation workflow; её diagnostics входят
-в activation result.
+сборку как обязательную часть UI activation workflow. Gateway только
+подписывается на её события и не запускает дополнительный Build. Результат
+возвращается в `ActivationResult.compile`: counts и первые 50 diagnostics
+структурированы, полный Build Output доступен через `compile.log`. Ошибка
+компиляции останавливает pipeline до проверки Run и не считается activation.
 
 Error List нельзя трактовать как простой счётчик. Gateway сравнивает снимки до
 и после activation и классифицирует новые строки. Например, TcUnit может

@@ -97,6 +97,8 @@ public sealed class XaeActivationCommandResult
 
     public AutostartBootProjectSelection AutostartSelection { get; set; }
 
+    public XaeBuildExecutionResult? Build { get; set; }
+
     public IReadOnlyList<XaeDialogObservation> Dialogs { get; set; } =
         Array.Empty<XaeDialogObservation>();
 }

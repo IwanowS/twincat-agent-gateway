@@ -917,11 +917,24 @@ public sealed class GatewayApplicationService
             return OperationExecutionResult.Failure(
                 new GatewayError
                 {
-                    Code =
-                        ErrorCodes.ActivateConfigurationFailed,
-                    Message =
-                        "TwinCAT activation did not satisfy its postconditions.",
-                    Stage = "activation.verify",
+                    Code = result.Compile?.Completed == true
+                        && !result.Compile.Ok
+                            ? ErrorCodes.BuildFailed
+                            : ErrorCodes.ActivateConfigurationFailed,
+                    Message = result.Compile?.Completed == true
+                        && !result.Compile.Ok
+                            ? "XAE activation stopped because its internal "
+                                + "build completed with errors."
+                            : "TwinCAT activation did not satisfy its "
+                                + "postconditions.",
+                    Stage = result.Compile?.Completed == true
+                        && !result.Compile.Ok
+                            ? "activation.compile"
+                            : "activation.verify",
+                    RawLogRef = result.Compile?.Completed == true
+                        && !result.Compile.Ok
+                            ? result.Compile.Log?.Uri
+                            : null,
                 },
                 result,
                 result.Resources);

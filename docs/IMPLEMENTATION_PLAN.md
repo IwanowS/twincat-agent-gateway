@@ -501,6 +501,8 @@ docs/
   каждого обязательного PLC;
 - Error List baseline/delta с классификацией runtime faults, TcUnit summary и
   warnings;
+- наблюдение внутренней activation build без отдельного запуска Build,
+  structured compile diagnostics и raw Build Output resource;
 - общий UI Automation supervisor для modal dialogs точного XAE process id на
   всём lifecycle любых gateway-owned XAE operations;
 - XAE-owned project-graph operation window вокруг
@@ -524,6 +526,8 @@ docs/
 - target mismatch;
 - activation disabled profile;
 - `ActivateConfiguration` fail;
+- внутренняя activation build завершается compile error и не считается
+  применённой конфигурацией;
 - Run confirmation fail;
 - platform mismatch dialog;
 - кратковременный `Run` с последующим PLC `Exception`;
@@ -543,6 +547,9 @@ docs/
 - AMS NetId является единственной обязательной target identity; имя target
   необязательно и не участвует в safety decision;
 - ошибка конкретного stage видна агенту;
+- compile failure внутренней activation build возвращает `BUILD_FAILED` на
+  `activation.compile`, `completion=unknown`,
+  `activeConfigurationVerified=false` и structured diagnostics;
 - XAE-команда не считается полным успехом без ожидаемых activation и Run
   confirmation dialogs; при `runAfterActivation=true` дополнительно требуется
   выбранный runtime postcondition, а при `false` результат явно остаётся
