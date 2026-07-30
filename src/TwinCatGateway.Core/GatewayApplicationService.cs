@@ -489,7 +489,7 @@ public sealed class GatewayApplicationService
         }
 
         if (agentRequest
-            && !_activeProfile.AllowAgentForceSynchronization)
+            && !_activeProfile.AllowForceSynchronization)
         {
             throw new GatewayOperationException(
                 ErrorCodes.ForceSynchronizationNotAllowed,

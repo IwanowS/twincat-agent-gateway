@@ -111,7 +111,7 @@ public sealed class ProjectProfile
     public ExternalChangePolicy ExternalChangePolicy { get; set; } =
         ExternalChangePolicy.ReloadModified;
 
-    public bool AllowAgentForceSynchronization { get; set; }
+    public bool AllowForceSynchronization { get; set; }
 
     public bool AllowDirtyDocumentDiscard { get; set; }
 

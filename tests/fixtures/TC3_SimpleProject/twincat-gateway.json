@@ -20,7 +20,7 @@
       "solution": "TC3_SimpleProject.sln",
       "allowXaeLaunch": true,
       "externalChangePolicy": "reloadModified",
-      "allowAgentForceSynchronization": false,
+      "allowForceSynchronization": false,
       "allowDirtyDocumentDiscard": false,
       "allowActivation": false,
       "requireRecentSuccessfulBuild": true,

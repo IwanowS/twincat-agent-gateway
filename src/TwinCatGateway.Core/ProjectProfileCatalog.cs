@@ -75,8 +75,8 @@ public sealed class ProjectProfileCatalog
             AssumeAttachedXaeSynchronized =
                 source.AssumeAttachedXaeSynchronized,
             ExternalChangePolicy = source.ExternalChangePolicy,
-            AllowAgentForceSynchronization =
-                source.AllowAgentForceSynchronization,
+            AllowForceSynchronization =
+                source.AllowForceSynchronization,
             AllowDirtyDocumentDiscard =
                 source.AllowDirtyDocumentDiscard,
             AutoSynchronizeBeforeOperation =

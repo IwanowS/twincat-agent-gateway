@@ -71,7 +71,7 @@ disabled until the operator deliberately changes `allowActivation`.
       "platform": null,
       "assumeAttachedXaeSynchronized": true,
       "externalChangePolicy": "reloadModified",
-      "allowAgentForceSynchronization": false,
+      "allowForceSynchronization": false,
       "allowDirtyDocumentDiscard": false,
       "autoSynchronizeBeforeOperation": true,
       "requireRecentSuccessfulBuild": true,
@@ -180,7 +180,7 @@ inside the gateway and do not create events or consume model tokens.
 | `platform` | string or `null`, `null` | Optional XAE solution platform name used by build. `null` keeps the verified active selection. Empty or whitespace values are invalid. |
 | `assumeAttachedXaeSynchronized` | Boolean, `true` | When attaching to an already open exact XAE solution with no dirty project documents, accepts the current disk graph as the initial baseline without reloading XAE. The operator is responsible for ensuring that the XAE in-memory project model is not stale. `false` requires an explicit synchronization before Build/Rebuild/Clean. |
 | `externalChangePolicy` | `reloadAll`, `reloadModified`, or `error`; `reloadModified` | Reaction to non-generated disk changes found by the authoritative project-graph fingerprint scan. `reloadModified` reloads only modified `.TcPOU`/`.TcGVL`/`.TcDUT` and rejects graph or metadata changes. `reloadAll` permits them and reloads the selected TwinCAT project. `error` rejects every non-noise difference. |
-| `allowAgentForceSynchronization` | Boolean, `false` | Permits the destructive MCP `twincat_sync` operation. The desktop UI may always request synchronization for the selected profile. |
+| `allowForceSynchronization` | Boolean, `false` | Permits the destructive MCP `twincat_sync` operation. The desktop UI may always request synchronization for the selected profile. |
 | `allowDirtyDocumentDiscard` | Boolean, `false` | Allows an explicit build/sync request with `discardDirtyDocuments=true` to close dirty project documents without saving. It never enables automatic saving or automatic discard. |
 | `autoSynchronizeBeforeOperation` | Boolean, `true` | Runs the authoritative fingerprint scan and policy-controlled typed reload before Build/Rebuild/Clean and activation. It never saves or automatically discards dirty XAE documents. Set to `false` only when the operator deliberately accepts responsibility for keeping the XAE project model synchronized with disk. |
 | `requireRecentSuccessfulBuild` | Boolean, `true` | Requires a recent successful build before activation. |
@@ -224,7 +224,7 @@ Pass/fail comes from the fresh xUnit report, not from XAE/VSTest exit code.
 - Keep `autoSynchronizeBeforeOperation=true` when agents edit PLC project files
   externally. Disabling it means Build and activation use the current XAE
   project model without automatic pre-action change detection or typed reload.
-- Keep `allowAgentForceSynchronization` and `allowDirtyDocumentDiscard` false
+- Keep `allowForceSynchronization` and `allowDirtyDocumentDiscard` false
   unless the operator deliberately accepts those independent capabilities.
 - The gateway never saves an XAE editor buffer. Dirty documents fail with
   `DIRTY_XAE_DOCUMENT` unless discard was explicitly requested and allowed.

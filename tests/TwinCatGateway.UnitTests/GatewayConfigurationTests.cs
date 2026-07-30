@@ -168,7 +168,7 @@ public sealed class GatewayConfigurationTests
                       "allowActivation": true,
                       "assumeAttachedXaeSynchronized": false,
                       "externalChangePolicy": "reloadAll",
-                      "allowAgentForceSynchronization": true,
+                      "allowForceSynchronization": true,
                       "allowDirtyDocumentDiscard": true,
                       "autoSynchronizeBeforeOperation": false,
                       "expectedTarget": {
@@ -198,7 +198,7 @@ public sealed class GatewayConfigurationTests
                 ExternalChangePolicy.ReloadAll,
                 profile.ExternalChangePolicy);
             Assert.True(
-                profile.AllowAgentForceSynchronization);
+                profile.AllowForceSynchronization);
             Assert.True(profile.AllowDirtyDocumentDiscard);
             Assert.False(profile.AutoSynchronizeBeforeOperation);
             Assert.Equal("192.168.3.31.1.1", profile.ExpectedTarget?.AmsNetId);
@@ -487,7 +487,7 @@ public sealed class GatewayConfigurationTests
             second.ExternalChangePolicy);
         Assert.False(
             second.AssumeAttachedXaeSynchronized);
-        Assert.True(second.AllowAgentForceSynchronization);
+        Assert.True(second.AllowForceSynchronization);
         Assert.True(second.AllowDirtyDocumentDiscard);
         Assert.False(second.AutoSynchronizeBeforeOperation);
     }
@@ -508,7 +508,7 @@ public sealed class GatewayConfigurationTests
                     AssumeAttachedXaeSynchronized = false,
                     ExternalChangePolicy =
                         ExternalChangePolicy.ReloadAll,
-                    AllowAgentForceSynchronization = true,
+                    AllowForceSynchronization = true,
                     AllowDirtyDocumentDiscard = true,
                     AutoSynchronizeBeforeOperation = false,
                     ExpectedTarget = new TargetIdentity

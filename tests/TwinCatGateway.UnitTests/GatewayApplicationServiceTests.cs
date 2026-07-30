@@ -487,7 +487,7 @@ public sealed class GatewayApplicationServiceTests
             activeProfile: new ProjectProfile
             {
                 Name = "fixture",
-                AllowAgentForceSynchronization = false,
+                AllowForceSynchronization = false,
             },
             synchronizeExecutor: (
                 operationId,
