@@ -152,16 +152,29 @@ If either server is unavailable, report the missing prerequisite instead of gues
 
 ## Testing instructions
 
-For every behavioral change:
+Add or update coverage for every behavioral change, but schedule execution at
+coherent validation checkpoints instead of after every edit:
 
 - add or update tests for success and relevant failure paths;
 - cover timeout and cancellation when the operation can wait;
-- run the nearest unit tests first;
+- batch related source and test changes, using focused builds or static checks
+  during the inner loop only when they provide new evidence;
+- run the nearest unit tests first at a coherent local checkpoint;
 - run contract tests after changing DTOs, IPC, CLI, or MCP;
-- run real TwinCAT integration tests after changing DTE/COM/XAE behavior;
+- run real TwinCAT integration tests after the related DTE/COM/XAE changes
+  have stabilized, preferably once near the end of the task;
 - do not replace required real-XAE integration coverage with mocks.
 
-State-changing TwinCAT tests must be clearly marked and must fail closed unless an allow-listed remote test profile is supplied.
+Remote activation and state-changing TwinCAT tests are scarce validation
+checkpoints, not an inner-loop tool. Accumulate compatible changes before one
+activation/test run. If that run exposes several failures, collect the complete
+bounded failure set, fix the batch, perform the necessary local build once, and
+then reactivate/retest once. Re-run earlier only when runtime evidence is
+essential to choose the implementation; never defer required final evidence
+beyond task completion.
+
+State-changing TwinCAT tests must be clearly marked and must fail closed unless
+an allow-listed remote test profile is supplied.
 
 ## Safety and logging
 

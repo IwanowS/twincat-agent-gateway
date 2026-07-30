@@ -11,18 +11,21 @@ description: Explicitly activate and restart an allow-listed remote TwinCAT targ
    name is informational only.
 3. Activate only for an explicit runtime verification or debugging request;
    ordinary source validation ends after Build/Rebuild.
-4. Reuse a known successful Build or Rebuild for the same profile, solution,
+4. Treat remote activation as a scarce final validation checkpoint. Batch
+   compatible source/test changes and local compile fixes before activation;
+   do not activate after each build or individual fix.
+5. Reuse a known successful Build or Rebuild for the same profile, solution,
    target, configuration, and platform when no relevant edit, Clean, failed
    build, `syncRequired`, or XAE reconnect followed it. Never rebuild merely
    because activation is next.
-5. When the profile requires a recent build and the existing evidence is known
+6. When the profile requires a recent build and the existing evidence is known
    to be invalid, build once. When its age is merely unknown, let
    `twincat_activate` enforce the fail-closed `RECENT_BUILD_REQUIRED` preflight;
    build once and retry once only when that code is returned. Never turn a
    build-only request into activation implicitly.
-6. Call `twincat_activate` with the explicit profile. Use `waitForTcUnit:
+7. Call `twincat_activate` with the explicit profile. Use `waitForTcUnit:
    false` unless the requested workflow includes linked TcUnit execution.
-7. Report the completed physical stages: configuration activation, TwinCAT
+8. Report the completed physical stages: configuration activation, TwinCAT
    restart, and verified runtime postcondition.
 
 The normal reuse sequence is `twincat_status` then `twincat_activate`, with no

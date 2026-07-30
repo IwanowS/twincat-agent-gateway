@@ -12,14 +12,19 @@ description: Build, rebuild, clean, and repair TwinCAT PLC projects through Twin
 3. Call `twincat_build` with the profile and the requested action. Prefer
    `rebuild` for a definitive compile check. Pass explicit
    configuration/platform only when the task requires them.
-4. Read the compact result first. Fix the reported source diagnostics and
-   repeat the build.
+4. Read the compact result first. Collect the bounded diagnostics, fix a
+   coherent batch, and repeat the build only after that batch is ready. Do not
+   build after every individual edit.
 5. Read the referenced build log only for an infrastructure failure, an
    inconsistent result, or diagnostics that are insufficient to act on.
 
 For ordinary source validation, stop after a successful build. Build never
 activates TwinCAT. Activate only when the user explicitly requests runtime
 verification or debugging and the remote target is allowed.
+
+Prefer several related edits followed by one useful build checkpoint. Do not
+run activation or TcUnit merely because a build succeeded; leave the remote
+runtime checkpoint until the related implementation batch has stabilized.
 
 A successful Build or Rebuild is reusable evidence for the same profile,
 solution, target, configuration, and platform. Do not repeat it merely because

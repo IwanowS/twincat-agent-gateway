@@ -706,24 +706,30 @@ twincat-log://gateway/current
 #### `twincat-build`
 
 - редактировать файлы обычными patch-инструментами;
-- вызвать build;
+- группировать связанные правки и вызывать build только в полезной точке
+  проверки, а не после каждого файла;
 - читать только compact diagnostics;
 - запросить raw log только при инфраструктурной/непонятной ошибке;
 - не читать reorder-only `.tsproj`.
 
 #### `twincat-test`
 
+- считать удалённую activation/TcUnit редким checkpoint и по возможности
+  выполнять один раз после стабилизации пакета правок;
 - переиспользовать актуальный успешный Build/Rebuild либо выполнить один
   rebuild после последней серии правок;
 - затем явный activate;
 - ждать связанный ADS completion, затем свежий TcUnit report;
-- исправлять failed tests;
+- собрать bounded набор failed tests, исправить их одним пакетом и только затем
+  выполнить одну повторную activation/test;
 - не загружать весь xUnit XML без необходимости.
 
 #### `twincat-activate`
 
 - проверять profile/target;
 - не активировать автоматически после каждого build;
+- группировать совместимые правки перед удалённой activation и предпочитать
+  финальный checkpoint;
 - ясно сообщать irreversible stage и failure stage.
 
 #### `twincat-diagnose`
