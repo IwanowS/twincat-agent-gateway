@@ -32,7 +32,7 @@ public sealed class TwinCatTools
     }
 
     [McpServerTool(
-        Name = "gateway_start",
+        Name = GatewayMcpCatalog.ToolNames.GatewayStart,
         ReadOnly = false,
         Destructive = false,
         Idempotent = true,
@@ -65,7 +65,7 @@ public sealed class TwinCatTools
     }
 
     [McpServerTool(
-        Name = "gateway_shutdown",
+        Name = GatewayMcpCatalog.ToolNames.GatewayShutdown,
         ReadOnly = false,
         Destructive = true,
         Idempotent = true,
@@ -104,7 +104,7 @@ public sealed class TwinCatTools
     }
 
     [McpServerTool(
-        Name = "twincat_xae_open",
+        Name = GatewayMcpCatalog.ToolNames.XaeOpen,
         ReadOnly = false,
         Destructive = false,
         Idempotent = true,
@@ -124,7 +124,7 @@ public sealed class TwinCatTools
                 cancellationToken));
 
     [McpServerTool(
-        Name = "twincat_xae_close",
+        Name = GatewayMcpCatalog.ToolNames.XaeClose,
         ReadOnly = false,
         Destructive = true,
         Idempotent = false,
@@ -152,7 +152,7 @@ public sealed class TwinCatTools
                 cancellationToken));
 
     [McpServerTool(
-        Name = "twincat_xae_sync",
+        Name = GatewayMcpCatalog.ToolNames.XaeSync,
         ReadOnly = false,
         Destructive = false,
         Idempotent = false,
@@ -180,7 +180,7 @@ public sealed class TwinCatTools
                 cancellationToken));
 
     [McpServerTool(
-        Name = "twincat_xae_build",
+        Name = GatewayMcpCatalog.ToolNames.XaeBuild,
         ReadOnly = false,
         Destructive = false,
         Idempotent = false,
@@ -213,7 +213,7 @@ public sealed class TwinCatTools
                 cancellationToken));
 
     [McpServerTool(
-        Name = "twincat_xae_activate",
+        Name = GatewayMcpCatalog.ToolNames.XaeActivate,
         ReadOnly = false,
         Destructive = true,
         Idempotent = false,
@@ -247,7 +247,7 @@ public sealed class TwinCatTools
                 cancellationToken));
 
     [McpServerTool(
-        Name = "twincat_target_config",
+        Name = GatewayMcpCatalog.ToolNames.TargetConfig,
         ReadOnly = false,
         Destructive = true,
         Idempotent = true,
@@ -270,7 +270,7 @@ public sealed class TwinCatTools
                 cancellationToken));
 
     [McpServerTool(
-        Name = "twincat_target_start_restart",
+        Name = GatewayMcpCatalog.ToolNames.TargetStartRestart,
         ReadOnly = false,
         Destructive = true,
         Idempotent = false,

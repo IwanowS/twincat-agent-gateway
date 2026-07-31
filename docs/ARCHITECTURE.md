@@ -97,7 +97,9 @@ Gateway по-прежнему отвечает за:
 - MCP tools используются для lifecycle и изменяющих операций.
 - MCP resources возвращают state, diagnostics, capabilities, source manifest,
   documentation и immutable operation artifacts.
-- Mutating tool всегда возвращает exact `operationId`.
+- Gateway-owned mutating tool всегда возвращает exact `operationId`.
+- `gateway_start` и `gateway_shutdown` возвращают typed lifecycle result без
+  `operationId`: process lifecycle находится вне Gateway operation journal.
 - Относительные ссылки `last`, `previous` и `-N` не являются публичной
   identity операции.
 

@@ -12,32 +12,6 @@ namespace TwinCatGateway.McpToolsV2MigrationTests;
 
 public sealed class McpResourcesV2Tests
 {
-    private static readonly string[] ExpectedTemplates =
-    {
-        "twincat-doc://configuration",
-        "twincat-doc://mcp",
-        "twincat-doc://setup",
-        "twincat-gateway://diagnostics",
-        "twincat-gateway://state",
-        "twincat-log://gateway/current",
-        "twincat-operation://{operationId}",
-        "twincat-operation://{operationId}/build",
-        "twincat-operation://{operationId}/events",
-        "twincat-operation://{operationId}/project-noise",
-        "twincat-operation://{operationId}/test/xunit",
-        "twincat-operation://{operationId}/xae-messages",
-        "twincat-plc://profile/{profile}/{runtime}/diagnostics",
-        "twincat-plc://profile/{profile}/{runtime}/state",
-        "twincat-profile://{profile}/capabilities",
-        "twincat-profile://{profile}/sources",
-        "twincat-profile://{profile}/sources/files",
-        "twincat-target://profile/{profile}/diagnostics",
-        "twincat-target://profile/{profile}/state",
-        "twincat-xae://profile/{profile}/diagnostics",
-        "twincat-xae://profile/{profile}/messages/current",
-        "twincat-xae://profile/{profile}/state",
-    };
-
     [Fact]
     public void ResourceSurfaceListsEveryCanonicalV2Template()
     {
@@ -49,7 +23,42 @@ public sealed class McpResourcesV2Tests
             .OrderBy(uri => uri, StringComparer.Ordinal)
             .ToArray();
 
-        Assert.Equal(ExpectedTemplates, templates);
+        Assert.Equal(
+            GatewayMcpCatalog.Resources
+                .Select(resource => resource.UriTemplate)
+                .OrderBy(uri => uri, StringComparer.Ordinal),
+            templates);
+    }
+
+    [Fact]
+    public void ResourceAttributesMatchCatalogMetadata()
+    {
+        McpServerResourceAttribute[] resources = typeof(TwinCatResources)
+            .GetMethods(BindingFlags.Instance | BindingFlags.Public)
+            .Select(method => method.GetCustomAttribute<McpServerResourceAttribute>())
+            .Where(attribute => attribute is not null)
+            .Cast<McpServerResourceAttribute>()
+            .ToArray();
+
+        foreach (McpResourceDefinition expected in GatewayMcpCatalog.Resources)
+        {
+            McpServerResourceAttribute actual = Assert.Single(
+                resources,
+                resource => resource.UriTemplate == expected.UriTemplate);
+            Assert.Equal(expected.Name, actual.Name);
+            Assert.Equal(expected.MimeType, actual.MimeType);
+        }
+    }
+
+    [Fact]
+    public void CheckedInMcpReferenceMatchesGeneratedCatalog()
+    {
+        string path = Path.GetFullPath(Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..", "..", "..",
+            "docs", "MCP_REFERENCE.md"));
+
+        Assert.True(McpReferenceGenerator.IsCurrent(File.ReadAllText(path)));
     }
 
     [Theory]

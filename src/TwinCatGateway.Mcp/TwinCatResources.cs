@@ -35,91 +35,91 @@ public sealed class TwinCatResources
         _documentationDirectory = AppContext.BaseDirectory;
     }
 
-    [McpServerResource(UriTemplate = "twincat-gateway://state", Name = "Gateway state", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.GatewayState, Name = "Gateway state", MimeType = "application/json")]
     public Task<TextResourceContents> GetGatewayStateAsync(McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync("twincat-gateway://state", server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-gateway://diagnostics", Name = "Gateway diagnostics", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.GatewayDiagnostics, Name = "Gateway diagnostics", MimeType = "application/json")]
     public Task<TextResourceContents> GetGatewayDiagnosticsAsync(McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync("twincat-gateway://diagnostics", server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-profile://{profile}/capabilities", Name = "Profile capabilities", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.ProfileCapabilities, Name = "Profile capabilities", MimeType = "application/json")]
     public Task<TextResourceContents> GetProfileCapabilitiesAsync(string profile, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(ProfileUri(profile, "capabilities"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-profile://{profile}/sources", Name = "Profile source manifest", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.ProfileSources, Name = "Profile source manifest", MimeType = "application/json")]
     public Task<TextResourceContents> GetProfileSourcesAsync(string profile, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(ProfileUri(profile, "sources"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-profile://{profile}/sources/files", Name = "Profile source files", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.ProfileSourceFiles, Name = "Profile source files", MimeType = "application/json")]
     public Task<TextResourceContents> GetProfileSourceFilesAsync(string profile, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(ProfileUri(profile, "sources/files"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-xae://profile/{profile}/state", Name = "XAE session state", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.XaeState, Name = "XAE session state", MimeType = "application/json")]
     public Task<TextResourceContents> GetXaeStateAsync(string profile, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(ObjectUri("twincat-xae", profile, "state"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-xae://profile/{profile}/diagnostics", Name = "XAE diagnostics", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.XaeDiagnostics, Name = "XAE diagnostics", MimeType = "application/json")]
     public Task<TextResourceContents> GetXaeDiagnosticsAsync(string profile, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(ObjectUri("twincat-xae", profile, "diagnostics"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-xae://profile/{profile}/messages/current", Name = "Current XAE messages", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.XaeMessages, Name = "Current XAE messages", MimeType = "application/json")]
     public Task<TextResourceContents> GetXaeMessagesAsync(string profile, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(ObjectUri("twincat-xae", profile, "messages/current"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-target://profile/{profile}/state", Name = "Target System state", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.TargetState, Name = "Target System state", MimeType = "application/json")]
     public Task<TextResourceContents> GetTargetStateAsync(string profile, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(ObjectUri("twincat-target", profile, "state"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-target://profile/{profile}/diagnostics", Name = "Target diagnostics", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.TargetDiagnostics, Name = "Target diagnostics", MimeType = "application/json")]
     public Task<TextResourceContents> GetTargetDiagnosticsAsync(string profile, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(ObjectUri("twincat-target", profile, "diagnostics"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-plc://profile/{profile}/{runtime}/state", Name = "PLC runtime state", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.PlcState, Name = "PLC runtime state", MimeType = "application/json")]
     public Task<TextResourceContents> GetPlcStateAsync(string profile, string runtime, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(PlcUri(profile, runtime, "state"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-plc://profile/{profile}/{runtime}/diagnostics", Name = "PLC runtime diagnostics", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.PlcDiagnostics, Name = "PLC runtime diagnostics", MimeType = "application/json")]
     public Task<TextResourceContents> GetPlcDiagnosticsAsync(string profile, string runtime, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(PlcUri(profile, runtime, "diagnostics"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-operation://{operationId}", Name = "Operation summary", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.Operation, Name = "Operation summary", MimeType = "application/json")]
     public Task<TextResourceContents> GetOperationAsync(string operationId, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(OperationUri(operationId, null), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-operation://{operationId}/events", Name = "Operation events", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.OperationEvents, Name = "Operation events", MimeType = "application/json")]
     public Task<TextResourceContents> GetOperationEventsAsync(string operationId, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(OperationUri(operationId, "events"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-operation://{operationId}/build", Name = "Operation build output", MimeType = "text/plain")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.OperationBuild, Name = "Operation build output", MimeType = "text/plain")]
     public Task<TextResourceContents> GetOperationBuildAsync(string operationId, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(OperationUri(operationId, "build"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-operation://{operationId}/xae-messages", Name = "Operation XAE messages", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.OperationXaeMessages, Name = "Operation XAE messages", MimeType = "application/json")]
     public Task<TextResourceContents> GetOperationXaeMessagesAsync(string operationId, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(OperationUri(operationId, "xae-messages"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-operation://{operationId}/test/xunit", Name = "Operation TcUnit xUnit report", MimeType = "application/xml")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.OperationXunit, Name = "Operation TcUnit xUnit report", MimeType = "application/xml")]
     public Task<TextResourceContents> GetOperationXunitAsync(string operationId, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(OperationUri(operationId, "test/xunit"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-operation://{operationId}/project-noise", Name = "Operation project noise", MimeType = "application/json")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.OperationProjectNoise, Name = "Operation project noise", MimeType = "application/json")]
     public Task<TextResourceContents> GetOperationProjectNoiseAsync(string operationId, McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(OperationUri(operationId, "project-noise"), server, cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-doc://setup", Name = "Gateway setup", MimeType = "text/plain")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.Setup, Name = "Gateway setup", MimeType = "text/plain")]
     public Task<TextResourceContents> GetSetupDocumentationAsync(CancellationToken cancellationToken = default) =>
         ReadDocumentationAsync("twincat-doc://setup", "SETUP_INSTRUCTIONS.txt", "text/plain", cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-doc://configuration", Name = "Gateway configuration reference", MimeType = "text/markdown")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.Configuration, Name = "Gateway configuration reference", MimeType = "text/markdown")]
     public Task<TextResourceContents> GetConfigurationDocumentationAsync(CancellationToken cancellationToken = default) =>
         ReadDocumentationAsync("twincat-doc://configuration", "CONFIGURATION.md", "text/markdown", cancellationToken);
 
-    [McpServerResource(UriTemplate = "twincat-doc://mcp", Name = "Gateway MCP reference", MimeType = "text/markdown")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.Mcp, Name = "Gateway MCP reference", MimeType = "text/markdown")]
     public Task<TextResourceContents> GetMcpDocumentationAsync(CancellationToken cancellationToken = default) =>
         ReadDocumentationAsync("twincat-doc://mcp", "MCP_REFERENCE.md", "text/markdown", cancellationToken);
 
-    [McpServerResource(UriTemplate = GatewayResourceUris.CurrentGatewayLog, Name = "Current Gateway log", MimeType = "text/plain")]
+    [McpServerResource(UriTemplate = GatewayMcpCatalog.ResourceTemplates.CurrentLog, Name = "Current Gateway log", MimeType = "text/plain")]
     public Task<TextResourceContents> GetCurrentGatewayLogAsync(McpServer? server = null, CancellationToken cancellationToken = default) =>
         ReadGatewayAsync(GatewayResourceUris.CurrentGatewayLog, server, cancellationToken);
 

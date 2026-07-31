@@ -12,34 +12,35 @@ namespace TwinCatGateway.McpToolsV2MigrationTests;
 
 public sealed class McpToolsV2Tests
 {
-    private static readonly string[] ExpectedTools =
-    {
-        "gateway_shutdown",
-        "gateway_start",
-        "twincat_target_config",
-        "twincat_target_start_restart",
-        "twincat_xae_activate",
-        "twincat_xae_build",
-        "twincat_xae_close",
-        "twincat_xae_open",
-        "twincat_xae_sync",
-    };
-
     [Fact]
     public void ToolSurfaceContainsOnlyExactV2NamesAndTypedSchemas()
     {
-        McpServerToolAttribute[] tools = typeof(TwinCatTools)
+        var methods = typeof(TwinCatTools)
             .GetMethods(BindingFlags.Instance | BindingFlags.Public)
-            .Select(method => method.GetCustomAttribute<McpServerToolAttribute>())
-            .Where(attribute => attribute is not null)
-            .Cast<McpServerToolAttribute>()
+            .Select(method => new
+            {
+                Method = method,
+                Tool = method.GetCustomAttribute<McpServerToolAttribute>(),
+            })
+            .Where(item => item.Tool is not null)
             .ToArray();
 
         Assert.Equal(
-            ExpectedTools,
-            tools.Select(tool => tool.Name).OrderBy(name => name).ToArray());
-        Assert.All(tools, tool => Assert.True(tool.UseStructuredContent));
-        Assert.All(tools, tool => Assert.NotNull(tool.OutputSchemaType));
+            GatewayMcpCatalog.Tools.Select(tool => tool.Name).OrderBy(name => name),
+            methods.Select(item => item.Tool!.Name).OrderBy(name => name));
+        foreach (McpToolDefinition expected in GatewayMcpCatalog.Tools)
+        {
+            var actual = Assert.Single(methods, item => item.Tool!.Name == expected.Name);
+            Assert.True(actual.Tool!.UseStructuredContent);
+            Assert.Equal(expected.OutputSchemaType, actual.Tool.OutputSchemaType);
+            Assert.Equal(expected.ReadOnly, actual.Tool.ReadOnly);
+            Assert.Equal(expected.Destructive, actual.Tool.Destructive);
+            Assert.Equal(expected.Idempotent, actual.Tool.Idempotent);
+            Assert.Equal(expected.OpenWorld, actual.Tool.OpenWorld);
+            Assert.Equal(
+                expected.Description,
+                actual.Method.GetCustomAttribute<System.ComponentModel.DescriptionAttribute>()!.Description);
+        }
     }
 
     [Fact]

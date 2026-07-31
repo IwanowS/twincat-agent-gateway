@@ -1,8 +1,6 @@
 # TwinCAT Agent Gateway MCP reference — target contract
 
-> **Status:** approved target API for the breaking architecture rework.
-> Current binaries may still expose the v1 names listed in
-> [`ARCHITECTURE_V1_BASELINE.md`](ARCHITECTURE_V1_BASELINE.md).
+> **Status:** implemented v2 MCP contract for the breaking architecture rework.
 
 This file is the human-readable target reference for every MCP tool and
 resource. After typed schemas are implemented, the installed
@@ -45,8 +43,11 @@ DTE command. Gateway resolves and verifies them from the profile.
 }
 ```
 
-Every mutating call returns an exact `operationId`, even when it fails before
-the intended TwinCAT action.
+Every Gateway-owned mutating call returns an exact `operationId`, even when it
+fails before the intended TwinCAT action. `gateway_start` and
+`gateway_shutdown` are the deliberate exception: process lifecycle is outside
+the Gateway operation journal, so these tools return a typed lifecycle result
+without `operationId`.
 
 ### 1.3 Errors
 
@@ -657,7 +658,54 @@ Installed generated copy of this target reference.
 Tracked current Gateway session log path and metadata. It does not read the
 whole file and does not infer the path from configuration.
 
-## 8. Removed v1 surface
+<!-- BEGIN GENERATED MCP CATALOG -->
+## 8. Generated MCP catalog
+
+This section is generated from `GatewayMcpCatalog`; do not edit it by hand.
+
+### 8.1 Tools
+
+| Name | Input schema | Output schema | Capability | Annotations |
+| --- | --- | --- | --- | --- |
+| `gateway_shutdown` | `(empty)` | `GatewayLifecycleResult<GatewayShutdownResult>` | `gateway.processControl.allowShutdown` | `readOnly=false, destructive=true, idempotent=true, openWorld=false` |
+| `gateway_start` | `config?: string` | `GatewayLifecycleResult<GatewayStartResult>` | `gateway.processControl.allowStart` | `readOnly=false, destructive=false, idempotent=true, openWorld=false` |
+| `twincat_target_config` | `profile: string` | `OperationResult<TargetConfigResult>` | `profile.target.capabilities.config` | `readOnly=false, destructive=true, idempotent=true, openWorld=false` |
+| `twincat_target_start_restart` | `profile: string; verification?: none\|tcunit` | `OperationResult<TargetStartRestartResult>` | `profile.target.capabilities.startRestart (+ tcUnitVerification)` | `readOnly=false, destructive=true, idempotent=false, openWorld=false` |
+| `twincat_xae_activate` | `profile: string; finalTargetMode?: run\|unchanged; verification?: none\|tcunit; changedPaths?: string[]` | `OperationResult<ActivationResult>` | `profile.xae.capabilities.activate (+ tcUnitVerification)` | `readOnly=false, destructive=true, idempotent=false, openWorld=false` |
+| `twincat_xae_build` | `profile: string; action?: build\|rebuild\|clean; scope?: plc\|solution; project?: string; changedPaths?: string[]; detail?: compact\|full` | `OperationResult<XaeBuildResult>` | `profile.xae.capabilities.build` | `readOnly=false, destructive=false, idempotent=false, openWorld=false` |
+| `twincat_xae_close` | `profile: string; saveMode?: save\|discard\|prompt` | `OperationResult<CloseXaeResult>` | `profile.xae.capabilities.close + PID consent` | `readOnly=false, destructive=true, idempotent=false, openWorld=false` |
+| `twincat_xae_open` | `profile: string` | `OperationResult<XaeOpenResult>` | `profile.xae.capabilities.launch` | `readOnly=false, destructive=false, idempotent=true, openWorld=false` |
+| `twincat_xae_sync` | `profile: string; changedPaths?: string[]; discardDirtyDocuments?: boolean` | `OperationResult<SynchronizeResult>` | `profile.xae.capabilities.synchronize` | `readOnly=false, destructive=false, idempotent=false, openWorld=false` |
+
+### 8.2 Resource templates
+
+| URI template | Name | MIME type |
+| --- | --- | --- |
+| `twincat-doc://configuration` | Gateway configuration reference | `text/markdown` |
+| `twincat-doc://mcp` | Gateway MCP reference | `text/markdown` |
+| `twincat-doc://setup` | Gateway setup | `text/plain` |
+| `twincat-gateway://diagnostics` | Gateway diagnostics | `application/json` |
+| `twincat-gateway://state` | Gateway state | `application/json` |
+| `twincat-log://gateway/current` | Current Gateway log | `text/plain` |
+| `twincat-operation://{operationId}` | Operation summary | `application/json` |
+| `twincat-operation://{operationId}/build` | Operation build output | `text/plain` |
+| `twincat-operation://{operationId}/events` | Operation events | `application/json` |
+| `twincat-operation://{operationId}/project-noise` | Operation project noise | `application/json` |
+| `twincat-operation://{operationId}/test/xunit` | Operation TcUnit xUnit report | `application/xml` |
+| `twincat-operation://{operationId}/xae-messages` | Operation XAE messages | `application/json` |
+| `twincat-plc://profile/{profile}/{runtime}/diagnostics` | PLC runtime diagnostics | `application/json` |
+| `twincat-plc://profile/{profile}/{runtime}/state` | PLC runtime state | `application/json` |
+| `twincat-profile://{profile}/capabilities` | Profile capabilities | `application/json` |
+| `twincat-profile://{profile}/sources` | Profile source manifest | `application/json` |
+| `twincat-profile://{profile}/sources/files` | Profile source files | `application/json` |
+| `twincat-target://profile/{profile}/diagnostics` | Target diagnostics | `application/json` |
+| `twincat-target://profile/{profile}/state` | Target System state | `application/json` |
+| `twincat-xae://profile/{profile}/diagnostics` | XAE diagnostics | `application/json` |
+| `twincat-xae://profile/{profile}/messages/current` | Current XAE messages | `application/json` |
+| `twincat-xae://profile/{profile}/state` | XAE session state | `application/json` |
+<!-- END GENERATED MCP CATALOG -->
+
+## 9. Removed v1 surface
 
 The following names have no compatibility aliases:
 

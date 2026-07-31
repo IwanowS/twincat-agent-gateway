@@ -247,8 +247,10 @@ workspace. Агенту нужен authoritative список редактиру
 
 **Статус:** accepted.
 
-**Решение:** mutating tool возвращает `operationId`; artifacts доступны только
-по этому ID.
+**Решение:** Gateway-owned mutating tool возвращает `operationId`; artifacts
+доступны только по этому ID. `gateway_start` и `gateway_shutdown` возвращают
+typed lifecycle result без `operationId`, потому что process lifecycle
+находится вне Gateway operation journal.
 
 **Почему:** `last`, `previous` и `-N` становятся race-prone при одновременной
 работе UI/agent.
