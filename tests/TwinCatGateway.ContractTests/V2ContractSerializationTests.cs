@@ -363,6 +363,27 @@ public sealed class V2ContractSerializationTests
     }
 
     [Fact]
+    public void XaeBuildFullDetailMatchesPublicSchema()
+    {
+        XaeBuildParameters source = new()
+        {
+            Profile = "bench",
+            Detail = DetailLevel.Full,
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        XaeBuildParameters? result =
+            JsonSerializer.Deserialize<XaeBuildParameters>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.Equal(DetailLevel.Full, result?.Detail);
+        Assert.Contains("\"detail\":\"full\"", json);
+    }
+
+    [Fact]
     public void OperationEnvelopePreservesStructuredFailureEvidence()
     {
         OperationResult<object> source = new()

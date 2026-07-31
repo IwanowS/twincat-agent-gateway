@@ -96,7 +96,9 @@ public sealed class CliProgramTests
             "--changed",
             @"C:\Project\MAIN.TcPOU",
             "--scope",
-            "plc");
+            "plc",
+            "--detail",
+            "full");
 
         Assert.Equal(
             CliProgram.SuccessExitCode,
@@ -104,6 +106,7 @@ public sealed class CliProgramTests
         Assert.Equal("fixture", client.Build?.Profile);
         Assert.Equal(BuildAction.Clean, client.Build?.Action);
         Assert.Equal(XaeBuildScope.Plc, client.Build?.Scope);
+        Assert.Equal(DetailLevel.Full, client.Build?.Detail);
         Assert.Equal(
             ExpectedChangedPaths,
             client.Build?.ChangedPaths);

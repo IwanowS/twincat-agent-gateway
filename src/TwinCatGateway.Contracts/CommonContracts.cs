@@ -3,7 +3,7 @@ namespace TwinCatGateway.Contracts;
 public enum DetailLevel
 {
     Compact,
-    Detailed,
+    Full,
 }
 
 public enum DiagnosticSeverity
