@@ -447,3 +447,44 @@ retained the exact attached XAE identity, no dialogs or dirty documents, and a
 fresh direct Target Run. The fixture tree stayed Git clean and this attempt
 did not produce a real `.tsproj` noise occurrence, so that observational gate
 remains pending rather than being replaced with synthetic evidence.
+
+## 2026-08-01 — Pre-S10 package and architecture gate
+
+The prerequisite tooling gate was completed without beginning S10. Commit
+`e85be8d` centralizes all direct NuGet versions in
+`Directory.Packages.props`; common package references remain in the existing
+`Directory.Build.props`, no `Directory.Build.targets` was added, and transitive
+pinning remains disabled. The activation-verification net48 harness retains its
+pre-gate `Microsoft.Extensions.Logging.Abstractions` 8.0.2 resolution through a
+local `VersionOverride`; the central default is 10.0.7.
+
+The new multi-target `TwinCatGateway.ArchitectureTests` project uses
+`NetArchTest.eNhancedEdition` 1.4.5. It enforces the documented assembly
+boundaries and prevents direct EnvDTE/Visual Studio interop use outside Xae,
+plus direct COM/ADS use from Desktop `*ViewModel` and `*Row` types. Failure
+output includes each failing type and `IType.Explanation`. CLI and Desktop are
+analyzed from their solution-built artifacts because they share the
+`twincat-gateway` assembly/package identity. Acceptance therefore builds the
+complete solution first, and a missing executable artifact fails explicitly.
+
+Package-assets comparison covered every pre-existing project and target
+framework, including the historical IntegrationTests project outside the
+solution: 625 canonical project/TFM/package-version entries before and 625
+after, with zero differences. The architecture project adds exactly
+`NetArchTest.eNhancedEdition` 1.4.5 and its `Mono.Cecil` 0.11.6 dependency.
+No architecture-rule violation was found.
+
+Local acceptance evidence:
+
+- solution restore and Debug build: zero warnings/errors;
+- architecture: net8.0 7/7; net48/x86 7/7;
+- Unit 176/176; Configuration 81/81; Migration 82/82;
+- Contract net8.0 29/29 and net48/x86 29/29;
+- OperationJournal 3/3; TargetOperations 23/23; IPC v2 net8.0 5/5;
+- MCP v2 20/20; XAE build 10/10; ActivationVerification 12/12;
+- Observation 59 passed and one remote ADS opt-in test skipped.
+
+The S9 real-XAE project was not run. No XAE, Config, activation, restart,
+TcUnit, or remote Target operation was issued. Public DTO/IPC/MCP/configuration
+contracts and runtime behavior are unchanged, and S10 remains unstarted. The
+user-owned `twincat-gateway.json` and `.session/` remain unstaged.

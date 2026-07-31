@@ -764,6 +764,30 @@ MCP adapter contains no v1 public names.
 - S10 remains open: the Desktop compiles and consumes v2 state, but the planned
   object-oriented UI redesign is not part of S9 acceptance.
 
+## Pre-S10 prerequisite gate — package and architecture controls
+
+Completed locally on 2026-08-01 before starting S10:
+
+- Central Package Management now owns every direct NuGet version through
+  `Directory.Packages.props`. Existing versions are unchanged, including the
+  explicit `Microsoft.Extensions.Logging.Abstractions` 8.0.2 override in the
+  activation-verification migration harness; transitive pinning is not enabled.
+- The multi-target `TwinCatGateway.ArchitectureTests` project uses
+  `NetArchTest.eNhancedEdition` 1.4.5 to enforce the Contracts, Core, IPC,
+  Client/CLI/MCP, Ads/Xae, Desktop presentation, and XAE interop boundaries.
+  It reports each failing type with the dependency explanation supplied by the
+  package. CLI and Desktop are read from their solution-built artifacts because
+  both executables intentionally use the `twincat-gateway` assembly identity.
+- Package assets for all pre-existing projects and target frameworks are
+  exactly equivalent as canonical package/version entries: 625 before and 625
+  after, with zero differences. The new test project adds only
+  `NetArchTest.eNhancedEdition` 1.4.5 and `Mono.Cecil` 0.11.6.
+- The full Debug solution build passes with zero warnings/errors. Architecture
+  rules pass 7/7 on net8.0 and 7/7 on net48/x86; no pre-existing architecture
+  violation was found.
+- This gate changes no runtime behavior or public DTO, IPC, MCP, configuration,
+  or operation contract. No real-XAE operation was run. S10 has not started.
+
 ## 16. S10 — Desktop UI redesign
 
 ### Goal
