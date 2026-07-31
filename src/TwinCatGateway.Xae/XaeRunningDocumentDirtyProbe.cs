@@ -93,10 +93,14 @@ internal static class XaeRunningDocumentDirtyProbe
                     out _,
                     out string moniker,
                     out hierarchy,
-                    out _,
+                    out uint itemId,
                     out documentDataPointer));
             if (documentDataPointer == IntPtr.Zero
-                || !TryNormalizePath(moniker, out string path))
+                || !TryResolvePath(
+                    moniker,
+                    hierarchy,
+                    itemId,
+                    out string path))
             {
                 return null;
             }
@@ -205,6 +209,33 @@ internal static class XaeRunningDocumentDirtyProbe
                 Marshal.Release(persistPointer);
             }
         }
+    }
+
+    private static bool TryResolvePath(
+        string? moniker,
+        IVsHierarchy? hierarchy,
+        uint itemId,
+        out string path)
+    {
+        if (TryNormalizePath(moniker, out path))
+        {
+            return true;
+        }
+
+        if (hierarchy is IVsProject project)
+        {
+            int result = project.GetMkDocument(
+                itemId,
+                out string projectMoniker);
+            if (result >= 0
+                && TryNormalizePath(projectMoniker, out path))
+            {
+                return true;
+            }
+        }
+
+        path = string.Empty;
+        return false;
     }
 
     private static bool TryNormalizePath(
