@@ -129,11 +129,11 @@ real-XAE gates.
 | S2 | Profile resolver and effective capabilities | yes | covered by tracked migration suite: 82/82 | not required | accepted locally |
 | S3 | Source discovery manifest | yes | covered by tracked migration suite: 82/82 | not required | accepted locally |
 | S4 | Separate XAE/System Service/PLC states | yes | observation suite: 59 passed, 1 skipped | exact fixture provenance captured by S7 checkpoint | accepted |
-| S5 | Operator locks and XAE close consent backend | yes | partial: tracked session-state coverage passes; cancellation coverage remains local-only until S9 cutover | not required | pending local gate |
-| S6 | XAE build scope and policy cutover | yes | production-TFM compile passes; migration 82/82; XAE event suite 7/7 | pending | pending |
+| S5 | Operator locks and XAE close consent backend | yes | exact-ID cancellation and lock/capability coverage pass in tracked v2 suites | not required | accepted locally |
+| S6 | XAE build scope and policy cutover | yes | production-TFM compile passes; migration 82/82; XAE event suite 7/7 | checkout v2 PlcProject2 Build passed; remaining matrix pending | pending |
 | S7 | Target Config/start-restart | yes | target suite: 23/23; Contracts: 26/26 on net8.0 and net48 | exact fixture cycle passed | accepted |
-| S8 | Activation and TcUnit verification unification | yes | activation-verification suite: 12/12; Contracts: 28/28 on net8.0 and net48 | blocked: installed v1 Gateway rejects schema v2; S6 matrix also pending | pending |
-| S9 | MCP tools/resources and operation journal cutover | no | pending | pending | pending |
+| S8 | Activation and TcUnit verification unification | yes | activation-verification suite: 12/12; Contracts: 28/28 on net8.0 and net48 | checkout v2 reached TcUnit baseline; blocked before activation by report delete access | pending |
+| S9 | MCP tools/resources and operation journal cutover | yes | full solution 0 warnings/errors; Unit 176/176; MCP v2 20/20; contract net8/net48 28/28 | checkout v2 PLC Build passed; S8 stopped before activation because TcUnit report delete access was denied | accepted locally |
 | S10 | Desktop UI redesign | no | pending | pending | pending |
 | S11 | Skills, project template, installed docs, packaging | no | pending | pending | pending |
 | S12 | Full regression and real-XAE acceptance | no | pending | pending | pending |
@@ -726,6 +726,35 @@ Expose only target object-oriented surface and operation-specific artifacts.
 ### Exit
 
 MCP adapter contains no v1 public names.
+
+### Completion note (2026-08-01)
+
+- Core, IPC, Client, CLI, Desktop, and MCP now compile against the v2 object
+  model; the complete solution builds with zero warnings and zero errors.
+- Every Gateway-owned mutation uses an exact journaled operation ID, including
+  preflight failures. Client cancellation after receipt forwards one bounded
+  cancellation request for that exact ID. Gateway process start/shutdown remain
+  typed lifecycle results outside the journal by the recorded architecture
+  exception.
+- MCP exposes the exact nine v2 tools and 22 canonical resources, native
+  structured content/output schemas and resource-link blocks. The URI router
+  rejects traversal, malformed/noncanonical escaping, query/fragment input,
+  unknown artifacts, and missing-artifact fallback.
+- A single metadata catalog generates the checked-in MCP reference and installed
+  `twincat-doc://mcp`; check mode passes and stdio smoke confirms protocol-only
+  stdout.
+- Deprecated v1 MCP adapter names and compatibility tests are removed. The old
+  standalone IntegrationTests project is retired from the solution; six still
+  applicable observation/build/TcUnit tests were moved into their tracked v2
+  migration suites.
+- The checkout-built S9 real-XAE harness validates exact config/solution/DTE,
+  confirmed synchronization, zero dirty documents, exact operation IDs, two
+  distinct fresh TcUnit artifacts, and a final fresh direct Target Run. It is
+  opt-in. Its exact-profile `PlcProject2` Build passed on the stand. The S8
+  chain stopped safely before activation when the Gateway user could not delete
+  the configured existing TcUnit report; Target remained fresh Run.
+- S10 remains open: the Desktop compiles and consumes v2 state, but the planned
+  object-oriented UI redesign is not part of S9 acceptance.
 
 ## 16. S10 — Desktop UI redesign
 

@@ -80,8 +80,38 @@ same interactive user session before diagnosing a gateway regression. The
 focused rerun may interact only with dialogs created by the test process; it
 must not close or manipulate user-owned XAE windows.
 
-Build with the pinned SDK as usual, then run the already-built .NET Framework
-integration assembly through VSTest's x86 platform:
+### Current v2 S9 real-XAE harness
+
+Build the checkout solution and start the checkout-built v2 Desktop with an
+explicit configuration path. After the same-user ROT probe and read-only
+identity/synchronization/dirty-document checks, run:
+
+```powershell
+$env:TWINCAT_GATEWAY_S9_CONFIG = 'C:\absolute\path\to\twincat-gateway.json'
+$env:TWINCAT_GATEWAY_S9_PIPE = 'ExactConfiguredPipeName'
+$env:TWINCAT_GATEWAY_S9_PROFILE = 'exact-profile'
+$env:TWINCAT_GATEWAY_XAE_SOLUTION = 'C:\absolute\path\to\project.sln'
+$env:TWINCAT_GATEWAY_S9_PLC_PROJECT = 'optional-logical-plc-id'
+dotnet test `
+  'tests\TwinCatGateway.MigrationTests\S9RealXae\TwinCatGateway.S9RealXaeTests.csproj' `
+  --no-build --configuration Debug
+```
+
+Set `TWINCAT_GATEWAY_ALLOW_REMOTE_ACTIVATION=1` only for the explicitly
+authorized activation plus TcUnit then Target restart plus TcUnit checkpoint.
+The harness refuses to proceed unless config, pipe, profile, exact solution,
+confirmed synchronization, and zero dirty documents are all verified. It does
+not launch or close XAE.
+
+### Historical v1 integration commands
+
+The commands below document earlier v1 evidence only. The standalone
+`TwinCatGateway.IntegrationTests` project is no longer part of the solution and
+these commands are not current acceptance commands. Do not run them; use the S9
+harness above and the current rework plan.
+
+Historically, the already-built .NET Framework integration assembly was run
+through VSTest's x86 platform:
 
 Before fixture edits and before/after real-XAE tests, inspect the interactive
 x86 ROT rather than relying on sandbox process metadata:

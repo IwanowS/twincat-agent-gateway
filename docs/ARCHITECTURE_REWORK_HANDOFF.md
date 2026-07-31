@@ -241,3 +241,99 @@ Run without closing the attached XAE.
 
 The tracked `twincat-gateway.json` user changes and all `.session/` contents
 remain excluded from commits.
+
+## 2026-08-01 — S9 MCP, IPC, and operation journal v2
+
+### Scope and commits
+
+S9 is implemented locally through the following thematic commits:
+
+- `e830da8` — immutable v2 operation journal and exact-ID cancellation;
+- `c682140` — typed v2 IPC and client calls;
+- `6a79758` — object-oriented v2 MCP tools;
+- `74eb77f` — canonical state, diagnostic, operation, artifact, doc, and log
+  resources;
+- `330414b` — v1 MCP removal and metadata-generated reference;
+- `13f1018` — checkout Desktop and CLI v2 consumer migration;
+- `0129ffc` — tracked S9 MCP and real-XAE acceptance suites;
+- `313f04f` — remaining Unit/CLI/client test consumers migrated to v2;
+- `9ad3394` — v1 standalone IntegrationTests project retired from the solution,
+  with six applicable tests moved into tracked v2 migration suites.
+
+The public MCP adapter now exposes exactly nine tools and 22 resource templates.
+All Gateway-owned mutations, including preflight failures, receive an exact
+operation ID. `gateway_start` and `gateway_shutdown` deliberately return typed
+lifecycle results without an ID because process lifecycle is outside the
+Gateway journal. Operation artifacts and events resolve only by exact ID; URI
+parsing has no `latest`, `last`, relative, malformed-escape, query, fragment, or
+missing-artifact fallback.
+
+Client mutations use receipt-then-poll semantics. Cancellation after a receipt
+forwards exactly one bounded cancellation request for that operation ID. Native
+MCP structured content, output schemas, and resource-link blocks are used.
+The checked-in MCP reference and installed `twincat-doc://mcp` are generated
+from the same metadata catalog and pass drift check mode.
+
+### Final local validation
+
+- full `TwinCatGateway.sln` Debug build: zero warnings, zero errors;
+- Unit tests: 176/176;
+- contract serialization: 28/28 on net8.0 and 28/28 on net48;
+- Core S2-S5 migration suite: 82/82;
+- operation journal: 3/3;
+- observation (`net48`, x86): 59 passed, one opt-in real-XAE test skipped;
+- XAE build event suite: 7/7;
+- Target operations: 23/23;
+- activation/TcUnit verification: 12/12;
+- IPC v2: 5/5 on net8.0 and production net48 build passed;
+- MCP S9: 20/20, including exact listing, schemas, structured content,
+  resource links, compact bounds, URI security, missing artifacts,
+  cancellation, and stdio protocol-only stdout;
+- S9 real-XAE harness: local default run skipped both opt-in tests; the later
+  checkout stand run passed exact-profile PLC Build and stopped the S8 chain at
+  TcUnit report baseline access before activation side effects.
+
+The complete solution contains no remaining v1 compile failure. The old
+standalone `TwinCatGateway.IntegrationTests` source directory remains tracked
+but is no longer a solution project; broad deletion was intentionally avoided
+after six active tests were relocated. It is historical source, not acceptance
+surface. A source search confirms no public v1 tool/resource name in the MCP
+adapter.
+
+### Real-XAE boundary and next scope
+
+The checkout-built Desktop PID `44656` was started with the explicit tracked
+configuration and launched exact-solution XAE PID `40348` under
+`TcXaeShell.DTE.15.0`. Same-user ROT showed exactly one loaded solution:
+`tests/fixtures/TC3_SimpleProject/TC3_SimpleProject.sln`. The S9 harness then
+confirmed the exact config/profile/solution, DTE availability, confirmed
+synchronization, and zero dirty documents before its first operation.
+
+Standalone PLC Build for logical project `PlcProject2` passed with exact
+operation ID `2259978eab20433e89a38024eeeb73b3`, zero compile errors/warnings,
+and no accepted project-noise changes. Fresh direct observations before and
+after remained Target Run (AMS `192.168.3.31.1.1`, System Service port 10000,
+raw ADS 5/device 1), PLC 851 Run, and PLC 852 Run.
+
+The combined S8 chain stopped before activation side effects. Root operation
+`b015f8f0e47c42a982e3288381417100` failed during TcUnit baseline preparation
+because the Gateway user received `UnauthorizedAccessException` while deleting
+`\\WIN-T077ADA\c\TwinCAT\3.1\Boot\tcunit_xunit_testresults.xml` with
+`allowDeleteExistingReport=true`. No Target restart followed and no retry was
+attempted. Subsequent monitor evidence retained fresh Target and both PLC
+runtimes in Run. The post-check ROT retained the same exact XAE PID and
+solution; XAE and checkout Gateway were intentionally left open.
+
+The remaining S6 build matrix and combined S8
+`activate + tcunit -> target restart + tcunit -> fresh final Run` gate remain
+pending. To resume S8, the operator must either grant the interactive Gateway
+user delete access to the configured report or explicitly approve changing the
+profile to `allowDeleteExistingReport=false` and restarting the checkout
+Gateway. The PLC Exception case additionally waits for the guarded, disabled
+by default project define workflow and byte-for-byte restoration. XAE must
+remain open and attached. S10 remains the next consumer/UI scope; S9 only made
+Desktop compile and consume v2 observations and did not implement the planned
+UI redesign.
+
+The user-modified tracked `twincat-gateway.json` and all `.session/` contents
+remain unstaged and excluded from every S9 commit.
