@@ -54,7 +54,7 @@ internal static class AgentWorkspaceOwnership
                 }
             }
 
-            return false;
+            return XaeRunningDocumentDirtyProbe.HasAnyDirtyDocument(dte);
         }
         finally
         {
@@ -66,10 +66,10 @@ internal static class AgentWorkspaceOwnership
         DTE2 dte,
         IEnumerable<string> projectGraphPaths)
     {
-        HashSet<string> graph = new(
-            projectGraphPaths.Select(Path.GetFullPath),
-            StringComparer.OrdinalIgnoreCase);
-        List<string> dirty = new();
+        string[] graph = projectGraphPaths
+            .Select(Path.GetFullPath)
+            .ToArray();
+        List<string> dteDirty = new();
         Documents? documents = null;
         try
         {
@@ -83,10 +83,9 @@ internal static class AgentWorkspaceOwnership
                     string? path = NormalizeOptionalPath(
                         document.FullName);
                     if (path is not null
-                        && graph.Contains(path)
                         && !document.Saved)
                     {
-                        dirty.Add(path);
+                        dteDirty.Add(path);
                     }
                 }
                 finally
@@ -100,10 +99,10 @@ internal static class AgentWorkspaceOwnership
             ComObject.Release(documents);
         }
 
-        return dirty
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        return XaeDirtyDocumentSet.MergeProjectGraphPaths(
+            graph,
+            dteDirty,
+            XaeRunningDocumentDirtyProbe.FindDirtyDocuments(dte));
     }
 
     public static AgentWorkspaceOwnershipResult EnsureClean(
@@ -116,10 +115,13 @@ internal static class AgentWorkspaceOwnership
             throw new ArgumentNullException(nameof(dte));
         }
 
-        HashSet<string> graph = new(
-            projectGraphPaths.Select(Path.GetFullPath),
+        string[] graph = projectGraphPaths
+            .Select(Path.GetFullPath)
+            .ToArray();
+        HashSet<string> graphSet = new(
+            graph,
             StringComparer.OrdinalIgnoreCase);
-        List<string> dirty = new();
+        List<string> dteDirty = new();
         Documents? documents = null;
         try
         {
@@ -133,13 +135,13 @@ internal static class AgentWorkspaceOwnership
                     string? path = NormalizeOptionalPath(
                         document.FullName);
                     if (path is null
-                        || !graph.Contains(path)
+                        || !graphSet.Contains(path)
                         || document.Saved)
                     {
                         continue;
                     }
 
-                    dirty.Add(path);
+                    dteDirty.Add(path);
                     if (discardDirtyDocuments)
                     {
                         document.Close(
@@ -170,10 +172,17 @@ internal static class AgentWorkspaceOwnership
             ComObject.Release(documents);
         }
 
-        string[] ordered = dirty
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase)
+        string[] ordered = XaeDirtyDocumentSet.MergeProjectGraphPaths(
+                graph,
+                dteDirty,
+                XaeRunningDocumentDirtyProbe.FindDirtyDocuments(dte))
             .ToArray();
+        if (discardDirtyDocuments && ordered.Length != 0)
+        {
+            XaeRunningDocumentDirtyProbe.DiscardDirtyDocuments(
+                dte,
+                ordered);
+        }
         if (ordered.Length != 0 && !discardDirtyDocuments)
         {
             throw new GatewayOperationException(

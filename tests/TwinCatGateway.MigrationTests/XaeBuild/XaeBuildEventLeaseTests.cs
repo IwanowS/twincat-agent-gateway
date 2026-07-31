@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using EnvDTE;
 using Microsoft.VisualStudio.Shell.Interop;
 using TwinCatGateway.Contracts;
@@ -8,6 +10,24 @@ namespace TwinCatGateway.IntegrationTests;
 
 public sealed class XaeBuildEventLeaseTests
 {
+    [Fact]
+    public void RunningDocumentDirtyPathIsMergedWhenDteOmitsPlcEditor()
+    {
+        string main = @"C:\Fixture\PlcProject2\POUs\MAIN.TcPOU";
+
+        IReadOnlyList<string> dirty =
+            XaeDirtyDocumentSet.MergeProjectGraphPaths(
+                new[] { main, @"C:\Fixture\Machine.tsproj" },
+                Array.Empty<string>(),
+                new[]
+                {
+                    main.ToLowerInvariant(),
+                    @"C:\Unrelated\Other.TcPOU",
+                });
+
+        Assert.Equal(new[] { main }, dirty, StringComparer.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData(BuildAction.Clean, VSSOLNBUILDUPDATEFLAGS.SBF_OPERATION_CLEAN)]
     [InlineData(
