@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using TwinCatGateway.Client;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
+using TwinCatGateway.Ipc;
 using TwinCatGateway.Mcp;
 using Xunit;
 
@@ -19,15 +20,16 @@ public sealed class GatewayMcpRuntimeTests
     {
         using TestContext context = new(allowStart: false);
 
-        GatewayResponse<GatewayStartResult> response =
+        GatewayLifecycleResult<GatewayStartResult> response =
             await context.Runtime.StartAsync(
                 server: null,
+                explicitConfigurationPath: null,
                 TimeSpan.FromMilliseconds(50),
                 CancellationToken.None);
 
         Assert.False(response.Ok);
         Assert.Equal(
-            ErrorCodes.GatewayStartDisabled,
+            ErrorCodes.CapabilityDisabled,
             response.Error?.Code);
         Assert.Equal(0, context.Launcher.LaunchCount);
     }
@@ -38,9 +40,10 @@ public sealed class GatewayMcpRuntimeTests
         using TestContext context = new(allowStart: true);
         context.PublishCurrentProcess();
 
-        GatewayResponse<GatewayStartResult> response =
+        GatewayLifecycleResult<GatewayStartResult> response =
             await context.Runtime.StartAsync(
                 server: null,
+                explicitConfigurationPath: null,
                 TimeSpan.FromMilliseconds(50),
                 CancellationToken.None);
 
@@ -55,9 +58,10 @@ public sealed class GatewayMcpRuntimeTests
     {
         using TestContext context = new(allowStart: true);
 
-        GatewayResponse<GatewayStartResult> response =
+        GatewayLifecycleResult<GatewayStartResult> response =
             await context.Runtime.StartAsync(
                 server: null,
+                explicitConfigurationPath: null,
                 TimeSpan.FromMilliseconds(40),
                 CancellationToken.None);
 
@@ -76,9 +80,10 @@ public sealed class GatewayMcpRuntimeTests
             new InteractiveGatewayLaunchException(
                 "Explorer is unavailable.");
 
-        GatewayResponse<GatewayStartResult> response =
+        GatewayLifecycleResult<GatewayStartResult> response =
             await context.Runtime.StartAsync(
                 server: null,
+                explicitConfigurationPath: null,
                 TimeSpan.FromMilliseconds(40),
                 CancellationToken.None);
 
@@ -174,9 +179,10 @@ public sealed class GatewayMcpRuntimeTests
                 "other",
                 "Other.sln"));
 
-        GatewayResponse<GatewayStartResult> response =
+        GatewayLifecycleResult<GatewayStartResult> response =
             await context.Runtime.StartAsync(
                 server: null,
+                explicitConfigurationPath: null,
                 TimeSpan.FromMilliseconds(50),
                 CancellationToken.None);
 
@@ -197,34 +203,13 @@ public sealed class GatewayMcpRuntimeTests
             await context.Runtime.ResolveClientAsync(
                 server: null,
                 CancellationToken.None);
-        GatewayResponse<GatewayStatusResult> response =
-            await client.GetStatusAsync();
+        GatewayClientException exception =
+            await Assert.ThrowsAsync<GatewayClientException>(
+                () => client.GetGatewayStateAsync());
 
-        Assert.False(response.Ok);
         Assert.Equal(
             ErrorCodes.GatewayNotRunning,
-            response.Error?.Code);
-    }
-
-    [Fact]
-    public async Task StatusToolReturnsStructuredNotRunningError()
-    {
-        using TestContext context = new(allowStart: true);
-        TwinCatTools tools = new(context.Runtime);
-
-        string result = await tools.GetStatusAsync();
-
-        using JsonDocument json = JsonDocument.Parse(result);
-        Assert.False(
-            json.RootElement
-                .GetProperty("ok")
-                .GetBoolean());
-        Assert.Equal(
-            ErrorCodes.GatewayNotRunning,
-            json.RootElement
-                .GetProperty("error")
-                .GetProperty("code")
-                .GetString());
+            exception.Error.Code);
     }
 
     private sealed class TestContext : IDisposable
@@ -244,18 +229,28 @@ public sealed class GatewayMcpRuntimeTests
                 ConfigurationPath,
                 $$"""
                 {
-                  "schemaVersion": 1,
+                  "schemaVersion": 2,
                   "defaultProfile": "fixture",
-                  "agentProcessControl": {
-                    "allowStart": {{allowStart.ToString().ToLowerInvariant()}},
-                    "allowShutdown": false
+                  "gateway": {
+                    "processControl": {
+                      "allowStart": {{allowStart.ToString().ToLowerInvariant()}},
+                      "allowShutdown": false
+                    }
                   },
                   "profiles": [
                     {
                       "name": "fixture",
-                      "solution": "Machine.sln",
-                      "allowXaeLaunch": false,
-                      "allowActivation": false
+                      "xae": {
+                        "solution": "Machine.sln",
+                        "capabilities": {
+                          "launch": false,
+                          "close": false,
+                          "synchronize": false,
+                          "discardDirtyDocuments": false,
+                          "build": false,
+                          "activate": false
+                        }
+                      }
                     }
                   ]
                 }
@@ -400,114 +395,29 @@ public sealed class GatewayMcpRuntimeTests
     }
 
     private sealed class StatusGatewayClient
-        : ITwinCatGatewayClient
+        : GatewayClientStub
     {
         private readonly string _configurationPath;
-        private readonly string _solutionPath;
-
         public StatusGatewayClient(
             string configurationPath,
             string solutionPath)
         {
             _configurationPath = configurationPath;
-            _solutionPath = solutionPath;
+            _ = solutionPath;
         }
 
-        public Task<GatewayResponse<GatewayStatusResult>>
-            GetStatusAsync(
+        public override Task<GatewayStateSnapshot>
+            GetGatewayStateAsync(
                 CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(
-                new GatewayResponse<GatewayStatusResult>
+                new GatewayStateSnapshot
                 {
-                    Ok = true,
-                    Result = new GatewayStatusResult
-                    {
-                        Gateway = new GatewayStatus
-                        {
-                            Ready = true,
-                            ConfigurationPath =
-                                _configurationPath,
-                            ActiveProfile = "fixture",
-                            SolutionPath = _solutionPath,
-                            LaunchSource =
-                                GatewayLaunchSource.Agent,
-                            UiMode = GatewayUiMode.Tray,
-                        },
-                    },
+                    State = GatewayProcessState.Ready,
+                    ConfigurationPath = _configurationPath,
+                    ActiveProfile = "fixture",
                 });
-        }
-
-        public Task<GatewayResponse<GatewayShutdownResult>>
-            ShutdownAsync(
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<HealthResult>>
-            GetHealthAsync(
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<GatewayDiagnosticsResult>>
-            GetDiagnosticsAsync(
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<GatewayDiagnosticsResult>>
-            GetDiagnosticsAsync(
-                GetDiagnosticsParameters parameters,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<OperationAccepted>>
-            StartBuildAsync(
-                BuildParameters parameters,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<OperationAccepted>>
-            StartActivationAsync(
-                ActivateParameters parameters,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<OperationDetails<TResult>>>
-            GetOperationAsync<TResult>(
-                string operationId,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<CancelOperationResult>>
-            CancelOperationAsync(
-                string operationId,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<ResourceContent>>
-            GetResourceAsync(
-                string uri,
-                int maximumCharacters = 64 * 1024,
-                long offset = 0,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
         }
     }
 

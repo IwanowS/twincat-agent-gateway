@@ -20,7 +20,7 @@ public sealed class OperationQueueTests
         TaskCompletionSource<bool> releaseFirst = NewCompletionSource();
         ConcurrentQueue<string> events = new();
 
-        OperationAccepted first = queue.Enqueue(
+        OperationHandle first = queue.Enqueue(
             OperationKind.XaeBuild,
             async cancellationToken =>
             {
@@ -30,7 +30,7 @@ public sealed class OperationQueueTests
                 events.Enqueue("first-end");
                 return OperationExecutionResult.Success();
             });
-        OperationAccepted second = queue.Enqueue(
+        OperationHandle second = queue.Enqueue(
             OperationKind.Activate,
             cancellationToken =>
             {
@@ -70,7 +70,7 @@ public sealed class OperationQueueTests
                 await WaitAsync(releaseFirst.Task, cancellationToken);
                 return OperationExecutionResult.Success();
             });
-        OperationAccepted second = queue.Enqueue(
+        OperationHandle second = queue.Enqueue(
             OperationKind.Activate,
             cancellationToken =>
             {
@@ -96,17 +96,15 @@ public sealed class OperationQueueTests
     public async Task OperationFailureDoesNotStopTheQueue()
     {
         OperationStore store = new();
-        GatewayStatusSnapshotStore status =
-            new(GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
-        GatewayEventJournal events = new(status);
+        GatewayEventJournal events = new();
         using OperationQueue queue = new(
             store,
             gatewayEventSink: events);
 
-        OperationAccepted failed = queue.Enqueue(
+        OperationHandle failed = queue.Enqueue(
             OperationKind.XaeBuild,
             cancellationToken => throw new InvalidOperationException("boom"));
-        OperationAccepted succeeded = queue.Enqueue(
+        OperationHandle succeeded = queue.Enqueue(
             OperationKind.XaeBuild,
             cancellationToken =>
                 Task.FromResult(OperationExecutionResult.Success("complete")));
@@ -138,7 +136,7 @@ public sealed class OperationQueueTests
         OperationStore store = new();
         using OperationQueue queue = new(store);
 
-        OperationAccepted failed = queue.Enqueue(
+        OperationHandle failed = queue.Enqueue(
             OperationKind.XaeBuild,
             cancellationToken =>
                 throw new GatewayOperationException(
@@ -164,14 +162,12 @@ public sealed class OperationQueueTests
     public async Task DeadlineCancelsCooperativeOperationAndMarksTimeout()
     {
         OperationStore store = new();
-        GatewayStatusSnapshotStore status =
-            new(GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
-        GatewayEventJournal events = new(status);
+        GatewayEventJournal events = new();
         using OperationQueue queue = new(
             store,
             gatewayEventSink: events);
 
-        OperationAccepted accepted = queue.Enqueue(
+        OperationHandle accepted = queue.Enqueue(
             OperationKind.XaeBuild,
             async cancellationToken =>
             {
@@ -186,7 +182,7 @@ public sealed class OperationQueueTests
 
         Assert.Equal(ErrorCodes.OperationTimeout, operation.Summary.Error?.Code);
         Assert.True(operation.Summary.Error?.Retryable);
-        Assert.Equal(3, status.Read().LatestEventCursor);
+        Assert.Equal(3, events.LatestCursor);
         GatewayEvent[] lifecycle = events
             .ReadAfter(null, 0, 100)
             .Events
@@ -213,7 +209,7 @@ public sealed class OperationQueueTests
         using OperationQueue queue = new(store);
         string? executedId = null;
 
-        OperationAccepted accepted = queue.Enqueue(
+        OperationHandle accepted = queue.Enqueue(
             OperationKind.XaeBuild,
             (operationId, cancellationToken) =>
             {
@@ -235,14 +231,12 @@ public sealed class OperationQueueTests
     public async Task SuccessfulBuildPublishesOrderedLifecycleEvents()
     {
         OperationStore store = new();
-        GatewayStatusSnapshotStore status =
-            new(GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
-        GatewayEventJournal events = new(status);
+        GatewayEventJournal events = new();
         using OperationQueue queue = new(
             store,
             gatewayEventSink: events);
 
-        OperationAccepted accepted = queue.Enqueue(
+        OperationHandle accepted = queue.Enqueue(
             OperationKind.XaeBuild,
             cancellationToken => Task.FromResult(
                 OperationExecutionResult.Success()));

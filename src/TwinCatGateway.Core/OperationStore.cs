@@ -226,6 +226,13 @@ public sealed class OperationStore
                 OperationId = source.OperationId,
                 Stage = source.Stage,
                 RawLogRef = source.RawLogRef,
+                Component = source.Component,
+                SideEffectsStarted = source.SideEffectsStarted,
+                Expected = source.Expected,
+                Observed = source.Observed,
+                Resources = source.Resources
+                    .Select(CloneResource)
+                    .ToList(),
             };
     }
 

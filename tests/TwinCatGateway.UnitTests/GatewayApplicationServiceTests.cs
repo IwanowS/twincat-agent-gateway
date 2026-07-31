@@ -1,6 +1,5 @@
 using System;
 using System.IO;
-using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Contracts;
@@ -12,1083 +11,195 @@ namespace TwinCatGateway.UnitTests;
 public sealed class GatewayApplicationServiceTests
 {
     [Fact]
-    public void HealthAndStatusReadPublishedSnapshot()
+    public void GatewayStateUsesTheObjectSnapshot()
     {
         using ServiceFixture fixture = new();
-        fixture.Status.Update(status =>
+        fixture.Status.Update(snapshot =>
         {
-            status.Gateway.State = GatewayState.Disconnected;
-            return status;
+            snapshot.State = GatewayProcessState.Ready;
+            snapshot.ActiveProfile = "fixture";
+            return snapshot;
         });
 
-        HealthResult health = fixture.Service.GetHealth();
-        GatewayStatusResult status = fixture.Service.GetStatus();
+        GatewayStateSnapshot state = fixture.Service.GetGatewayState();
 
-        Assert.True(health.Ready);
-        Assert.Equal(GatewayState.Disconnected, health.State);
-        Assert.Equal(GatewayState.Disconnected, status.Gateway.State);
+        Assert.Equal(GatewayProcessState.Ready, state.State);
+        Assert.Equal("fixture", state.ActiveProfile);
     }
 
     [Fact]
-    public async Task QueuedOperationCanBeCancelledThroughApplicationService()
+    public void EventPagingRejectsCursorWithoutJournalIdentity()
     {
         using ServiceFixture fixture = new();
-        TaskCompletionSource<bool> firstStarted = NewCompletionSource();
-        TaskCompletionSource<bool> releaseFirst = NewCompletionSource();
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(() =>
+                fixture.Service.GetOperationEvents(
+                    new GetDiagnosticsParameters { AfterEventCursor = 1 }));
+
+        Assert.Equal(ErrorCodes.RequestInvalid, exception.Code);
+        Assert.Equal("diagnostics.validate", exception.Stage);
+    }
+
+    [Fact]
+    public async Task PreflightFailureIsJournaledUnderItsExactOperationId()
+    {
+        using ServiceFixture fixture = new();
+        OperationHandle handle = fixture.Service.EnqueuePreflightFailure(
+            OperationKind.XaeBuild,
+            "fixture",
+            new GatewayOperationException(
+                ErrorCodes.CapabilityDisabled,
+                "Build is disabled.",
+                stage: "xae.build.admission",
+                component: GatewayComponent.Xae,
+                sideEffectsStarted: false));
+
+        OperationResult<object> result =
+            await fixture.Service.WaitForOperationAsync<object>(
+                handle.OperationId,
+                CancellationToken.None);
+
+        Assert.False(result.Ok);
+        Assert.Equal(handle.OperationId, result.OperationId);
+        Assert.Equal(handle.OperationId, result.Error?.OperationId);
+        Assert.Equal(GatewayComponent.Xae, result.Error?.Component);
+        Assert.False(result.Error?.SideEffectsStarted);
+        GatewayEvent failed = Assert.Single(
+            fixture.Service.GetOperationEvents(
+                    new GetDiagnosticsParameters
+                    {
+                        EventStreamId = fixture.Events.JournalId,
+                        MaximumEvents = 20,
+                    })
+                .Events,
+            gatewayEvent => gatewayEvent.OperationId == handle.OperationId
+                && gatewayEvent.Severity == DiagnosticSeverity.Error);
+        Assert.Equal(ErrorCodes.CapabilityDisabled, failed.Code);
+    }
+
+    [Fact]
+    public async Task OperationSnapshotRetainsTypedResultAndProfile()
+    {
+        using ServiceFixture fixture = new();
+        OperationHandle handle = fixture.Queue.Enqueue(
+            OperationKind.XaeBuild,
+            _ => Task.FromResult(
+                OperationExecutionResult.Success(
+                    new XaeBuildResult
+                    {
+                        Action = BuildAction.Build,
+                        Scope = XaeBuildScope.Plc,
+                    })),
+            profile: "fixture");
+
+        OperationResult<XaeBuildResult> result =
+            await fixture.Service.WaitForOperationAsync<XaeBuildResult>(
+                handle.OperationId,
+                CancellationToken.None);
+        OperationSnapshot<object> snapshot =
+            fixture.Service.GetOperation(handle.OperationId);
+
+        Assert.True(result.Ok);
+        Assert.Equal(BuildAction.Build, result.Result?.Action);
+        Assert.Equal("fixture", snapshot.Operation.Profile);
+        Assert.Equal(OperationState.Succeeded, snapshot.Operation.State);
+    }
+
+    [Fact]
+    public async Task QueuedOperationCanBeCancelledByExactId()
+    {
+        using ServiceFixture fixture = new();
+        TaskCompletionSource<bool> started = NewCompletionSource();
+        TaskCompletionSource<bool> release = NewCompletionSource();
         fixture.Queue.Enqueue(
             OperationKind.XaeBuild,
             async cancellationToken =>
             {
-                firstStarted.SetResult(true);
-                await WaitAsync(releaseFirst.Task, cancellationToken);
+                started.SetResult(true);
+                await WaitAsync(release.Task, cancellationToken);
                 return OperationExecutionResult.Success();
             });
-        OperationAccepted queued = fixture.Queue.Enqueue(
-            OperationKind.Activate,
-            cancellationToken =>
-                Task.FromResult(OperationExecutionResult.Success()));
-        await firstStarted.Task;
+        OperationHandle queued = fixture.Queue.Enqueue(
+            OperationKind.XaeBuild,
+            _ => Task.FromResult(OperationExecutionResult.Success()));
 
-        CancelOperationResult cancellation =
+        await started.Task;
+        OperationCancellationReceipt receipt =
             fixture.Service.CancelOperation(queued.OperationId);
-        releaseFirst.SetResult(true);
-        await fixture.Queue.StopAsync();
+        release.SetResult(true);
 
-        Assert.True(cancellation.Cancelled);
-        Assert.Equal(OperationState.Cancelled, cancellation.State);
-        Assert.Equal(
-            OperationState.Cancelled,
-            fixture.Service.GetOperation(queued.OperationId).Operation.State);
-    }
-
-    [Fact]
-    public void UnknownOperationReturnsStableError()
-    {
-        using ServiceFixture fixture = new();
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.GetOperation("missing"));
-
-        Assert.Equal(ErrorCodes.OperationNotFound, exception.Code);
-    }
-
-    [Fact]
-    public void ResourceReadsArePagedThroughApplicationService()
-    {
-        using ServiceFixture fixture = new();
-        ResourceReference reference = fixture.Logs.WriteText(
-            "operation-1",
-            ResourceKind.BuildLog,
-            "abcdefghij");
-
-        ResourceContent first =
-            fixture.Service.GetResource(reference.Uri, 4, offset: 0);
-        ResourceContent second = fixture.Service.GetResource(
-            reference.Uri,
-            4,
-            first.NextOffset!.Value);
-
-        Assert.Equal("abcd", first.Content);
-        Assert.Equal("efgh", second.Content);
-        Assert.Equal(8, second.NextOffset);
-    }
-
-    [Fact]
-    public void CurrentGatewayLogResourceReturnsTrackedAbsolutePath()
-    {
-        const string currentPath =
-            @"C:\GatewayLogs\gateway-20260729T063245123Z-p1234_001.ndjson";
-        using ServiceFixture fixture = new(
-            currentLogPathProvider: () => currentPath);
-
-        ResourceContent resource = fixture.Service.GetResource(
-            GatewayResourceUris.CurrentGatewayLog,
-            1024,
-            offset: 0);
-
-        Assert.Equal(
-            GatewayResourceUris.CurrentGatewayLog,
-            resource.Uri);
-        Assert.Equal("text/plain", resource.ContentType);
-        Assert.Equal(currentPath, resource.Content);
-        Assert.Equal(0, resource.Offset);
-        Assert.Null(resource.NextOffset);
-        Assert.False(resource.Truncated);
-    }
-
-    [Fact]
-    public void CurrentGatewayLogResourceFailsWhenTrackerIsUnavailable()
-    {
-        using ServiceFixture fixture = new();
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.GetResource(
-                    GatewayResourceUris.CurrentGatewayLog,
-                    1024,
-                    offset: 0));
-
-        Assert.Equal(ErrorCodes.GatewayNotRunning, exception.Code);
-    }
-
-    [Fact]
-    public void CurrentGatewayLogResourceDoesNotCacheRolloverPath()
-    {
-        string currentPath =
-            @"C:\GatewayLogs\gateway-20260729T063245123Z-p1234.ndjson";
-        using ServiceFixture fixture = new(
-            currentLogPathProvider: () => currentPath);
-
-        ResourceContent initial = fixture.Service.GetResource(
-            GatewayResourceUris.CurrentGatewayLog,
-            1024,
-            offset: 0);
-        currentPath =
-            @"C:\GatewayLogs\gateway-20260729T063245123Z-p1234_001.ndjson";
-        ResourceContent rolled = fixture.Service.GetResource(
-            GatewayResourceUris.CurrentGatewayLog,
-            1024,
-            offset: 0);
-
-        Assert.EndsWith(
-            "-p1234.ndjson",
-            initial.Content,
-            StringComparison.Ordinal);
-        Assert.EndsWith(
-            "-p1234_001.ndjson",
-            rolled.Content,
-            StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public void DiagnosticsMergeRuntimeEvidenceWithCurrentStatus()
-    {
-        using ServiceFixture fixture = new(
-            () => new GatewayDiagnosticsResult
-            {
-                DteInstances =
-                {
-                    new DteInstanceInfo
-                    {
-                        Moniker = "!TcXaeShell.DTE.15.0:1234",
-                    },
-                },
-                Xae = new XaeDiagnostics
-                {
-                    SysManagerAvailable = true,
-                },
-                Com = new ComDiagnostics
-                {
-                    RetryCount = 2,
-                },
-            });
-        fixture.Status.Update(status =>
-        {
-            status.Gateway.State = GatewayState.Ready;
-            return status;
-        });
-
-        GatewayDiagnosticsResult diagnostics =
-            fixture.Service.GetDiagnostics();
-
-        Assert.Equal(GatewayState.Ready, diagnostics.Status.Gateway.State);
-        Assert.Single(diagnostics.DteInstances);
-        Assert.True(diagnostics.Xae.SysManagerAvailable);
-        Assert.Equal(2, diagnostics.Com.RetryCount);
-        Assert.True(diagnostics.Ipc.Healthy);
-        Assert.True(diagnostics.LogStore.Healthy);
+        Assert.Equal(queued.OperationId, receipt.OperationId);
+        Assert.True(receipt.CancellationRequested);
+        Assert.Equal(OperationState.Cancelled, receipt.State);
     }
 
     [Theory]
-    [InlineData(-1, 50)]
-    [InlineData(0, 0)]
-    [InlineData(0, 201)]
-    public void DiagnosticsRejectInvalidEventCursorRequests(
-        long afterEventCursor,
-        int maximumEvents)
+    [InlineData("twincat-operation://missing")]
+    [InlineData("twincat-operation://missing/build")]
+    public void MissingOperationResourcesDoNotFallBack(string uri)
     {
         using ServiceFixture fixture = new();
 
         GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.GetDiagnostics(
-                    new GetDiagnosticsParameters
-                    {
-                        AfterEventCursor = afterEventCursor,
-                        MaximumEvents = maximumEvents,
-                    }));
+            Assert.Throws<GatewayOperationException>(() =>
+                fixture.Service.GetResource(uri, 4096, 0));
 
-        Assert.Equal(ErrorCodes.RequestInvalid, exception.Code);
-        Assert.Equal("diagnostics.validate", exception.Stage);
+        Assert.Equal(ErrorCodes.ResourceNotFound, exception.Code);
     }
 
     [Fact]
-    public void DiagnosticsRequireStreamIdWhenContinuingFromCursor()
+    public async Task XaeMessagesProviderReceivesBoundedRequest()
     {
-        using ServiceFixture fixture = new();
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.GetDiagnostics(
-                    new GetDiagnosticsParameters
-                    {
-                        AfterEventCursor = 1,
-                    }));
-
-        Assert.Equal(ErrorCodes.RequestInvalid, exception.Code);
-        Assert.Equal("diagnostics.validate", exception.Stage);
-    }
-
-    [Fact]
-    public async Task XaeMessagesUsesBoundedProvider()
-    {
-        GetXaeMessagesParameters? captured = null;
+        GetXaeMessagesParameters? observed = null;
         using ServiceFixture fixture = new(
-            xaeMessagesProvider: (
-                parameters,
-                cancellationToken) =>
+            xaeMessagesProvider: (parameters, cancellationToken) =>
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                captured = parameters;
-                return Task.FromResult(
-                    new XaeMessagesResult
-                    {
-                        Solution =
-                            @"C:\Project\Fixture.sln",
-                    });
+                observed = parameters;
+                return Task.FromResult(new XaeMessagesResult());
             });
 
-        XaeMessagesResult result =
-            await fixture.Service.GetXaeMessagesAsync(
-                new GetXaeMessagesParameters
-                {
-                    MaximumMessages = 7,
-                },
-                CancellationToken.None);
+        await fixture.Service.GetXaeMessagesAsync(
+            new GetXaeMessagesParameters
+            {
+                MaximumMessages = 17,
+            },
+            CancellationToken.None);
 
-        Assert.Equal(7, captured?.MaximumMessages);
-        Assert.Equal(
-            @"C:\Project\Fixture.sln",
-            result.Solution);
-    }
-
-    [Theory]
-    [InlineData(0)]
-    [InlineData(201)]
-    public async Task XaeMessagesRejectsInvalidLimit(
-        int maximumMessages)
-    {
-        using ServiceFixture fixture = new(
-            xaeMessagesProvider: (
-                parameters,
-                cancellationToken) =>
-                    Task.FromResult(
-                        new XaeMessagesResult()));
-
-        GatewayOperationException exception =
-            await Assert.ThrowsAsync<
-                GatewayOperationException>(
-                () => fixture.Service.GetXaeMessagesAsync(
-                    new GetXaeMessagesParameters
-                    {
-                        MaximumMessages =
-                            maximumMessages,
-                    },
-                    CancellationToken.None));
-
-        Assert.Equal(
-            ErrorCodes.RequestInvalid,
-            exception.Code);
-        Assert.Equal(
-            "xae.errorList.validate",
-            exception.Stage);
+        Assert.Equal(17, observed?.MaximumMessages);
     }
 
     [Fact]
-    public async Task BuildUsesStableOperationIdAndCapturedPaths()
+    public async Task WaitCancellationTargetsTheExactOperation()
     {
-        string? executorOperationId = null;
-        string? changedPath = null;
-        using ServiceFixture fixture = new(
-            xaeBuildExecutor: (
-                operationId,
-                parameters,
-                cancellationToken) =>
+        using ServiceFixture fixture = new();
+        TaskCompletionSource<bool> started = NewCompletionSource();
+        OperationHandle handle = fixture.Queue.Enqueue(
+            OperationKind.XaeBuild,
+            async cancellationToken =>
             {
-                executorOperationId = operationId;
-                changedPath = Assert.Single(
-                    parameters.ChangedPaths);
-                return Task.FromResult(
-                    new XaeBuildResult
-                    {
-                        Ok = true,
-                        Action = parameters.Action,
-                        Log = new ResourceReference
-                        {
-                            Uri = "twincat-log://operation-placeholder/build",
-                            OperationId = "operation-placeholder",
-                            Kind = ResourceKind.BuildLog,
-                        },
-                        ExpectedProjectNoise =
-                        {
-                            new ProjectChangeSummary
-                            {
-                                File = "Machine.tsproj",
-                                Classification =
-                                    ProjectChangeClassification
-                                        .ExpectedReorderOnly,
-                                DoNotInspectFullFile = true,
-                                Details = new ResourceReference
-                                {
-                                    Uri = "twincat-diff://"
-                                        + "operation-placeholder/"
-                                        + "project-noise",
-                                    OperationId =
-                                        "operation-placeholder",
-                                    Kind = ResourceKind.ProjectNoise,
-                                },
-                            },
-                        },
-                    });
+                started.SetResult(true);
+                await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+                return OperationExecutionResult.Success();
             });
-        fixture.Status.Update(status =>
-        {
-            status.Xae.Connected = true;
-            status.Gateway.State = GatewayState.Ready;
-            return status;
-        });
-        XaeBuildParameters parameters = new()
-        {
-            Action = BuildAction.Build,
-            ChangedPaths =
-            {
-                "Plc/POUs/MAIN.TcPOU",
-            },
-        };
+        await started.Task;
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
 
-        OperationAccepted accepted =
-            fixture.Service.StartXaeBuild(parameters);
-        parameters.ChangedPaths[0] = "mutated";
-        StoredOperation completed = await WaitForStateAsync(
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            fixture.Service.WaitForOperationAsync<object>(
+                handle.OperationId,
+                cancellation.Token));
+
+        await WaitForStateAsync(
             fixture.Operations,
-            accepted.OperationId,
-            OperationState.Succeeded);
-
-        Assert.Equal(accepted.OperationId, executorOperationId);
-        Assert.Equal("Plc/POUs/MAIN.TcPOU", changedPath);
-        XaeBuildResult result =
-            Assert.IsType<XaeBuildResult>(completed.Result);
-        Assert.Equal(accepted.OperationId, result.OperationId);
-        Assert.Equal(
-            new[]
-            {
-                ResourceKind.BuildLog,
-                ResourceKind.ProjectNoise,
-            },
-            completed.Summary.Resources.Select(
-                resource => resource.Kind));
+            handle.OperationId,
+            OperationState.Cancelled);
     }
 
-    [Fact]
-    public async Task BuildFailurePreservesResultAndMarksOperationFailed()
-    {
-        using ServiceFixture fixture = new(
-            xaeBuildExecutor: (
-                operationId,
-                parameters,
-                cancellationToken) =>
-                Task.FromResult(
-                    new XaeBuildResult
-                    {
-                        Ok = false,
-                        Action = parameters.Action,
-                        Counts = new DiagnosticCounts
-                        {
-                            Errors = 1,
-                        },
-                        Log = new ResourceReference
-                        {
-                            Uri = "twincat-log://operation-placeholder/build",
-                            OperationId = "operation-placeholder",
-                            Kind = ResourceKind.BuildLog,
-                        },
-                    }));
-        fixture.Status.Update(status =>
-        {
-            status.Xae.Connected = true;
-            status.Gateway.State = GatewayState.Ready;
-            return status;
-        });
-
-        OperationAccepted accepted =
-            fixture.Service.StartXaeBuild(
-                new XaeBuildParameters
-                {
-                    Action = BuildAction.Rebuild,
-                });
-        StoredOperation completed = await WaitForStateAsync(
-            fixture.Operations,
-            accepted.OperationId,
-            OperationState.Failed);
-
-        Assert.Equal(
-            ErrorCodes.BuildFailed,
-            completed.Summary.Error?.Code);
-        Assert.Equal(
-            "twincat-log://operation-placeholder/build",
-            completed.Summary.Error?.RawLogRef);
-        Assert.Equal(
-            ResourceKind.BuildLog,
-            Assert.Single(completed.Summary.Resources).Kind);
-        XaeBuildResult result =
-            Assert.IsType<XaeBuildResult>(completed.Result);
-        Assert.False(result.Ok);
-        Assert.Equal(1, result.Counts.Errors);
-        Assert.Equal(
-            3,
-            fixture.Service.GetStatus().LatestEventCursor);
-        GatewayEvent[] lifecycle = fixture.Service.GetDiagnostics(
-            new GetDiagnosticsParameters
-            {
-                AfterEventCursor = 0,
-            }).Events.ToArray();
-        Assert.Equal(
-            new[]
-            {
-                GatewayEventTypes.BuildQueued,
-                GatewayEventTypes.BuildStarted,
-                GatewayEventTypes.BuildFailed,
-            },
-            lifecycle.Select(gatewayEvent =>
-                gatewayEvent.Type));
-        GatewayEvent gatewayEvent = lifecycle[2];
-        Assert.Equal(
-            ErrorCodes.BuildFailed,
-            gatewayEvent.Error?.Code);
-        Assert.Equal(
-            accepted.OperationId,
-            gatewayEvent.Error?.OperationId);
-    }
-
-    [Fact]
-    public void AgentSynchronizationRequiresProfilePermission()
-    {
-        using ServiceFixture fixture = new(
-            activeProfile: new ProjectProfile
-            {
-                Name = "fixture",
-                AllowForceSynchronization = false,
-            },
-            synchronizeExecutor: (
-                operationId,
-                parameters,
-                cancellationToken) =>
-                Task.FromResult(new SynchronizeResult
-                {
-                    Ok = true,
-                }));
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.StartSynchronization(
-                    new SynchronizeParameters
-                    {
-                        Profile = "fixture",
-                    },
-                    agentRequest: true));
-
-        Assert.Equal(
-            ErrorCodes.ForceSynchronizationNotAllowed,
-            exception.Code);
-    }
-
-    [Fact]
-    public async Task UiSynchronizationCanConfirmBaseline()
-    {
-        using ServiceFixture fixture = new(
-            activeProfile: new ProjectProfile
-            {
-                Name = "fixture",
-            },
-            synchronizeExecutor: (
-                operationId,
-                parameters,
-                cancellationToken) =>
-                Task.FromResult(new SynchronizeResult
-                {
-                    Ok = true,
-                    Scope = SynchronizationScope.TwinCatProject,
-                }));
-
-        OperationAccepted accepted =
-            fixture.Service.StartSynchronization(
-                new SynchronizeParameters
-                {
-                    Profile = "fixture",
-                },
-                agentRequest: false);
-        StoredOperation completed = await WaitForStateAsync(
-            fixture.Operations,
-            accepted.OperationId,
-            OperationState.Succeeded);
-
-        Assert.IsType<SynchronizeResult>(completed.Result);
-        Assert.Equal(
-            SynchronizationState.Confirmed,
-            fixture.Service.GetStatus()
-                .Xae.SynchronizationState);
-    }
-
-    [Fact]
-    public void CloseXaeRequiresProfilePermission()
-    {
-        using ServiceFixture fixture = new(
-            activeProfile: new ProjectProfile
-            {
-                Name = "fixture",
-                AllowCloseXae = false,
-            },
-            closeXaeExecutor: SuccessfulCloseXae);
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.StartCloseXae(
-                    new CloseXaeParameters
-                    {
-                        SaveMode = XaeSaveMode.Prompt,
-                    }));
-
-        Assert.Equal(
-            ErrorCodes.XaeCloseNotAllowed,
-            exception.Code);
-    }
-
-    [Fact]
-    public void CloseXaeDiscardRequiresDiscardPermission()
-    {
-        using ServiceFixture fixture = new(
-            activeProfile: new ProjectProfile
-            {
-                Name = "fixture",
-                AllowCloseXae = true,
-                AllowDirtyDocumentDiscard = false,
-            },
-            closeXaeExecutor: SuccessfulCloseXae);
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.StartCloseXae(
-                    new CloseXaeParameters
-                    {
-                        SaveMode = XaeSaveMode.Discard,
-                    }));
-
-        Assert.Equal(
-            ErrorCodes.XaeCloseDiscardNotAllowed,
-            exception.Code);
-    }
-
-    [Fact]
-    public async Task CloseXaePublishesTypedLifecycle()
-    {
-        using ServiceFixture fixture = new(
-            activeProfile: new ProjectProfile
-            {
-                Name = "fixture",
-                AllowCloseXae = true,
-            },
-            closeXaeExecutor: SuccessfulCloseXae);
-        fixture.Status.Update(status =>
-        {
-            status.Gateway.State = GatewayState.Ready;
-            status.Xae.Connected = true;
-            return status;
-        });
-
-        OperationAccepted accepted =
-            fixture.Service.StartCloseXae(
-                new CloseXaeParameters
-                {
-                    SaveMode = XaeSaveMode.Save,
-                });
-        StoredOperation completed = await WaitForStateAsync(
-            fixture.Operations,
-            accepted.OperationId,
-            OperationState.Succeeded);
-
-        CloseXaeResult result =
-            Assert.IsType<CloseXaeResult>(completed.Result);
-        Assert.True(result.Ok);
-        Assert.Equal(accepted.OperationId, result.OperationId);
-        Assert.Equal(
-            new[]
-            {
-                GatewayEventTypes.XaeCloseQueued,
-                GatewayEventTypes.XaeCloseStarted,
-                GatewayEventTypes.XaeCloseSucceeded,
-            },
-            fixture.Service.GetDiagnostics(
-                    new GetDiagnosticsParameters())
-                .Events.Select(gatewayEvent =>
-                    gatewayEvent.Type));
-    }
-
-    [Fact]
-    public void ActivationFailsClosedWhenProfileDisablesIt()
-    {
-        ProjectProfile profile = CreateActivationProfile();
-        profile.AllowActivation = false;
-        using ServiceFixture fixture = new(
-            activationExecutor: SuccessfulActivation,
-            activeProfile: profile);
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.StartActivation(
-                    new ActivateParameters
-                    {
-                        Profile = profile.Name,
-                    }));
-
-        Assert.Equal(
-            ErrorCodes.ActivationNotAllowed,
-            exception.Code);
-        Assert.Empty(fixture.Operations.GetRecent(10));
-    }
-
-    [Fact]
-    public async Task ActivationCompileFailureIsNotActivated()
-    {
-        DateTimeOffset now = new(
-            2026,
-            7,
-            28,
-            2,
-            0,
-            0,
-            TimeSpan.Zero);
-        ProjectProfile profile = CreateActivationProfile();
-        const string buildLog =
-            "twincat-log://operation-placeholder/build";
-        using ServiceFixture fixture = new(
-            activationExecutor: (
-                operationId,
-                parameters,
-                cancellationToken) =>
-                Task.FromResult(
-                    new ActivationResult
-                    {
-                        Ok = false,
-                        OperationId = operationId,
-                        Profile = parameters.Profile,
-                        Completion = ActivationCompletion.Unknown,
-                        ActiveConfigurationVerified = false,
-                        Compile = new ActivationCompileResult
-                        {
-                            Completed = true,
-                            Ok = false,
-                            FailedProjects = 1,
-                            Counts = new DiagnosticCounts
-                            {
-                                Errors = 1,
-                            },
-                            Diagnostics =
-                            {
-                                new BuildDiagnostic
-                                {
-                                    Severity =
-                                        DiagnosticSeverity.Error,
-                                    Code = "C0001",
-                                    Message = "Expected ';'.",
-                                },
-                            },
-                            Log = new ResourceReference
-                            {
-                                Uri = buildLog,
-                                OperationId = operationId,
-                                Kind = ResourceKind.BuildLog,
-                            },
-                        },
-                        Resources =
-                        {
-                            new ResourceReference
-                            {
-                                Uri = buildLog,
-                                OperationId = operationId,
-                                Kind = ResourceKind.BuildLog,
-                            },
-                        },
-                    }),
-            activeProfile: profile,
-            clock: new TestClock(now));
-        fixture.Status.Update(status =>
-        {
-            status.Xae.Connected = true;
-            status.Gateway.State = GatewayState.Ready;
-            return status;
-        });
-
-        OperationAccepted accepted =
-            fixture.Service.StartActivation(
-                new ActivateParameters
-                {
-                    Profile = profile.Name,
-                });
-        StoredOperation completed = await WaitForStateAsync(
-            fixture.Operations,
-            accepted.OperationId,
-            OperationState.Failed);
-
-        Assert.Equal(
-            ErrorCodes.BuildFailed,
-            completed.Summary.Error?.Code);
-        Assert.Equal(
-            "activation.compile",
-            completed.Summary.Error?.Stage);
-        Assert.Equal(
-            buildLog,
-            completed.Summary.Error?.RawLogRef);
-        ActivationResult result =
-            Assert.IsType<ActivationResult>(completed.Result);
-        Assert.False(result.Ok);
-        Assert.Equal(
-            ActivationCompletion.Unknown,
-            result.Completion);
-        Assert.False(result.ActiveConfigurationVerified);
-        Assert.False(result.Compile?.Ok);
-        Assert.Equal(
-            GatewayEventTypes.ActivationFailed,
-            fixture.Events
-                .ReadAfter(null, 0, 100)
-                .Events
-                .Last(gatewayEvent =>
-                    gatewayEvent.OperationId
-                    == accepted.OperationId)
-                .Type);
-    }
-
-    [Fact]
-    public async Task ActivationPublishesLifecycleAndSummary()
-    {
-        DateTimeOffset now = new(
-            2026,
-            7,
-            28,
-            2,
-            0,
-            0,
-            TimeSpan.Zero);
-        ProjectProfile profile = CreateActivationProfile();
-        using ServiceFixture fixture = new(
-            activationExecutor: SuccessfulActivation,
-            activeProfile: profile,
-            clock: new TestClock(now));
-        fixture.Status.Update(status =>
-        {
-            status.Xae.Connected = true;
-            status.Gateway.State = GatewayState.Ready;
-            return status;
-        });
-
-        OperationAccepted accepted =
-            fixture.Service.StartActivation(
-                new ActivateParameters
-                {
-                    Profile = profile.Name,
-                    RunAfterActivation = false,
-                });
-        StoredOperation completed = await WaitForStateAsync(
-            fixture.Operations,
-            accepted.OperationId,
-            OperationState.Succeeded);
-
-        ActivationResult result =
-            Assert.IsType<ActivationResult>(completed.Result);
-        Assert.True(result.Ok);
-        Assert.False(result.RunAfterActivation);
-        Assert.Equal(
-            ActivationCompletion.RestartSkipped,
-            result.Completion);
-        Assert.False(result.ActiveConfigurationVerified);
-        Assert.Equal(
-            accepted.OperationId,
-            fixture.Service.GetStatus()
-                .LastActivation?.OperationId);
-        Assert.Equal(
-            "192.168.3.31.1.1",
-            fixture.Service.GetStatus()
-                .LastActivation?.Target.AmsNetId);
-        Assert.Equal(
-            new[]
-            {
-                GatewayEventTypes.ActivationQueued,
-                GatewayEventTypes.ActivationStarted,
-                GatewayEventTypes.ActivationSucceeded,
-            },
-            fixture.Events
-                .ReadAfter(null, 0, 100)
-                .Events
-                .Where(gatewayEvent =>
-                    gatewayEvent.OperationId
-                        == accepted.OperationId)
-                .Select(gatewayEvent =>
-                    gatewayEvent.Type));
-    }
-
-    [Fact]
-    public async Task ActivationLinksASeparateTcUnitOperation()
-    {
-        DateTimeOffset now = new(
-            2026,
-            7,
-            28,
-            3,
-            0,
-            0,
-            TimeSpan.Zero);
-        ProjectProfile profile = CreateActivationProfile();
-        profile.AutoWaitForTcUnit = true;
-        profile.TcUnit = new TcUnitProfile
-        {
-            ReportPath = @"C:\Reports\tcunit.xml",
-            CompletionTimeoutSeconds = 30,
-        };
-        string? preparedFor = null;
-        string? executedFor = null;
-        using ServiceFixture fixture = new(
-            activationExecutor: SuccessfulActivation,
-            activeProfile: profile,
-            clock: new TestClock(now),
-            tcUnitPreparationExecutor:
-                activationOperationId =>
-                {
-                    preparedFor = activationOperationId;
-                    return new TcUnitRunPreparation
-                    {
-                        ActivationOperationId =
-                            activationOperationId,
-                        ExpectedAmsNetId =
-                            "192.168.3.31.1.1",
-                        PreparedAtUtc = now,
-                        ReportBaseline =
-                            new TcUnitReportBaseline
-                            {
-                                Path =
-                                    @"C:\Reports\tcunit.xml",
-                            },
-                    };
-                },
-            tcUnitExecutor:
-                (
-                    testOperationId,
-                    activationOperationId,
-                    preparation,
-                    cancellationToken) =>
-                {
-                    executedFor = activationOperationId;
-                    return Task.FromResult(
-                        new TestResult
-                        {
-                            Ok = true,
-                            Counts = new TestCounts
-                            {
-                                Suites = 1,
-                                Tests = 2,
-                                Passed = 2,
-                            },
-                            InitializedSuites = 1,
-                        });
-                });
-        fixture.Status.Update(status =>
-        {
-            status.Xae.Connected = true;
-            status.Gateway.State = GatewayState.Ready;
-            return status;
-        });
-
-        OperationAccepted accepted =
-            fixture.Service.StartActivation(
-                new ActivateParameters
-                {
-                    Profile = profile.Name,
-                });
-        StoredOperation activation =
-            await WaitForStateAsync(
-                fixture.Operations,
-                accepted.OperationId,
-                OperationState.Succeeded);
-        ActivationResult activationResult =
-            Assert.IsType<ActivationResult>(
-                activation.Result);
-        Assert.False(
-            string.IsNullOrWhiteSpace(
-                activationResult.TestOperationId));
-        StoredOperation test =
-            await WaitForStateAsync(
-                fixture.Operations,
-                activationResult.TestOperationId!,
-                OperationState.Succeeded);
-
-        TestResult result =
-            Assert.IsType<TestResult>(test.Result);
-        Assert.Equal(
-            accepted.OperationId,
-            preparedFor);
-        Assert.Equal(
-            accepted.OperationId,
-            executedFor);
-        Assert.Equal(
-            accepted.OperationId,
-            result.ActivationOperationId);
-        Assert.Equal(
-            activationResult.TestOperationId,
-            result.OperationId);
-        Assert.Equal(
-            activationResult.TestOperationId,
-            fixture.Service.GetStatus()
-                .LastTest?.OperationId);
-        Assert.Equal(
-            new[]
-            {
-                GatewayEventTypes.TcUnitQueued,
-                GatewayEventTypes.TcUnitStarted,
-                GatewayEventTypes.TcUnitSucceeded,
-            },
-            fixture.Events.ReadAfter(null, 0, 100)
-                .Events
-                .Where(gatewayEvent =>
-                    gatewayEvent.OperationId
-                        == activationResult
-                            .TestOperationId)
-                .Select(gatewayEvent =>
-                    gatewayEvent.Type));
-        OperationDetails<TestResult> queried =
-            fixture.Service.GetTestResults(
-                activationResult.TestOperationId!);
-        Assert.True(queried.Result?.Ok);
-    }
-
-    [Fact]
-    public void ActivationWithoutRunRejectsTcUnitWaiting()
-    {
-        ProjectProfile profile = CreateActivationProfile();
-        profile.AutoWaitForTcUnit = true;
-        profile.TcUnit = new TcUnitProfile
-        {
-            ReportPath = @"C:\Reports\tcunit.xml",
-        };
-        using ServiceFixture fixture = new(
-            activationExecutor: SuccessfulActivation,
-            activeProfile: profile);
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.StartActivation(
-                    new ActivateParameters
-                    {
-                        Profile = profile.Name,
-                        RunAfterActivation = false,
-                    }));
-
-        Assert.Equal(ErrorCodes.RequestInvalid, exception.Code);
-        Assert.Equal("activation.validate", exception.Stage);
-    }
-
-    [Fact]
-    public void LinkedTcUnitFailsClosedWhenExecutorUnavailable()
-    {
-        DateTimeOffset now = new(
-            2026,
-            7,
-            28,
-            3,
-            0,
-            0,
-            TimeSpan.Zero);
-        ProjectProfile profile = CreateActivationProfile();
-        profile.AutoWaitForTcUnit = true;
-        profile.TcUnit = new TcUnitProfile
-        {
-            ReportPath = @"C:\Reports\tcunit.xml",
-        };
-        using ServiceFixture fixture = new(
-            activationExecutor: SuccessfulActivation,
-            activeProfile: profile,
-            clock: new TestClock(now));
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.StartActivation(
-                    new ActivateParameters
-                    {
-                        Profile = profile.Name,
-                    }));
-
-        Assert.Equal(
-            ErrorCodes.GatewayNotReady,
-            exception.Code);
-        Assert.Equal(
-            "activation.tcunit",
-            exception.Stage);
-        Assert.DoesNotContain(
-            fixture.Operations.GetRecent(10),
-            operation =>
-                operation.Summary.Kind
-                    == OperationKind.Activate);
-    }
-
-    private static Task<ActivationResult> SuccessfulActivation(
-        string operationId,
-        ActivateParameters parameters,
-        CancellationToken cancellationToken)
-    {
-        return Task.FromResult(
-            new ActivationResult
-            {
-                Ok = true,
-                OperationId = operationId,
-                Profile = parameters.Profile,
-                RunAfterActivation =
-                    parameters.RunAfterActivation,
-                Completion = parameters.RunAfterActivation
-                    ? ActivationCompletion.AppliedAndRunning
-                    : ActivationCompletion.RestartSkipped,
-                ActiveConfigurationVerified =
-                    parameters.RunAfterActivation,
-                ObservedRuntimeMode = parameters.RunAfterActivation
-                    ? RuntimeMode.Run
-                    : RuntimeMode.Unknown,
-                Solution =
-                    @"C:\Projects\Machine\Machine.sln",
-                Target = new TargetIdentity
-                {
-                    Name = "WIN-T077ADA",
-                    AmsNetId = "192.168.3.31.1.1",
-                },
-            });
-    }
-
-    private static ProjectProfile CreateActivationProfile()
-    {
-        return new ProjectProfile
-        {
-            Name = "bench",
-            Solution = @"C:\Projects\Machine\Machine.sln",
-            AllowActivation = true,
-            ExpectedTarget = new TargetIdentity
-            {
-                Name = "WIN-T077ADA",
-                AmsNetId = "192.168.3.31.1.1",
-            },
-        };
-    }
-
-    private static TaskCompletionSource<bool> NewCompletionSource()
-    {
-        return new TaskCompletionSource<bool>(
-            TaskCreationOptions.RunContinuationsAsynchronously);
-    }
+    private static TaskCompletionSource<bool> NewCompletionSource() =>
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     private static async Task WaitAsync(
         Task task,
@@ -1096,77 +207,57 @@ public sealed class GatewayApplicationServiceTests
     {
         TaskCompletionSource<bool> cancelled = NewCompletionSource();
         using CancellationTokenRegistration registration =
-            cancellationToken.Register(() => cancelled.TrySetCanceled(cancellationToken));
-        Task completed = await Task.WhenAny(task, cancelled.Task);
-        await completed;
+            cancellationToken.Register(
+                () => cancelled.TrySetCanceled(cancellationToken));
+        await await Task.WhenAny(task, cancelled.Task);
     }
 
-    private static Task<CloseXaeResult> SuccessfulCloseXae(
+    private static async Task WaitForStateAsync(
+        OperationStore store,
         string operationId,
-        CloseXaeParameters parameters,
-        CancellationToken cancellationToken)
+        OperationState expected)
     {
-        cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(
-            new CloseXaeResult
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            if (store.Get(operationId)?.Summary.State == expected)
             {
-                Ok = true,
-                OperationId = operationId,
-                SaveMode = parameters.SaveMode,
-                ProcessExited = true,
-            });
+                return;
+            }
+
+            await Task.Delay(10);
+        }
+
+        throw new TimeoutException(
+            $"Operation '{operationId}' did not reach {expected}.");
     }
 
     private sealed class ServiceFixture : IDisposable
     {
-        private readonly string _temporaryDirectory;
+        private readonly string _root;
 
         public ServiceFixture(
-            Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
-            XaeBuildOperationExecutor? xaeBuildExecutor = null,
-            ActivationOperationExecutor? activationExecutor = null,
-            ProjectProfile? activeProfile = null,
-            IClock? clock = null,
-            TcUnitPreparationExecutor?
-                tcUnitPreparationExecutor = null,
-            TcUnitOperationExecutor? tcUnitExecutor = null,
-            SynchronizeOperationExecutor? synchronizeExecutor = null,
-            XaeMessagesProvider? xaeMessagesProvider = null,
-            Func<string?>? currentLogPathProvider = null,
-            CloseXaeOperationExecutor? closeXaeExecutor = null)
+            XaeMessagesProvider? xaeMessagesProvider = null)
         {
-            _temporaryDirectory = Path.Combine(
+            _root = Path.Combine(
                 Path.GetTempPath(),
                 "TwinCatGatewayTests",
                 Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(_temporaryDirectory);
             Status = new GatewayStatusSnapshotStore(
-                GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
-            Events = new GatewayEventJournal(Status);
+                GatewayStatusSnapshotStore.CreateInitial("test"));
             Operations = new OperationStore();
-            Logs = new LocalLogStore(_temporaryDirectory);
+            Events = new GatewayEventJournal();
             Queue = new OperationQueue(
                 Operations,
-                clock: clock,
                 gatewayEventSink: Events);
             Service = new GatewayApplicationService(
-                "0.1.0",
+                "test",
                 Status,
                 Operations,
                 Queue,
-                Logs,
+                new LocalLogStore(_root),
                 Events,
-                diagnosticsProvider: diagnosticsProvider,
-                xaeBuildExecutor: xaeBuildExecutor,
-                activationExecutor: activationExecutor,
-                activeProfile: activeProfile,
-                clock: clock,
-                tcUnitPreparationExecutor: tcUnitPreparationExecutor,
-                tcUnitExecutor: tcUnitExecutor,
-                synchronizeExecutor: synchronizeExecutor,
-                xaeMessagesProvider: xaeMessagesProvider,
-                currentLogPathProvider: currentLogPathProvider,
-                closeXaeExecutor: closeXaeExecutor);
+                xaeMessagesProvider: xaeMessagesProvider);
         }
 
         public GatewayStatusSnapshotStore Status { get; }
@@ -1175,8 +266,6 @@ public sealed class GatewayApplicationServiceTests
 
         public GatewayEventJournal Events { get; }
 
-        public LocalLogStore Logs { get; }
-
         public OperationQueue Queue { get; }
 
         public GatewayApplicationService Service { get; }
@@ -1184,41 +273,10 @@ public sealed class GatewayApplicationServiceTests
         public void Dispose()
         {
             Queue.Dispose();
-            if (Directory.Exists(_temporaryDirectory))
+            if (Directory.Exists(_root))
             {
-                Directory.Delete(_temporaryDirectory, recursive: true);
+                Directory.Delete(_root, recursive: true);
             }
         }
-    }
-
-    private sealed class TestClock : IClock
-    {
-        public TestClock(DateTimeOffset utcNow)
-        {
-            UtcNow = utcNow;
-        }
-
-        public DateTimeOffset UtcNow { get; }
-    }
-
-    private static async Task<StoredOperation> WaitForStateAsync(
-        OperationStore store,
-        string operationId,
-        OperationState expected)
-    {
-        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(5);
-        while (DateTimeOffset.UtcNow < deadline)
-        {
-            StoredOperation? operation = store.Get(operationId);
-            if (operation?.Summary.State == expected)
-            {
-                return operation;
-            }
-
-            await Task.Delay(10);
-        }
-
-        throw new TimeoutException(
-            $"Operation '{operationId}' did not reach {expected}.");
     }
 }

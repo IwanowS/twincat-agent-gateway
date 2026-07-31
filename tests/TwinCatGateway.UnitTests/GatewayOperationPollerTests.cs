@@ -22,16 +22,14 @@ public sealed class GatewayOperationPollerTests
             client,
             clock);
 
-        GatewayResponse<OperationDetails<BuildResult>>
-            response =
-                await poller.WaitAsync<BuildResult>(
+        OperationSnapshot<XaeBuildResult> response =
+                await poller.WaitAsync<XaeBuildResult>(
                     "build-1",
                     TimeSpan.FromSeconds(3));
 
-        Assert.True(response.Ok);
         Assert.Equal(
             OperationState.Succeeded,
-            response.Result?.Operation.State);
+            response.Operation.State);
         Assert.Equal(3, client.ReadCount);
         Assert.Equal(
             TimeSpan.FromMilliseconds(200),
@@ -41,30 +39,16 @@ public sealed class GatewayOperationPollerTests
     [Fact]
     public async Task ReturnsGatewayFailureWithoutRetry()
     {
-        FakeClient client = new(
-            new GatewayResponse<
-                OperationDetails<BuildResult>>
-            {
-                Ok = false,
-                Error = new GatewayError
-                {
-                    Code = "IPC_FAILED",
-                    Message = "Unavailable",
-                },
-            });
+        FakeClient client = new(new InvalidOperationException("Unavailable"));
         TestClock clock = new();
         GatewayOperationPoller poller = CreatePoller(
             client,
             clock);
 
-        GatewayResponse<OperationDetails<BuildResult>>
-            response =
-                await poller.WaitAsync<BuildResult>(
-                    "build-1",
-                    TimeSpan.FromSeconds(3));
+        InvalidOperationException exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => poller.WaitAsync<XaeBuildResult>("build-1", TimeSpan.FromSeconds(3)));
 
-        Assert.False(response.Ok);
-        Assert.Equal("IPC_FAILED", response.Error?.Code);
+        Assert.Equal("Unavailable", exception.Message);
         Assert.Equal(1, client.ReadCount);
         Assert.Equal(TimeSpan.Zero, clock.Elapsed);
     }
@@ -80,7 +64,7 @@ public sealed class GatewayOperationPollerTests
 
         TimeoutException exception =
             await Assert.ThrowsAsync<TimeoutException>(
-                () => poller.WaitAsync<BuildResult>(
+                () => poller.WaitAsync<XaeBuildResult>(
                     "build-1",
                     TimeSpan.FromMilliseconds(250)));
 
@@ -102,7 +86,7 @@ public sealed class GatewayOperationPollerTests
         cancellation.Cancel();
 
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => poller.WaitAsync<BuildResult>(
+            () => poller.WaitAsync<XaeBuildResult>(
                 "build-1",
                 TimeSpan.FromSeconds(1),
                 cancellation.Token));
@@ -144,26 +128,27 @@ public sealed class GatewayOperationPollerTests
         }
     }
 
-    private sealed class FakeClient : ITwinCatGatewayClient
+    private sealed class FakeClient : GatewayClientStub
     {
-        private readonly Queue<
-            GatewayResponse<
-                OperationDetails<BuildResult>>> _responses;
-        private GatewayResponse<
-            OperationDetails<BuildResult>> _last;
+        private readonly Queue<OperationSnapshot<XaeBuildResult>> _responses;
+        private OperationSnapshot<XaeBuildResult> _last;
+        private readonly Exception? _failure;
 
         public FakeClient(params OperationState[] states)
             : this(CreateResponses(states))
         {
         }
 
-        public FakeClient(
-            params GatewayResponse<
-                OperationDetails<BuildResult>>[] responses)
+        public FakeClient(Exception failure)
         {
-            _responses = new Queue<
-                GatewayResponse<
-                    OperationDetails<BuildResult>>>(responses);
+            _failure = failure;
+            _responses = new Queue<OperationSnapshot<XaeBuildResult>>();
+            _last = CreateSnapshot(OperationState.Running);
+        }
+
+        private FakeClient(params OperationSnapshot<XaeBuildResult>[] responses)
+        {
+            _responses = new Queue<OperationSnapshot<XaeBuildResult>>(responses);
             _last = responses.Length > 0
                 ? responses[responses.Length - 1]
                 : throw new ArgumentException(
@@ -173,122 +158,46 @@ public sealed class GatewayOperationPollerTests
 
         public int ReadCount { get; private set; }
 
-        public Task<
-            GatewayResponse<OperationDetails<TResult>>>
-            GetOperationAsync<TResult>(
+        public override Task<OperationSnapshot<TResult>> GetOperationAsync<TResult>(
                 string operationId,
                 CancellationToken cancellationToken = default)
         {
             Assert.Equal("build-1", operationId);
             cancellationToken.ThrowIfCancellationRequested();
             ReadCount++;
+            if (_failure is not null)
+            {
+                return Task.FromException<OperationSnapshot<TResult>>(_failure);
+            }
             if (_responses.Count > 0)
             {
                 _last = _responses.Dequeue();
             }
 
-            return Task.FromResult(
-                (GatewayResponse<OperationDetails<TResult>>)
-                (object)_last);
+            return Task.FromResult((OperationSnapshot<TResult>)(object)_last);
         }
 
-        public Task<GatewayResponse<HealthResult>>
-            GetHealthAsync(
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<GatewayStatusResult>>
-            GetStatusAsync(
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<GatewayShutdownResult>>
-            ShutdownAsync(
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<GatewayDiagnosticsResult>>
-            GetDiagnosticsAsync(
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<GatewayDiagnosticsResult>>
-            GetDiagnosticsAsync(
-                GetDiagnosticsParameters parameters,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<OperationAccepted>>
-            StartBuildAsync(
-                BuildParameters parameters,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<OperationAccepted>>
-            StartActivationAsync(
-                ActivateParameters parameters,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<CancelOperationResult>>
-            CancelOperationAsync(
-                string operationId,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<ResourceContent>>
-            GetResourceAsync(
-                string uri,
-                int maximumCharacters = 64 * 1024,
-                long offset = 0,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        private static GatewayResponse<
-            OperationDetails<BuildResult>>[] CreateResponses(
+        private static OperationSnapshot<XaeBuildResult>[] CreateResponses(
                 IEnumerable<OperationState> states)
         {
-            List<GatewayResponse<
-                OperationDetails<BuildResult>>> responses = new();
+            List<OperationSnapshot<XaeBuildResult>> responses = new();
             foreach (OperationState state in states)
             {
-                responses.Add(
-                    new GatewayResponse<
-                        OperationDetails<BuildResult>>
-                    {
-                        Ok = true,
-                        Result =
-                            new OperationDetails<BuildResult>
-                            {
-                                Operation =
-                                    new OperationSummary
-                                    {
-                                        OperationId = "build-1",
-                                        State = state,
-                                    },
-                            },
-                    });
+                responses.Add(CreateSnapshot(state));
             }
 
             return responses.ToArray();
         }
+
+        private static OperationSnapshot<XaeBuildResult> CreateSnapshot(OperationState state) =>
+            new()
+            {
+                Operation = new OperationRecord
+                {
+                    OperationId = "build-1",
+                    Kind = OperationKind.XaeBuild,
+                    State = state,
+                },
+            };
     }
 }

@@ -16,11 +16,13 @@ public sealed class LocalLogStoreTests
 
         ResourceReference reference = store.WriteText(
             "operation-1",
-            ResourceKind.BuildLog,
+            OperationArtifactKind.Build,
             "0123456789");
         ResourceContent resource = store.Read(reference.Uri, maximumCharacters: 5);
 
-        Assert.Equal("twincat-log://operation-1/build", reference.Uri);
+        Assert.Equal(
+            "twincat-operation://operation-1/build",
+            reference.Uri);
         Assert.Equal("01234", resource.Content);
         Assert.True(resource.Truncated);
         Assert.Equal(5, resource.NextOffset);
@@ -46,7 +48,10 @@ public sealed class LocalLogStoreTests
         LocalLogStore store = new(temporary.Path);
 
         Assert.Throws<ArgumentException>(
-            () => store.WriteText(operationId, ResourceKind.BuildLog, "content"));
+            () => store.WriteText(
+                operationId,
+                OperationArtifactKind.Build,
+                "content"));
     }
 
     [Theory]
@@ -66,8 +71,14 @@ public sealed class LocalLogStoreTests
     {
         using TemporaryDirectory temporary = new();
         LocalLogStore store = new(temporary.Path);
-        store.WriteText("expired-operation", ResourceKind.BuildLog, "old");
-        store.WriteText("recent-operation", ResourceKind.BuildLog, "new");
+        store.WriteText(
+            "expired-operation",
+            OperationArtifactKind.Build,
+            "old");
+        store.WriteText(
+            "recent-operation",
+            OperationArtifactKind.Build,
+            "new");
         string unrelated = System.IO.Path.Combine(temporary.Path, "not.an.operation");
         Directory.CreateDirectory(unrelated);
 

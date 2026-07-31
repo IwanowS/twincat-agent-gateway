@@ -12,7 +12,7 @@ public sealed class OperationStoreTests
     {
         OperationStore store = new();
         DateTimeOffset queued = new(2026, 7, 27, 10, 0, 0, TimeSpan.Zero);
-        store.AddQueued("operation-1", OperationKind.XaeBuild, queued);
+        store.AddQueued("operation-1", OperationKind.XaeBuild, null, queued);
         store.TryMarkRunning("operation-1", queued.AddSeconds(1));
         store.TryComplete(
             "operation-1",
@@ -28,8 +28,7 @@ public sealed class OperationStoreTests
                 new ResourceReference
                 {
                     Uri = "twincat-log://operation-1/build",
-                    OperationId = "operation-1",
-                    Kind = ResourceKind.BuildLog,
+                    MimeType = "text/plain",
                 },
             });
 
@@ -54,7 +53,11 @@ public sealed class OperationStoreTests
         for (int index = 1; index <= 3; index++)
         {
             string operationId = $"operation-{index}";
-            store.AddQueued(operationId, OperationKind.XaeBuild, now.AddSeconds(index));
+            store.AddQueued(
+                operationId,
+                OperationKind.XaeBuild,
+                null,
+                now.AddSeconds(index));
             store.TryComplete(
                 operationId,
                 OperationState.Succeeded,

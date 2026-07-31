@@ -30,18 +30,7 @@ public sealed class CliProgramTests
     {
         FakeClient client = new()
         {
-            StatusResponse =
-                new GatewayResponse<GatewayStatusResult>
-                {
-                    Ok = true,
-                    Result = new GatewayStatusResult
-                    {
-                        Gateway = new GatewayStatus
-                        {
-                            State = GatewayState.Ready,
-                        },
-                    },
-                },
+            StatusResponse = new GatewayStateSnapshot { State = GatewayProcessState.Ready },
         };
 
         CliResult result = await RunAsync(
@@ -53,14 +42,9 @@ public sealed class CliProgramTests
             result.ExitCode);
         using JsonDocument json =
             JsonDocument.Parse(result.Output);
-        Assert.True(
-            json.RootElement.GetProperty("ok")
-                .GetBoolean());
         Assert.Equal(
             "ready",
-            json.RootElement.GetProperty("result")
-                .GetProperty("gateway")
-                .GetProperty("state")
+            json.RootElement.GetProperty("state")
                 .GetString());
         Assert.Empty(result.Error);
     }
@@ -70,32 +54,26 @@ public sealed class CliProgramTests
     {
         FakeClient client = new()
         {
-            XaeMessagesResponse =
-                new GatewayResponse<XaeMessagesResult>
-                {
-                    Ok = true,
-                    Result = new XaeMessagesResult
-                    {
-                        Solution =
-                            @"C:\Project\Fixture.sln",
-                    },
-                },
+            ResourceResponse = new ResourceContent
+            {
+                Uri = "twincat-xae://profile/fixture/messages/current",
+                ContentType = "application/json",
+                Content = "{\"solution\":\"C:\\\\Project\\\\Fixture.sln\"}",
+            },
         };
 
         CliResult result = await RunAsync(
             client,
             "xae-messages",
-            "--max-messages",
-            "7");
+            "--profile",
+            "fixture");
 
         Assert.Equal(
             CliProgram.SuccessExitCode,
             result.ExitCode);
-        Assert.Equal(
-            7,
-            client.XaeMessages?.MaximumMessages);
+        Assert.Equal("twincat-xae://profile/fixture/messages/current", client.ResourceUri);
         Assert.Contains(
-            @"C:\\Project\\Fixture.sln",
+            "Fixture.sln",
             result.Output,
             StringComparison.Ordinal);
     }
@@ -105,22 +83,8 @@ public sealed class CliProgramTests
     {
         FakeClient client = new()
         {
-            BuildAccepted =
-                Accepted("build-1"),
+            BuildResponse = Operation("build-1", OperationState.Succeeded, new XaeBuildResult { Ok = true }),
         };
-        client.BuildOperations.Enqueue(
-            Operation(
-                "build-1",
-                OperationState.Running));
-        client.BuildOperations.Enqueue(
-            Operation(
-                "build-1",
-                OperationState.Succeeded,
-                new BuildResult
-                {
-                    Ok = true,
-                    Counts = new DiagnosticCounts(),
-                }));
 
         CliResult result = await RunAsync(
             client,
@@ -131,19 +95,18 @@ public sealed class CliProgramTests
             "clean",
             "--changed",
             @"C:\Project\MAIN.TcPOU",
-            "--timeout",
-            "5");
+            "--scope",
+            "plc");
 
         Assert.Equal(
             CliProgram.SuccessExitCode,
             result.ExitCode);
         Assert.Equal("fixture", client.Build?.Profile);
         Assert.Equal(BuildAction.Clean, client.Build?.Action);
-        Assert.Equal(5, client.Build?.TimeoutSeconds);
+        Assert.Equal(XaeBuildScope.Plc, client.Build?.Scope);
         Assert.Equal(
             ExpectedChangedPaths,
             client.Build?.ChangedPaths);
-        Assert.Equal(2, client.OperationReads);
     }
 
     [Fact]
@@ -151,20 +114,11 @@ public sealed class CliProgramTests
     {
         FakeClient client = new()
         {
-            BuildAccepted = Accepted("build-1"),
-        };
-        client.BuildOperations.Enqueue(
-            Operation(
+            BuildResponse = Operation(
                 "build-1",
                 OperationState.Failed,
-                new BuildResult
-                {
-                    Ok = false,
-                    Counts = new DiagnosticCounts
-                    {
-                        Errors = 1,
-                    },
-                }));
+                new XaeBuildResult { Ok = false, Counts = new DiagnosticCounts { Errors = 1 } }),
+        };
 
         CliResult result = await RunAsync(
             client,
@@ -179,9 +133,7 @@ public sealed class CliProgramTests
             JsonDocument.Parse(result.Output);
         Assert.Equal(
             "failed",
-            json.RootElement.GetProperty("result")
-                .GetProperty("operation")
-                .GetProperty("state")
+            json.RootElement.GetProperty("completion")
                 .GetString());
     }
 
@@ -190,12 +142,8 @@ public sealed class CliProgramTests
     {
         FakeClient client = new()
         {
-            BuildAccepted = Accepted("build-1"),
+            BuildResponse = Operation("build-1", OperationState.Succeeded),
         };
-        client.BuildOperations.Enqueue(
-            Operation(
-                "build-1",
-                OperationState.Succeeded));
 
         CliResult result = await RunAsync(
             client,
@@ -231,12 +179,7 @@ public sealed class CliProgramTests
         using StringWriter error = new();
         FakeClient client = new()
         {
-            StatusResponse =
-                new GatewayResponse<GatewayStatusResult>
-                {
-                    Ok = true,
-                    Result = new GatewayStatusResult(),
-                },
+            StatusResponse = new GatewayStateSnapshot(),
         };
 
         int exitCode = await CliProgram.RunAsync(
@@ -274,38 +217,19 @@ public sealed class CliProgramTests
             error.ToString());
     }
 
-    private static GatewayResponse<OperationAccepted>
-        Accepted(string operationId)
-    {
-        return new GatewayResponse<OperationAccepted>
-        {
-            Ok = true,
-            Result = new OperationAccepted
-            {
-                OperationId = operationId,
-            },
-        };
-    }
-
-    private static GatewayResponse<
-        OperationDetails<BuildResult>> Operation(
+    private static OperationResult<XaeBuildResult> Operation(
             string operationId,
             OperationState state,
-            BuildResult? result = null)
+            XaeBuildResult? result = null)
     {
-        return new GatewayResponse<
-            OperationDetails<BuildResult>>
+        return new OperationResult<XaeBuildResult>
         {
-            Ok = true,
-            Result = new OperationDetails<BuildResult>
-            {
-                Operation = new OperationSummary
-                {
-                    OperationId = operationId,
-                    State = state,
-                },
-                Result = result,
-            },
+            Ok = state == OperationState.Succeeded,
+            OperationId = operationId,
+            Completion = state == OperationState.Succeeded
+                ? OperationCompletion.Succeeded
+                : OperationCompletion.Failed,
+            Result = result,
         };
     }
 
@@ -328,137 +252,46 @@ public sealed class CliProgramTests
         public string Error { get; }
     }
 
-    private sealed class FakeClient : ITwinCatGatewayClient
+    private sealed class FakeClient : GatewayClientStub
     {
-        public GatewayResponse<GatewayStatusResult>
+        public GatewayStateSnapshot
             StatusResponse { get; set; } =
-                new()
-                {
-                    Ok = true,
-                    Result = new GatewayStatusResult(),
-                };
+                new();
 
-        public GatewayResponse<OperationAccepted>
-            BuildAccepted { get; set; } =
-                Accepted("build-1");
+        public OperationResult<XaeBuildResult> BuildResponse { get; set; } =
+            Operation("build-1", OperationState.Succeeded, new XaeBuildResult { Ok = true });
 
-        public GatewayResponse<XaeMessagesResult>
-            XaeMessagesResponse { get; set; } =
-                new()
-                {
-                    Ok = true,
-                    Result = new XaeMessagesResult(),
-                };
+        public ResourceContent ResourceResponse { get; set; } = new();
 
-        public Queue<GatewayResponse<
-            OperationDetails<BuildResult>>>
-            BuildOperations { get; } = new();
+        public XaeBuildParameters? Build { get; private set; }
 
-        public BuildParameters? Build { get; private set; }
+        public string? ResourceUri { get; private set; }
 
-        public GetXaeMessagesParameters? XaeMessages
-        {
-            get;
-            private set;
-        }
-
-        public int OperationReads { get; private set; }
-
-        public Task<GatewayResponse<GatewayStatusResult>>
-            GetStatusAsync(
+        public override Task<GatewayStateSnapshot> GetGatewayStateAsync(
                 CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(StatusResponse);
         }
 
-        public Task<GatewayResponse<GatewayShutdownResult>>
-            ShutdownAsync(
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<OperationAccepted>>
-            StartBuildAsync(
-                BuildParameters parameters,
+        public override Task<OperationResult<XaeBuildResult>> BuildXaeAsync(
+                XaeBuildParameters parameters,
                 CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
             Build = parameters;
-            return Task.FromResult(BuildAccepted);
+            return Task.FromResult(BuildResponse);
         }
 
-        public Task<
-            GatewayResponse<OperationDetails<TResult>>>
-            GetOperationAsync<TResult>(
-                string operationId,
-                CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            OperationReads++;
-            object response = BuildOperations.Dequeue();
-            return Task.FromResult(
-                (GatewayResponse<
-                    OperationDetails<TResult>>)response);
-        }
-
-        public Task<GatewayResponse<HealthResult>>
-            GetHealthAsync(
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<GatewayDiagnosticsResult>>
-            GetDiagnosticsAsync(
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<XaeMessagesResult>>
-            GetXaeMessagesAsync(
-                GetXaeMessagesParameters parameters,
-                CancellationToken cancellationToken = default)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            XaeMessages = parameters;
-            return Task.FromResult(XaeMessagesResponse);
-        }
-
-        public Task<GatewayResponse<GatewayDiagnosticsResult>>
-            GetDiagnosticsAsync(
-                GetDiagnosticsParameters parameters,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<OperationAccepted>>
-            StartActivationAsync(
-                ActivateParameters parameters,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<CancelOperationResult>>
-            CancelOperationAsync(
-                string operationId,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
-        public Task<GatewayResponse<ResourceContent>>
-            GetResourceAsync(
+        public override Task<ResourceContent> GetResourceAsync(
                 string uri,
                 int maximumCharacters = 64 * 1024,
                 long offset = 0,
                 CancellationToken cancellationToken = default)
         {
-            throw new NotSupportedException();
+            cancellationToken.ThrowIfCancellationRequested();
+            ResourceUri = uri;
+            return Task.FromResult(ResourceResponse);
         }
     }
 }

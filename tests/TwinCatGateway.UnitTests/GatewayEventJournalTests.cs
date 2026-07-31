@@ -11,8 +11,7 @@ public sealed class GatewayEventJournalTests
     [Fact]
     public void ReadingDoesNotMutateClientCursorOrGlobalStatus()
     {
-        GatewayStatusSnapshotStore status = CreateStatus();
-        GatewayEventJournal journal = new(status);
+        GatewayEventJournal journal = new();
         journal.Record(
             Event("gateway.started"),
             new DateTimeOffset(
@@ -24,23 +23,22 @@ public sealed class GatewayEventJournalTests
                 0,
                 TimeSpan.Zero));
 
-        GatewayEventPage first = journal.ReadAfter(null, 0, 100);
-        GatewayEventPage second = journal.ReadAfter(null, 0, 100);
+        OperationEventPage first = journal.ReadAfter(null, 0, 100);
+        OperationEventPage second = journal.ReadAfter(null, 0, 100);
 
-        Assert.Equal(1, status.Read().LatestEventCursor);
+        Assert.Equal(1, journal.LatestCursor);
         Assert.Equal(1, Assert.Single(first.Events).Cursor);
         Assert.Equal(1, Assert.Single(second.Events).Cursor);
-        Assert.Equal(1, first.NextScanCursor);
+        Assert.Equal(1, first.NextCursor);
         Assert.Equal(1, first.LatestCursor);
-        Assert.False(first.MoreMatchingEventsAvailable);
+        Assert.False(first.HasMore);
         Assert.False(first.HistoryTruncated);
     }
 
     [Fact]
     public void PagesEventsInMonotonicCursorOrder()
     {
-        GatewayStatusSnapshotStore status = CreateStatus();
-        GatewayEventJournal journal = new(status);
+        GatewayEventJournal journal = new();
         for (int index = 1; index <= 3; index++)
         {
             journal.Record(
@@ -48,26 +46,25 @@ public sealed class GatewayEventJournalTests
                 DateTimeOffset.UtcNow);
         }
 
-        GatewayEventPage first = journal.ReadAfter(null, 0, 2);
-        GatewayEventPage second = journal.ReadAfter(
-            first.EventStreamId,
-            first.NextScanCursor,
+        OperationEventPage first = journal.ReadAfter(null, 0, 2);
+        OperationEventPage second = journal.ReadAfter(
+            first.JournalId,
+            first.NextCursor,
             2);
 
         Assert.Equal(new long[] { 1, 2 }, first.Events
             .Select(gatewayEvent => gatewayEvent.Cursor));
-        Assert.True(first.MoreMatchingEventsAvailable);
-        Assert.Equal(2, first.NextScanCursor);
+        Assert.True(first.HasMore);
+        Assert.Equal(2, first.NextCursor);
         Assert.Equal(3, Assert.Single(second.Events).Cursor);
-        Assert.False(second.MoreMatchingEventsAvailable);
-        Assert.Equal(3, second.NextScanCursor);
+        Assert.False(second.HasMore);
+        Assert.Equal(3, second.NextCursor);
     }
 
     [Fact]
     public void ErrorFilterAdvancesAcrossNonMatchingEvents()
     {
-        GatewayStatusSnapshotStore status = CreateStatus();
-        GatewayEventJournal journal = new(status);
+        GatewayEventJournal journal = new();
         journal.Record(
             Event("build.started"),
             DateTimeOffset.UtcNow);
@@ -81,7 +78,7 @@ public sealed class GatewayEventJournalTests
             Event("xae.connected"),
             DateTimeOffset.UtcNow);
 
-        GatewayEventPage page = journal.ReadAfter(
+        OperationEventPage page = journal.ReadAfter(
             null,
             0,
             100,
@@ -90,16 +87,15 @@ public sealed class GatewayEventJournalTests
         GatewayEvent error = Assert.Single(page.Events);
         Assert.Equal(2, error.Cursor);
         Assert.Equal(ErrorCodes.BuildFailed, error.Error?.Code);
-        Assert.Equal(3, page.NextScanCursor);
+        Assert.Equal(3, page.NextCursor);
         Assert.Equal(3, page.LatestCursor);
-        Assert.False(page.MoreMatchingEventsAvailable);
+        Assert.False(page.HasMore);
     }
 
     [Fact]
     public void FilteredPagingDoesNotSkipNextMatchingEvent()
     {
-        GatewayStatusSnapshotStore status = CreateStatus();
-        GatewayEventJournal journal = new(status);
+        GatewayEventJournal journal = new();
         journal.Record(
             Event(
                 "first.error",
@@ -116,66 +112,58 @@ public sealed class GatewayEventJournalTests
                 "SECOND"),
             DateTimeOffset.UtcNow);
 
-        GatewayEventPage first = journal.ReadAfter(
+        OperationEventPage first = journal.ReadAfter(
             null,
             0,
             1,
             DiagnosticSeverity.Error);
-        GatewayEventPage second = journal.ReadAfter(
-            first.EventStreamId,
-            first.NextScanCursor,
+        OperationEventPage second = journal.ReadAfter(
+            first.JournalId,
+            first.NextCursor,
             1,
             DiagnosticSeverity.Error);
 
         Assert.Equal(1, Assert.Single(first.Events).Cursor);
-        Assert.True(first.MoreMatchingEventsAvailable);
-        Assert.Equal(1, first.NextScanCursor);
+        Assert.True(first.HasMore);
+        Assert.Equal(1, first.NextCursor);
         Assert.Equal(3, Assert.Single(second.Events).Cursor);
-        Assert.False(second.MoreMatchingEventsAvailable);
-        Assert.Equal(3, second.NextScanCursor);
+        Assert.False(second.HasMore);
+        Assert.Equal(3, second.NextCursor);
     }
 
     [Fact]
     public void ReportsRetentionGapAndReturnsOldestRetainedEvent()
     {
-        GatewayStatusSnapshotStore status = CreateStatus();
-        GatewayEventJournal journal = new(status, capacity: 2);
+        GatewayEventJournal journal = new(capacity: 2);
         journal.Record(Event("first"), DateTimeOffset.UtcNow);
         journal.Record(Event("second"), DateTimeOffset.UtcNow);
         journal.Record(Event("third"), DateTimeOffset.UtcNow);
 
-        GatewayEventPage page = journal.ReadAfter(null, 0, 100);
+        OperationEventPage page = journal.ReadAfter(null, 0, 100);
 
         Assert.True(page.HistoryTruncated);
         Assert.Equal(
             new long[] { 2, 3 },
             page.Events.Select(gatewayEvent =>
                 gatewayEvent.Cursor));
-        Assert.Equal(3, page.NextScanCursor);
+        Assert.Equal(3, page.NextCursor);
     }
 
     [Fact]
     public void StreamIdMismatchResetsToCurrentJournal()
     {
-        GatewayStatusSnapshotStore status = CreateStatus();
-        GatewayEventJournal journal = new(status);
+        GatewayEventJournal journal = new();
         journal.Record(Event("current"), DateTimeOffset.UtcNow);
 
-        GatewayEventPage page = journal.ReadAfter(
+        OperationEventPage page = journal.ReadAfter(
             "previous-stream",
             1,
             100);
 
         Assert.True(page.HistoryTruncated);
         Assert.Equal(1, Assert.Single(page.Events).Cursor);
-        Assert.Equal(1, page.NextScanCursor);
-        Assert.NotEqual("previous-stream", page.EventStreamId);
-    }
-
-    private static GatewayStatusSnapshotStore CreateStatus()
-    {
-        return new GatewayStatusSnapshotStore(
-            GatewayStatusSnapshotStore.CreateInitial("0.1.0"));
+        Assert.Equal(1, page.NextCursor);
+        Assert.NotEqual("previous-stream", page.JournalId);
     }
 
     private static GatewayEvent Event(

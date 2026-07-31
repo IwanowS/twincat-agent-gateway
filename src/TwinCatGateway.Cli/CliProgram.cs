@@ -394,6 +394,7 @@ internal static class CliProgram
     {
         return response.Ok
             && response.Completion == OperationCompletion.Succeeded
+            && response.Result is not null
                 ? SuccessExitCode
                 : OperationFailedExitCode;
     }
