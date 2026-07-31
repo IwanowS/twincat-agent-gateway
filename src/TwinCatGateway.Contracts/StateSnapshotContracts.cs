@@ -255,6 +255,29 @@ public sealed class PlcRuntimeObservation
     public ObservationError? Error { get; set; }
 }
 
+public sealed class StateObservationDivergence
+{
+    public string Code { get; set; } =
+        ErrorCodes.StateObservationsDiverged;
+
+    public GatewayComponent Component { get; set; } =
+        GatewayComponent.Target;
+
+    public string Profile { get; set; } = string.Empty;
+
+    public string AmsNetId { get; set; } = string.Empty;
+
+    public TargetSystemState XaeObserved { get; set; } =
+        TargetSystemState.Unknown;
+
+    public TargetSystemState SystemServiceObserved { get; set; } =
+        TargetSystemState.Unknown;
+
+    public DateTimeOffset XaeObservedAtUtc { get; set; }
+
+    public DateTimeOffset SystemServiceObservedAtUtc { get; set; }
+}
+
 public sealed class CapabilityState
 {
     public CapabilityKey Key { get; set; }

@@ -171,6 +171,42 @@ public sealed class V2ContractSerializationTests
     }
 
     [Fact]
+    public void DivergencePreservesBothSourcesAndTimestamps()
+    {
+        StateObservationDivergence source = new()
+        {
+            Profile = "bench",
+            AmsNetId = "192.168.3.31.1.1",
+            XaeObserved = TargetSystemState.Run,
+            SystemServiceObserved = TargetSystemState.Config,
+            XaeObservedAtUtc = ObservedAt,
+            SystemServiceObservedAtUtc =
+                ObservedAt.AddMilliseconds(25),
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        StateObservationDivergence? result =
+            JsonSerializer.Deserialize<StateObservationDivergence>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(
+            ErrorCodes.StateObservationsDiverged,
+            result.Code);
+        Assert.Equal(GatewayComponent.Target, result.Component);
+        Assert.Equal(TargetSystemState.Run, result.XaeObserved);
+        Assert.Equal(
+            TargetSystemState.Config,
+            result.SystemServiceObserved);
+        Assert.NotEqual(
+            result.XaeObservedAtUtc,
+            result.SystemServiceObservedAtUtc);
+    }
+
+    [Fact]
     public void CapabilityAndSourceManifestRoundTrip()
     {
         CapabilityState capability = new()

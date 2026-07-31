@@ -122,6 +122,13 @@ public static class ErrorCodes
         "XAE_DIALOG_MONITOR_UNAVAILABLE";
     public const string TwinCatRestartFailed = "TWINCAT_RESTART_FAILED";
     public const string TwinCatStateUnknown = "TWINCAT_STATE_UNKNOWN";
+    public const string XaeSystemStateUnavailable =
+        "XAE_SYSTEM_STATE_UNAVAILABLE";
+    public const string AdsStateReadFailed = "ADS_STATE_READ_FAILED";
+    public const string PlcStateNotObserved =
+        "PLC_STATE_NOT_OBSERVED";
+    public const string StateObservationsDiverged =
+        "STATE_OBSERVATIONS_DIVERGED";
     public const string TestAdsUnavailable = "TEST_ADS_UNAVAILABLE";
     public const string TestCompletionSymbolUnavailable = "TEST_COMPLETION_SYMBOL_UNAVAILABLE";
     public const string TestCompletionTimeout = "TEST_COMPLETION_TIMEOUT";

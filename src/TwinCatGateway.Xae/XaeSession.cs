@@ -1775,6 +1775,7 @@ public sealed class XaeSession : IDisposable
         string? activeConfiguration = null;
         string? activePlatform = null;
         string? targetAmsNetId = null;
+        XaeTwinCatSystemObservation? twinCatSystem = null;
         IReadOnlyList<string> lastErrorMessages =
             Array.Empty<string>();
         IReadOnlyList<BuildDiagnostic> errorListMessages =
@@ -1810,6 +1811,28 @@ public sealed class XaeSession : IDisposable
                 exception));
         }
 
+        DateTimeOffset systemObservedAtUtc =
+            DateTimeOffset.UtcNow;
+        try
+        {
+            twinCatSystem =
+                XaeTwinCatSystemStateMapper.FromStartedFlag(
+                    sysManager.IsTwinCATStarted(),
+                    targetAmsNetId,
+                    systemObservedAtUtc);
+        }
+        catch (Exception exception)
+        {
+            issues.Add(FormatDiagnosticIssue(
+                "twinCatSystemState",
+                exception));
+            twinCatSystem =
+                XaeTwinCatSystemStateMapper.Unavailable(
+                    targetAmsNetId,
+                    systemObservedAtUtc,
+                    "XAE could not observe the TwinCAT system state.");
+        }
+
         try
         {
             errorListMessages =
@@ -1826,6 +1849,7 @@ public sealed class XaeSession : IDisposable
             activeConfiguration;
         _snapshot.ActivePlatform = activePlatform;
         _snapshot.TargetAmsNetId = targetAmsNetId;
+        _snapshot.TwinCatSystem = twinCatSystem;
         _snapshot.TwinCatProjectPath =
             _twinCatProjectPath;
         _snapshot.LastErrorMessages =
@@ -3495,6 +3519,8 @@ public sealed class XaeSession : IDisposable
             ActiveConfiguration = source.ActiveConfiguration,
             ActivePlatform = source.ActivePlatform,
             TargetAmsNetId = source.TargetAmsNetId,
+            TwinCatSystem = CloneTwinCatSystem(
+                source.TwinCatSystem),
             TwinCatProjectPath = source.TwinCatProjectPath,
             LastErrorMessages =
                 source.LastErrorMessages.ToArray(),
@@ -3508,6 +3534,31 @@ public sealed class XaeSession : IDisposable
                 .Select(instance => CloneInfo(instance)!)
                 .ToArray(),
         };
+    }
+
+    private static XaeTwinCatSystemObservation?
+        CloneTwinCatSystem(
+        XaeTwinCatSystemObservation? source)
+    {
+        return source is null
+            ? null
+            : new XaeTwinCatSystemObservation
+            {
+                Source = source.Source,
+                State = source.State,
+                RawState = source.RawState,
+                SelectedTarget = source.SelectedTarget,
+                ObservedAtUtc = source.ObservedAtUtc,
+                Freshness = source.Freshness,
+                Error = source.Error is null
+                    ? null
+                    : new ObservationError
+                    {
+                        Code = source.Error.Code,
+                        Message = source.Error.Message,
+                        Retryable = source.Error.Retryable,
+                    },
+            };
     }
 
     private static BuildDiagnostic CloneBuildDiagnostic(

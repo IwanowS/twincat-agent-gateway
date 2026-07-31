@@ -24,10 +24,29 @@ public static class GatewayEventTypes
     public const string XaeReconnectRequested =
         "xae.reconnectRequested";
 
-    public const string RuntimeStateChanged = "runtime.stateChanged";
+    public const string XaeSystemStateChanged =
+        "xae.systemStateChanged";
 
-    public const string RuntimeStatusReadFailed =
-        "runtime.statusReadFailed";
+    public const string XaeSystemStateReadFailed =
+        "xae.systemStateReadFailed";
+
+    public const string TargetSystemStateChanged =
+        "target.systemStateChanged";
+
+    public const string TargetSystemStateReadFailed =
+        "target.systemStateReadFailed";
+
+    public const string PlcRuntimeStateChanged =
+        "plc.runtimeStateChanged";
+
+    public const string PlcRuntimeStateReadFailed =
+        "plc.runtimeStateReadFailed";
+
+    public const string StateObservationsDiverged =
+        "target.stateObservationsDiverged";
+
+    public const string StateObservationsConverged =
+        "target.stateObservationsConverged";
 
     public const string SolutionOpenQueued = "solution.openQueued";
 
