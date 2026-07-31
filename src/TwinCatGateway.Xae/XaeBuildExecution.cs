@@ -437,12 +437,10 @@ internal sealed class XaeBuildEventLease : IDisposable
                     dte,
                     typeof(SVsSolutionBuildManager).GUID);
             Marshal.ThrowExceptionForHR(
-                buildManager.StartSimpleUpdateProjectConfiguration(
-                    hierarchy,
-                    pIVsHierarchyDependent: null,
-                    pszDependentConfigurationCanonicalName: null,
+                buildManager.StartUpdateProjectConfigurations(
+                    cProjs: 1,
+                    rgpHierProjs: new[] { hierarchy },
                     dwFlags: XaeProjectBuildRequest.SelectFlags(action),
-                    dwDefQueryResults: 0,
                     fSuppressUI: 1));
         }
         finally
