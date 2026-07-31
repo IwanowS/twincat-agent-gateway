@@ -103,6 +103,12 @@ public static class ErrorCodes
         "ACTIVATION_TARGET_MISMATCH";
     public const string ConfigModeRequired = "CONFIG_MODE_REQUIRED";
     public const string ActivateConfigurationFailed = "ACTIVATE_CONFIGURATION_FAILED";
+    public const string ActivationCompileFailed =
+        "ACTIVATION_COMPILE_FAILED";
+    public const string ActivationDeployFailed =
+        "ACTIVATION_DEPLOY_FAILED";
+    public const string TargetTransitionFailed =
+        "TARGET_TRANSITION_FAILED";
     public const string ActivationDialogDetected =
         "ACTIVATION_DIALOG_DETECTED";
 

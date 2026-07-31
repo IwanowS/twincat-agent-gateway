@@ -10,20 +10,29 @@ public enum AutostartBootProjectSelection
     PartiallyEnabled,
 }
 
-public enum ActivationCompletion
+public enum ActivationFinalTargetMode
 {
-    Unknown,
-    AppliedAndRunning,
-    RestartSkipped,
+    Run,
+    Unchanged,
+}
+
+public enum VerificationMode
+{
+    None,
+    TcUnit,
 }
 
 public sealed class ActivateParameters
 {
     public string Profile { get; set; } = string.Empty;
 
-    public bool RunAfterActivation { get; set; } = true;
+    public ActivationFinalTargetMode FinalTargetMode { get; set; } =
+        ActivationFinalTargetMode.Run;
 
-    public bool? WaitForTcUnit { get; set; }
+    public VerificationMode Verification { get; set; } =
+        VerificationMode.None;
+
+    public List<string> ChangedPaths { get; set; } = new();
 
     public int? TimeoutSeconds { get; set; }
 }
@@ -42,28 +51,24 @@ public sealed class ActivationResult
 
     public TargetIdentity Target { get; set; } = new();
 
-    public bool RunAfterActivation { get; set; }
+    public OperationStageResult<SynchronizeResult> Sync { get; set; } = new();
 
-    public ActivationCompletion Completion { get; set; }
+    public OperationStageResult<ActivationCompileResult> Compile { get; set; } =
+        new();
 
-    public bool ActiveConfigurationVerified { get; set; }
+    public OperationStageResult<ActivationDeployResult> Deploy { get; set; } =
+        new();
 
-    public TargetSystemState ObservedTargetState { get; set; } =
-        TargetSystemState.Unknown;
+    public OperationStageResult<ActivationTargetTransitionResult>
+        TargetTransition { get; set; } = new();
 
-    public AutostartBootProjectSelection AutostartBootProjects { get; set; }
-
-    public ActivationCompileResult? Compile { get; set; }
-
-    public string? TestOperationId { get; set; }
+    public OperationStageResult<TestResult> Verification { get; set; } = new();
 
     public List<ResourceReference> Resources { get; set; } = new();
 }
 
 public sealed class ActivationCompileResult
 {
-    public bool Completed { get; set; }
-
     public bool Ok { get; set; }
 
     public long DurationMs { get; set; }
@@ -77,6 +82,22 @@ public sealed class ActivationCompileResult
     public int MoreDiagnostics { get; set; }
 
     public ResourceReference? Log { get; set; }
+}
+
+public sealed class ActivationDeployResult
+{
+    public bool ConfigurationStored { get; set; }
+
+    public bool PhysicalActivationVerified { get; set; }
+
+    public AutostartBootProjectSelection AutostartBootProjects { get; set; }
+}
+
+public sealed class ActivationTargetTransitionResult
+{
+    public ActivationFinalTargetMode RequestedMode { get; set; }
+
+    public TargetSystemObservation? Observation { get; set; }
 }
 
 public sealed class ActivationSummary

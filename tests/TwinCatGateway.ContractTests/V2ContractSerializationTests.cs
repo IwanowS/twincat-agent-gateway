@@ -567,6 +567,136 @@ public sealed class V2ContractSerializationTests
     }
 
     [Fact]
+    public void ActivationContractPreservesRootStagesAndVerificationMode()
+    {
+        ActivateParameters parameters = new()
+        {
+            Profile = "bench",
+            FinalTargetMode = ActivationFinalTargetMode.Run,
+            Verification = VerificationMode.TcUnit,
+            ChangedPaths =
+            {
+                @"C:\Machine\Plc\MAIN.TcPOU",
+            },
+        };
+        ActivationResult source = new()
+        {
+            Ok = false,
+            OperationId = "activation-1",
+            Profile = "bench",
+            Sync = Stage<SynchronizeResult>(
+                "activation-1",
+                GatewayComponent.Xae,
+                "activation.sync",
+                OperationCompletion.Succeeded),
+            Compile = Stage<ActivationCompileResult>(
+                "activation-1",
+                GatewayComponent.Xae,
+                "activation.compile",
+                OperationCompletion.Succeeded),
+            Deploy = Stage<ActivationDeployResult>(
+                "activation-1",
+                GatewayComponent.Xae,
+                "activation.deploy",
+                OperationCompletion.Succeeded),
+            TargetTransition =
+                Stage<ActivationTargetTransitionResult>(
+                    "activation-1",
+                    GatewayComponent.Target,
+                    "activation.targetTransition",
+                    OperationCompletion.Succeeded),
+            Verification = Stage<TestResult>(
+                "activation-1",
+                GatewayComponent.Verification,
+                "activation.verification",
+                OperationCompletion.Failed),
+        };
+
+        string parameterJson = JsonSerializer.Serialize(
+            parameters,
+            ContractJson.SerializerOptions);
+        string resultJson = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        ActivateParameters? roundTrippedParameters =
+            JsonSerializer.Deserialize<ActivateParameters>(
+                parameterJson,
+                ContractJson.SerializerOptions);
+        ActivationResult? result =
+            JsonSerializer.Deserialize<ActivationResult>(
+                resultJson,
+                ContractJson.SerializerOptions);
+
+        Assert.Equal(
+            VerificationMode.TcUnit,
+            roundTrippedParameters?.Verification);
+        Assert.Equal(
+            ActivationFinalTargetMode.Run,
+            roundTrippedParameters?.FinalTargetMode);
+        Assert.Equal(
+            OperationCompletion.Succeeded,
+            result?.Deploy.Completion);
+        Assert.Equal(
+            OperationCompletion.Failed,
+            result?.Verification.Completion);
+        Assert.Contains("\"verification\":\"tcUnit\"", parameterJson);
+        Assert.Contains("\"targetTransition\":", resultJson);
+    }
+
+    [Fact]
+    public void TargetRestartContractKeepsVerificationOnRootOperation()
+    {
+        TargetStartRestartParameters parameters = new()
+        {
+            Profile = "bench",
+            Verification = VerificationMode.TcUnit,
+        };
+        TargetStartRestartResult source = new()
+        {
+            Ok = false,
+            OperationId = "restart-1",
+            Action = TargetTransitionAction.Restart,
+            Verification = Stage<TestResult>(
+                "restart-1",
+                GatewayComponent.Verification,
+                "target.startRestart.verification",
+                OperationCompletion.Failed),
+        };
+
+        string parameterJson = JsonSerializer.Serialize(
+            parameters,
+            ContractJson.SerializerOptions);
+        string resultJson = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        TargetStartRestartResult? result =
+            JsonSerializer.Deserialize<TargetStartRestartResult>(
+                resultJson,
+                ContractJson.SerializerOptions);
+
+        Assert.Contains("\"verification\":\"tcUnit\"", parameterJson);
+        Assert.Equal("restart-1", result?.Verification.OperationId);
+        Assert.Equal(
+            OperationCompletion.Failed,
+            result?.Verification.Completion);
+    }
+
+    private static OperationStageResult<T> Stage<T>(
+        string operationId,
+        GatewayComponent component,
+        string stage,
+        OperationCompletion completion)
+    {
+        return new OperationStageResult<T>
+        {
+            OperationId = operationId,
+            Component = component,
+            Stage = stage,
+            Completion = completion,
+        };
+    }
+
+    [Fact]
     public void TargetTransitionCutoverHasNoRecoveryContractAlias()
     {
         Assert.False(Enum.TryParse(

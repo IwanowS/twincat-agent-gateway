@@ -2,11 +2,6 @@ using System.Collections.Generic;
 
 namespace TwinCatGateway.Contracts;
 
-public sealed class GetTestResultsParameters
-{
-    public string OperationId { get; set; } = string.Empty;
-}
-
 public sealed class TestFailure
 {
     public string Suite { get; set; } = string.Empty;
@@ -38,8 +33,6 @@ public sealed class TestResult
     public bool Ok { get; set; }
 
     public string OperationId { get; set; } = string.Empty;
-
-    public string ActivationOperationId { get; set; } = string.Empty;
 
     public long DurationMs { get; set; }
 

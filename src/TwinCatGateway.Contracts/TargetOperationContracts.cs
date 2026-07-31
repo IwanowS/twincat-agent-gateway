@@ -48,6 +48,9 @@ public sealed class TargetConfigResult
 public sealed class TargetStartRestartParameters
 {
     public string Profile { get; set; } = string.Empty;
+
+    public VerificationMode Verification { get; set; } =
+        VerificationMode.None;
 }
 
 public sealed class TargetStartRestartResult
@@ -67,4 +70,6 @@ public sealed class TargetStartRestartResult
     public TargetSystemObservation Before { get; set; } = new();
 
     public TargetSystemObservation After { get; set; } = new();
+
+    public OperationStageResult<TestResult> Verification { get; set; } = new();
 }

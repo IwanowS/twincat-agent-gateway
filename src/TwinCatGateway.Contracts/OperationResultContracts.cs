@@ -9,6 +9,7 @@ public enum OperationCompletion
     Failed,
     TimedOut,
     Cancelled,
+    Skipped,
 }
 
 public sealed class IdentityEvidence
