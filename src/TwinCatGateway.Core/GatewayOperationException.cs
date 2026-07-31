@@ -12,7 +12,11 @@ public sealed class GatewayOperationException : Exception
         bool retryable = false,
         string? stage = null,
         string? rawLogRef = null,
-        Exception? innerException = null)
+        Exception? innerException = null,
+        GatewayComponent? component = null,
+        bool? sideEffectsStarted = null,
+        IdentityEvidence? expected = null,
+        IdentityEvidence? observed = null)
         : base(message, innerException)
     {
         Code = code;
@@ -20,6 +24,10 @@ public sealed class GatewayOperationException : Exception
         Retryable = retryable;
         Stage = stage;
         RawLogRef = rawLogRef;
+        Component = component;
+        SideEffectsStarted = sideEffectsStarted;
+        Expected = expected;
+        Observed = observed;
     }
 
     public string Code { get; }
@@ -31,4 +39,12 @@ public sealed class GatewayOperationException : Exception
     public string? Stage { get; }
 
     public string? RawLogRef { get; }
+
+    public GatewayComponent? Component { get; }
+
+    public bool? SideEffectsStarted { get; }
+
+    public IdentityEvidence? Expected { get; }
+
+    public IdentityEvidence? Observed { get; }
 }

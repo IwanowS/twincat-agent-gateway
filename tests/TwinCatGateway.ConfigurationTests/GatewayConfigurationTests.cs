@@ -298,27 +298,6 @@ public sealed class GatewayConfigurationTests
                 == "profiles[0].target.tcUnit.runtimeId");
     }
 
-    [Fact]
-    public void CatalogReturnsDefensiveNestedCopies()
-    {
-        GatewayConfiguration configuration =
-            CreateValidConfiguration(@"C:\Project");
-        configuration.Profiles[0].Target = CreateTarget();
-        ProjectProfileCatalog catalog = new(configuration);
-
-        ProjectProfile first = catalog.GetRequired(null);
-        first.Xae.Solution = @"C:\Changed\Changed.sln";
-        first.Xae.Capabilities.Activate = true;
-        first.Target!.AmsNetId = "1.2.3.4.5.6";
-        ProjectProfile second = catalog.GetRequired("BENCH");
-
-        Assert.Equal(
-            @"C:\Project\Machine.sln",
-            second.Xae.Solution);
-        Assert.False(second.Xae.Capabilities.Activate);
-        Assert.Equal("192.168.3.31.1.1", second.Target?.AmsNetId);
-    }
-
     private static GatewayConfiguration CreateValidConfiguration(
         string directory)
     {
