@@ -1328,6 +1328,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ActiveConfiguration = snapshot.ActiveConfiguration,
             ActivePlatform = snapshot.ActivePlatform,
             SynchronizationState = snapshot.SynchronizationState,
+            DirtyDocuments = snapshot.DirtyDocuments.ToList(),
             Errors = snapshot.DiagnosticIssues
                 .Concat(snapshot.LastErrorMessages)
                 .Distinct(StringComparer.Ordinal)
@@ -2080,6 +2081,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 source.SynchronizationState,
             DirtyDocumentCount =
                 source.DirtyDocumentCount,
+            DirtyDocuments = source.DirtyDocuments.ToArray(),
             UnsynchronizedFiles =
                 source.UnsynchronizedFiles
                     .Select(CloneProjectFileChange)

@@ -28,6 +28,9 @@ public sealed class XaeSessionSnapshot
 
     public int DirtyDocumentCount { get; set; }
 
+    public IReadOnlyList<string> DirtyDocuments { get; set; } =
+        new List<string>();
+
     public IReadOnlyList<ProjectFileChange> UnsynchronizedFiles { get; set; } =
         new List<ProjectFileChange>();
 

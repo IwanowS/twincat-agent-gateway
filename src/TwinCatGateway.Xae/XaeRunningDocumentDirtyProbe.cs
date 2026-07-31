@@ -113,6 +113,18 @@ internal static class XaeRunningDocumentDirtyProbe
             }
 
             if (!isDirty
+                && documentDataPointer != IntPtr.Zero
+                && hierarchy is IVsPersistHierarchyItem persistHierarchy)
+            {
+                Marshal.ThrowExceptionForHR(
+                    persistHierarchy.IsItemDirty(
+                        itemId,
+                        documentDataPointer,
+                        out int itemIsDirty));
+                isDirty = itemIsDirty != 0;
+            }
+
+            if (!isDirty
                 || !TryResolvePath(
                     moniker,
                     hierarchy,

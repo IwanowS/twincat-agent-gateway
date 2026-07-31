@@ -1491,11 +1491,11 @@ public sealed class XaeSession : IDisposable
                 normalizedSolution,
                 twinCatProjectPath,
                 CancellationToken.None);
-        int dirtyDocumentCount =
+        IReadOnlyList<string> dirtyDocuments =
             AgentWorkspaceOwnership.FindDirtyDocuments(
                 _dte!,
-                graph.Files.Select(file => file.Path))
-            .Count;
+                graph.Files.Select(file => file.Path));
+        int dirtyDocumentCount = dirtyDocuments.Count;
         _projectGraphPaths =
             graph.Files.Select(file => file.Path).ToArray();
         ComObject.Release(_sysManager);
@@ -1527,6 +1527,7 @@ public sealed class XaeSession : IDisposable
             DiscardedDocumentCount = 0,
             SynchronizationState = SynchronizationState.Confirmed,
             DirtyDocumentCount = dirtyDocumentCount,
+            DirtyDocuments = dirtyDocuments.ToArray(),
             DiscoveredInstances = new[] { CloneInfo(info)! },
         };
         using (CreateUserSilentModeLease())
@@ -1567,6 +1568,7 @@ public sealed class XaeSession : IDisposable
         string twinCatProjectPath = string.Empty;
         string[] projectGraphPaths = Array.Empty<string>();
         ProjectFileFingerprintSnapshot? capturedGraph = null;
+        IReadOnlyList<string> dirtyDocuments = Array.Empty<string>();
         int dirtyDocumentCount = 0;
         try
         {
@@ -1584,11 +1586,11 @@ public sealed class XaeSession : IDisposable
                         twinCatProjectPath,
                         CancellationToken.None);
                 capturedGraph = graph;
-                dirtyDocumentCount =
+                dirtyDocuments =
                     AgentWorkspaceOwnership.FindDirtyDocuments(
                         selectedDte,
-                        graph.Files.Select(file => file.Path))
-                    .Count;
+                        graph.Files.Select(file => file.Path));
+                dirtyDocumentCount = dirtyDocuments.Count;
                 projectGraphPaths =
                     graph.Files.Select(file => file.Path).ToArray();
             }
@@ -1661,6 +1663,7 @@ public sealed class XaeSession : IDisposable
             DiscardedDocumentCount = 0,
             SynchronizationState = initialSynchronizationState,
             DirtyDocumentCount = dirtyDocumentCount,
+            DirtyDocuments = dirtyDocuments.ToArray(),
             DiscoveredInstances = instances,
         };
         using (CreateUserSilentModeLease())
@@ -1740,11 +1743,11 @@ public sealed class XaeSession : IDisposable
         info.Selected = true;
         info.SelectionReason =
             _snapshot.SelectedInstance?.SelectionReason;
-        int dirtyDocumentCount =
+        IReadOnlyList<string> dirtyDocuments =
             AgentWorkspaceOwnership.FindDirtyDocuments(
                 _dte,
-                _projectGraphPaths)
-            .Count;
+                _projectGraphPaths);
+        int dirtyDocumentCount = dirtyDocuments.Count;
         _snapshot = new XaeSessionSnapshot
         {
             Connected = true,
@@ -1760,6 +1763,7 @@ public sealed class XaeSession : IDisposable
                 _snapshot.SynchronizationState,
             DirtyDocumentCount =
                 dirtyDocumentCount,
+            DirtyDocuments = dirtyDocuments.ToArray(),
             DiscoveredInstances = _snapshot.DiscoveredInstances
                 .Select(instance =>
                     instance.Selected
@@ -2280,6 +2284,7 @@ public sealed class XaeSession : IDisposable
             _snapshot.DiscardedDocumentCount =
                 result.DiscardedDocuments.Count;
             _snapshot.DirtyDocumentCount = 0;
+            _snapshot.DirtyDocuments = Array.Empty<string>();
             return result;
         }
     }
@@ -2298,6 +2303,7 @@ public sealed class XaeSession : IDisposable
                 dte,
                 projectGraphPaths);
         _snapshot.DirtyDocumentCount = dirty.Count;
+        _snapshot.DirtyDocuments = dirty.ToArray();
         return dirty;
     }
 
@@ -3724,6 +3730,7 @@ public sealed class XaeSession : IDisposable
                 source.SynchronizationState,
             DirtyDocumentCount =
                 source.DirtyDocumentCount,
+            DirtyDocuments = source.DirtyDocuments.ToArray(),
             UnsynchronizedFiles =
                 source.UnsynchronizedFiles
                     .Select(CloneProjectFileChange)
