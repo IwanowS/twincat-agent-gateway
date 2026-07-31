@@ -36,8 +36,8 @@ public interface ITwinCatGatewayClient
                 "XAE Error List reading is not implemented by this client."));
     }
 
-    Task<GatewayResponse<OperationAccepted>> StartBuildAsync(
-        BuildParameters parameters,
+    Task<GatewayResponse<OperationAccepted>> StartXaeBuildAsync(
+        XaeBuildParameters parameters,
         CancellationToken cancellationToken = default);
 
     Task<GatewayResponse<OperationAccepted>>

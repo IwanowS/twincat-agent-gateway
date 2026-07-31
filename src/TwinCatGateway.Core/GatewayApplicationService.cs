@@ -8,9 +8,9 @@ using TwinCatGateway.Contracts;
 
 namespace TwinCatGateway.Core;
 
-public delegate Task<BuildResult> BuildOperationExecutor(
+public delegate Task<XaeBuildResult> XaeBuildOperationExecutor(
     string operationId,
-    BuildParameters parameters,
+    XaeBuildParameters parameters,
     CancellationToken cancellationToken);
 
 public delegate Task<ActivationResult> ActivationOperationExecutor(
@@ -46,7 +46,7 @@ public sealed class GatewayApplicationService
     private readonly OperationQueue _queue;
     private readonly LocalLogStore _logs;
     private readonly Func<GatewayDiagnosticsResult>? _diagnosticsProvider;
-    private readonly BuildOperationExecutor? _buildExecutor;
+    private readonly XaeBuildOperationExecutor? _xaeBuildExecutor;
     private readonly ActivationOperationExecutor? _activationExecutor;
     private readonly SynchronizeOperationExecutor? _synchronizeExecutor;
     private readonly CloseXaeOperationExecutor? _closeXaeExecutor;
@@ -76,7 +76,7 @@ public sealed class GatewayApplicationService
         LocalLogStore logs,
         GatewayEventJournal eventJournal,
         Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
-        BuildOperationExecutor? buildExecutor = null,
+        XaeBuildOperationExecutor? xaeBuildExecutor = null,
         ActivationOperationExecutor? activationExecutor = null,
         ResolvedProfile? activeProfile = null,
         OperationCapabilityPreflight? preflight = null,
@@ -107,7 +107,7 @@ public sealed class GatewayApplicationService
         _logs = logs
             ?? throw new ArgumentNullException(nameof(logs));
         _diagnosticsProvider = diagnosticsProvider;
-        _buildExecutor = buildExecutor;
+        _xaeBuildExecutor = xaeBuildExecutor;
         _activationExecutor = activationExecutor;
         _synchronizeExecutor = synchronizeExecutor;
         _closeXaeExecutor = closeXaeExecutor;
@@ -259,40 +259,32 @@ public sealed class GatewayApplicationService
         return provider(parameters, cancellationToken);
     }
 
-    public OperationAccepted StartBuild(BuildParameters parameters)
+    public OperationAccepted StartXaeBuild(XaeBuildParameters parameters)
     {
         if (parameters is null)
         {
             throw new ArgumentNullException(nameof(parameters));
         }
 
-        if (_buildExecutor is null)
+        if (_xaeBuildExecutor is null)
         {
             throw new GatewayOperationException(
                 ErrorCodes.GatewayNotReady,
                 "The XAE build executor is unavailable.",
                 retryable: true,
-                stage: "build.enqueue");
+                stage: "xae.build.enqueue");
         }
 
         OperationCapabilityPreflight preflight =
-            RequirePreflight("build.admission");
+            RequirePreflight("xae.build.admission");
         ResolvedProfile profile = preflight.EnsureAllowed(
             parameters.Profile,
             CapabilityKey.XaeBuild,
-            "build.admission");
+            "xae.build.admission");
         OperationCapabilityGuard buildGuard = new(
-            RequireCapabilities("build.admission"),
+            RequireCapabilities("xae.build.admission"),
             profile,
             CapabilityKey.XaeBuild);
-        if (parameters.DiscardDirtyDocuments)
-        {
-            preflight.EnsureAllowed(
-                profile.Name,
-                CapabilityKey.XaeDiscardDirtyDocuments,
-                "build.discard.admission");
-        }
-
         if (!Enum.IsDefined(
             typeof(BuildAction),
             parameters.Action))
@@ -300,25 +292,35 @@ public sealed class GatewayApplicationService
             throw new GatewayOperationException(
                 ErrorCodes.RequestInvalid,
                 "Build action is not supported.",
-                stage: "build.validate");
+                stage: "xae.build.validate");
         }
 
-        if (parameters.TimeoutSeconds.HasValue
-            && parameters.TimeoutSeconds.Value <= 0)
+        if (!Enum.IsDefined(
+            typeof(XaeBuildScope),
+            parameters.Scope))
         {
             throw new GatewayOperationException(
                 ErrorCodes.RequestInvalid,
-                "Build timeout must be positive.",
-                stage: "build.validate");
+                "XAE build scope is not supported.",
+                stage: "xae.build.validate");
         }
 
-        BuildParameters captured = CloneBuildParameters(parameters);
-        TimeSpan timeout = TimeSpan.FromSeconds(
-            captured.TimeoutSeconds ?? 120);
+        if (parameters.Scope == XaeBuildScope.Solution
+            && !string.IsNullOrWhiteSpace(parameters.Project))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.RequestInvalid,
+                "A project cannot be specified for solution-scoped build.",
+                stage: "xae.build.validate");
+        }
+
+        XaeBuildParameters captured =
+            CloneXaeBuildParameters(parameters);
+        TimeSpan timeout = TimeSpan.FromSeconds(120);
         return _queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             (operationId, cancellationToken) =>
-                ExecuteBuildAsync(
+                ExecuteXaeBuildAsync(
                     operationId,
                     captured,
                     buildGuard,
@@ -876,92 +878,52 @@ public sealed class GatewayApplicationService
         return _operations.GetRecent(maximumCount);
     }
 
-    private async Task<OperationExecutionResult> ExecuteBuildAsync(
+    private async Task<OperationExecutionResult> ExecuteXaeBuildAsync(
         string operationId,
-        BuildParameters parameters,
+        XaeBuildParameters parameters,
         OperationCapabilityGuard buildGuard,
         CancellationToken cancellationToken)
     {
-        DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
-        _status.Update(status =>
+        buildGuard.EnsureAllowed(
+            "xae.build.preSideEffect");
+        XaeBuildResult result = await _xaeBuildExecutor!(
+            operationId,
+            parameters,
+            cancellationToken).ConfigureAwait(false);
+        result.OperationId = operationId;
+        List<ResourceReference> resources = new();
+        if (result.Log is not null)
         {
-            status.Gateway.State = GatewayState.Building;
-            status.CurrentOperation = new OperationSummary
-            {
-                OperationId = operationId,
-                Kind = OperationKind.Build,
-                State = OperationState.Running,
-                QueuedAtUtc = startedAtUtc,
-                StartedAtUtc = startedAtUtc,
-            };
-            return status;
-        });
-        try
+            resources.Add(result.Log);
+        }
+
+        resources.AddRange(
+            result.ExpectedProjectNoise
+                .Select(change => change.Details)
+                .Where(reference => reference is not null)
+                .Cast<ResourceReference>()
+                .GroupBy(
+                    reference => reference.Uri,
+                    StringComparer.Ordinal)
+                .Select(group => group.First()));
+        if (result.Ok)
         {
-            buildGuard.EnsureAllowed(
-                "build.preSideEffect");
-            BuildResult result = await _buildExecutor!(
-                operationId,
-                parameters,
-                cancellationToken).ConfigureAwait(false);
-            result.OperationId = operationId;
-            _status.Update(status =>
-            {
-                status.LastBuild = new BuildSummary
-                {
-                    Ok = result.Ok,
-                    OperationId = operationId,
-                    Action = result.Action,
-                    Errors = result.Counts.Errors,
-                    Warnings = result.Counts.Warnings,
-                };
-                return status;
-            });
-            List<ResourceReference> resources = new();
-            if (result.Log is not null)
-            {
-                resources.Add(result.Log);
-            }
-
-            resources.AddRange(
-                result.ExpectedProjectNoise
-                    .Select(change => change.Details)
-                    .Where(reference => reference is not null)
-                    .Cast<ResourceReference>()
-                    .GroupBy(
-                        reference => reference.Uri,
-                        StringComparer.Ordinal)
-                    .Select(group => group.First()));
-            if (result.Ok)
-            {
-                return OperationExecutionResult.Success(
-                    result,
-                    resources);
-            }
-
-            return OperationExecutionResult.Failure(
-                new GatewayError
-                {
-                    Code = ErrorCodes.BuildFailed,
-                    Message = "XAE completed the build with errors.",
-                    Retryable = false,
-                    Stage = "build.verify",
-                    RawLogRef = result.Log?.Uri,
-                },
+            return OperationExecutionResult.Success(
                 result,
                 resources);
         }
-        finally
-        {
-            _status.Update(status =>
+
+        return OperationExecutionResult.Failure(
+            new GatewayError
             {
-                status.CurrentOperation = null;
-                status.Gateway.State = status.Xae.Connected
-                    ? GatewayState.Ready
-                    : GatewayState.Disconnected;
-                return status;
-            });
-        }
+                Code = ErrorCodes.BuildFailed,
+                Message = "XAE completed the build with errors.",
+                Retryable = false,
+                Stage = "xae.build.verify",
+                RawLogRef = result.Log?.Uri,
+            },
+            result,
+            resources);
     }
 
     private async Task<OperationExecutionResult>
@@ -1326,22 +1288,19 @@ public sealed class GatewayApplicationService
         }
     }
 
-    private static BuildParameters CloneBuildParameters(
-        BuildParameters source)
+    private static XaeBuildParameters CloneXaeBuildParameters(
+        XaeBuildParameters source)
     {
-        return new BuildParameters
+        return new XaeBuildParameters
         {
             Profile = source.Profile,
             Action = source.Action,
-            Configuration = source.Configuration,
-            Platform = source.Platform,
+            Scope = source.Scope,
+            Project = source.Project,
             ChangedPaths = source.ChangedPaths?
                 .ToList()
                 ?? new List<string>(),
-            DiscardDirtyDocuments =
-                source.DiscardDirtyDocuments,
             Detail = source.Detail,
-            TimeoutSeconds = source.TimeoutSeconds,
         };
     }
 

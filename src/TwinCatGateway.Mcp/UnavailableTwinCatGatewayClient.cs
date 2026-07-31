@@ -98,8 +98,8 @@ internal sealed class UnavailableTwinCatGatewayClient
     }
 
     public Task<GatewayResponse<OperationAccepted>>
-        StartBuildAsync(
-            BuildParameters parameters,
+        StartXaeBuildAsync(
+            XaeBuildParameters parameters,
             CancellationToken cancellationToken = default)
     {
         return Response<OperationAccepted>(

@@ -140,20 +140,3 @@ public sealed class XaeBuildResult
 
     public ResourceReference? Log { get; set; }
 }
-
-public sealed class XaeBuildSummary
-{
-    public bool Ok { get; set; }
-
-    public string OperationId { get; set; } = string.Empty;
-
-    public BuildAction Action { get; set; }
-
-    public XaeBuildScope Scope { get; set; } = XaeBuildScope.Plc;
-
-    public string? Project { get; set; }
-
-    public int Errors { get; set; }
-
-    public int Warnings { get; set; }
-}

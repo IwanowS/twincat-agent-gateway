@@ -490,7 +490,7 @@ public sealed class OperationQueue : IDisposable
         {
             case OperationKind.OpenSolution:
                 return GetSolutionOpenEventType(state);
-            case OperationKind.Build:
+            case OperationKind.XaeBuild:
                 return GetBuildEventType(state);
             case OperationKind.CloseXae:
                 return GetXaeCloseEventType(state);

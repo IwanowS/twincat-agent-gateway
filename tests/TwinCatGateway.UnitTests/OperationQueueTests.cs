@@ -21,7 +21,7 @@ public sealed class OperationQueueTests
         ConcurrentQueue<string> events = new();
 
         OperationAccepted first = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             async cancellationToken =>
             {
                 events.Enqueue("first-start");
@@ -63,7 +63,7 @@ public sealed class OperationQueueTests
         bool secondExecuted = false;
 
         queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             async cancellationToken =>
             {
                 firstStarted.SetResult(true);
@@ -104,10 +104,10 @@ public sealed class OperationQueueTests
             gatewayEventSink: events);
 
         OperationAccepted failed = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             cancellationToken => throw new InvalidOperationException("boom"));
         OperationAccepted succeeded = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             cancellationToken =>
                 Task.FromResult(OperationExecutionResult.Success("complete")));
 
@@ -139,14 +139,14 @@ public sealed class OperationQueueTests
         using OperationQueue queue = new(store);
 
         OperationAccepted failed = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             cancellationToken =>
                 throw new GatewayOperationException(
-                    ErrorCodes.BuildBlockedByRuntimeException,
-                    "Runtime is in Exception.",
+                    ErrorCodes.OperatorLocked,
+                    "The operation was locked.",
                     details:
                         "Exception Code 0xc0000005.",
-                    stage: "build.runtimePreflight"));
+                    stage: "operation.preflight"));
 
         StoredOperation operation =
             await WaitForStateAsync(
@@ -172,7 +172,7 @@ public sealed class OperationQueueTests
             gatewayEventSink: events);
 
         OperationAccepted accepted = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             async cancellationToken =>
             {
                 await Task.Delay(TimeSpan.FromSeconds(10), cancellationToken);
@@ -214,7 +214,7 @@ public sealed class OperationQueueTests
         string? executedId = null;
 
         OperationAccepted accepted = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             (operationId, cancellationToken) =>
             {
                 executedId = operationId;
@@ -243,7 +243,7 @@ public sealed class OperationQueueTests
             gatewayEventSink: events);
 
         OperationAccepted accepted = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             cancellationToken => Task.FromResult(
                 OperationExecutionResult.Success()));
 
@@ -274,7 +274,7 @@ public sealed class OperationQueueTests
                     accepted.OperationId,
                     gatewayEvent.OperationId);
                 Assert.Equal(
-                    OperationKind.Build,
+                    OperationKind.XaeBuild,
                     gatewayEvent.OperationKind);
             });
     }

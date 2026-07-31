@@ -295,80 +295,41 @@ internal sealed class XaeSessionCoordinator : IDisposable
         };
     }
 
-    public async Task<BuildResult> ExecuteBuildAsync(
+    public async Task<XaeBuildResult> ExecuteXaeBuildAsync(
         string operationId,
-        BuildParameters parameters,
+        XaeBuildParameters parameters,
         CancellationToken cancellationToken)
     {
-        EnsureProfileIdentity(parameters.Profile, "build.preflight");
+        EnsureProfileIdentity(parameters.Profile, "xae.build.preflight");
         _capabilities.EnsureAllowed(
             _profile,
             CapabilityKey.XaeBuild,
-            "build.preflight");
+            "xae.build.preflight");
         if (_profile.Xae.Workspace.AutoSynchronizeBeforeOperation)
         {
             _capabilities.EnsureAllowed(
                 _profile,
                 CapabilityKey.XaeSynchronize,
-                "build.synchronize");
+                "xae.build.synchronize");
         }
-
-        if (parameters.DiscardDirtyDocuments)
-        {
-            _capabilities.EnsureAllowed(
-                _profile,
-                CapabilityKey.XaeDiscardDirtyDocuments,
-                "build.discard.preflight");
-        }
-
-        string? configuration = ResolveBuildSetting(
-            parameters.Configuration,
-            _profile.Xae.Configuration,
-            "configuration");
-        string? platform = ResolveBuildSetting(
-            parameters.Platform,
-            _profile.Xae.Platform,
-            "platform");
 
         DateTimeOffset deadlineUtc = DateTimeOffset.UtcNow.AddSeconds(
-            parameters.TimeoutSeconds ?? 120);
+            120);
         XaeBuildExecutionResult execution;
         using XaeDialogOperationScope dialogScope =
             _session.BeginDialogOperation(
                 operationId,
                 parameters.Action.ToString().ToLowerInvariant(),
-                "build.runtimePreflight");
+                "xae.build.preflight");
         try
         {
-            XaeSessionSnapshot snapshot =
-                await dialogScope.ObserveAsync(
-                    _session.VerifyAttachedAsync(
-                        _profile.Xae.Solution,
-                        GetRemaining(
-                            deadlineUtc,
-                            "build.runtimePreflight"),
-                        cancellationToken)).ConfigureAwait(false);
-            AdsRuntimeStatusReadResult runtime =
-                ReadRuntimeStatus(snapshot);
-            string? runtimeExceptionDetails =
-                XaeRuntimeExceptionDetails.Select(
-                    snapshot.ErrorListMessages);
-            if (runtime.Status.Mode
-                    == RuntimeMode.Exception
-                && runtimeExceptionDetails is null)
-            {
-                runtimeExceptionDetails =
-                    await ReadRuntimeExceptionDetailsAsync(
-                        GetRemaining(
-                            deadlineUtc,
-                            "build.runtimePreflight"),
-                        cancellationToken)
-                        .ConfigureAwait(false);
-            }
-
-            RuntimeOperationPolicy.EnsureBuildAllowed(
-                runtime.Status.Mode,
-                runtimeExceptionDetails);
+            await dialogScope.ObserveAsync(
+                _session.VerifyAttachedAsync(
+                    _profile.Xae.Solution,
+                    GetRemaining(
+                        deadlineUtc,
+                        "xae.build.preflight"),
+                    cancellationToken)).ConfigureAwait(false);
 
             OperationCapabilityGuard buildGuard = new(
                 _capabilities,
@@ -376,23 +337,31 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 CapabilityKey.XaeBuild);
             buildGuard.EnsureAllowed(
                 "xae.build.preSideEffect");
+            bool configurationChanged =
+                await dialogScope.ObserveAsync(
+                _session.SelectBuildConfigurationAsync(
+                    _profile.Xae.Configuration,
+                    _profile.Xae.Platform,
+                    GetRemaining(
+                        deadlineUtc,
+                        "xae.build.configuration"),
+                    cancellationToken)).ConfigureAwait(false);
             dialogScope.SetStage("xae.build");
             execution = await dialogScope.ObserveAsync(
                 _session.ExecuteBuildAsync(
+                    _profile.Xae.Solution,
                     parameters.Action,
+                    parameters.Scope,
+                    parameters.Project,
                     parameters.ChangedPaths,
-                    configuration,
-                    platform,
                     _profile.Xae.Workspace.ExternalChangePolicy,
-                    parameters.DiscardDirtyDocuments,
-                    IsEffective(
-                        CapabilityKey.XaeDiscardDirtyDocuments),
                     _profile.Xae.Workspace
                         .AutoSynchronizeBeforeOperation,
                     sideEffectsStarted =>
                         buildGuard.EnsureAllowed(
                             "xae.build.safeBoundary",
-                            sideEffectsStarted),
+                            configurationChanged
+                                || sideEffectsStarted),
                     GetRemaining(deadlineUtc, "xae.build"),
                     cancellationToken))
                 .ConfigureAwait(false);
@@ -467,7 +436,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 .ToList();
         LogAcceptedProjectChanges(
             operationId,
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             "xae.build.settle",
             execution.AcceptedProjectChanges);
         if (execution.AcceptedProjectChanges is not null
@@ -477,12 +446,14 @@ internal sealed class XaeSessionCoordinator : IDisposable
             RefreshSourceManifest(cancellationToken);
         }
 
-        BuildResult result = new()
+        XaeBuildResult result = new()
         {
             Ok = execution.FailedProjects == 0
                 && errors == 0,
             OperationId = operationId,
             Action = execution.Action,
+            Scope = execution.Scope,
+            Project = execution.Project,
             DurationMs = execution.DurationMs,
             Counts = new DiagnosticCounts
             {
@@ -513,6 +484,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             properties: new Dictionary<string, string>
             {
                 ["action"] = result.Action.ToString(),
+                ["scope"] = result.Scope.ToString(),
+                ["project"] = result.Project ?? string.Empty,
                 ["failedProjects"] =
                     execution.FailedProjects.ToString(
                         CultureInfo.InvariantCulture),
@@ -2333,7 +2306,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         return operationName?.ToLowerInvariant() switch
         {
             "build" or "rebuild" or "clean" =>
-                OperationKind.Build,
+                OperationKind.XaeBuild,
             "synchronize" => OperationKind.Synchronize,
             "activate" => OperationKind.Activate,
             "recovertoconfig" => OperationKind.RecoverToConfig,

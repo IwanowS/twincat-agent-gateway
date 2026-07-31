@@ -149,10 +149,10 @@ public sealed class GatewayDesktopHost : IDisposable
             _xaeCoordinator is null
                 ? null
                 : _xaeCoordinator.CreateDiagnostics;
-        BuildOperationExecutor? buildExecutor =
+        XaeBuildOperationExecutor? xaeBuildExecutor =
             _xaeCoordinator is null
                 ? null
-                : _xaeCoordinator.ExecuteBuildAsync;
+                : _xaeCoordinator.ExecuteXaeBuildAsync;
         ActivationOperationExecutor? activationExecutor =
             _xaeCoordinator is null
                 ? null
@@ -190,7 +190,7 @@ public sealed class GatewayDesktopHost : IDisposable
             logs,
             _events,
             diagnosticsProvider,
-            buildExecutor,
+            xaeBuildExecutor,
             activationExecutor,
             ActiveProfile,
             preflight,

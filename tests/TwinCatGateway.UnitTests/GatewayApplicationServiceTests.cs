@@ -36,7 +36,7 @@ public sealed class GatewayApplicationServiceTests
         TaskCompletionSource<bool> firstStarted = NewCompletionSource();
         TaskCompletionSource<bool> releaseFirst = NewCompletionSource();
         fixture.Queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             async cancellationToken =>
             {
                 firstStarted.SetResult(true);
@@ -311,7 +311,7 @@ public sealed class GatewayApplicationServiceTests
         string? executorOperationId = null;
         string? changedPath = null;
         using ServiceFixture fixture = new(
-            buildExecutor: (
+            xaeBuildExecutor: (
                 operationId,
                 parameters,
                 cancellationToken) =>
@@ -320,7 +320,7 @@ public sealed class GatewayApplicationServiceTests
                 changedPath = Assert.Single(
                     parameters.ChangedPaths);
                 return Task.FromResult(
-                    new BuildResult
+                    new XaeBuildResult
                     {
                         Ok = true,
                         Action = parameters.Action,
@@ -358,7 +358,7 @@ public sealed class GatewayApplicationServiceTests
             status.Gateway.State = GatewayState.Ready;
             return status;
         });
-        BuildParameters parameters = new()
+        XaeBuildParameters parameters = new()
         {
             Action = BuildAction.Build,
             ChangedPaths =
@@ -368,7 +368,7 @@ public sealed class GatewayApplicationServiceTests
         };
 
         OperationAccepted accepted =
-            fixture.Service.StartBuild(parameters);
+            fixture.Service.StartXaeBuild(parameters);
         parameters.ChangedPaths[0] = "mutated";
         StoredOperation completed = await WaitForStateAsync(
             fixture.Operations,
@@ -377,8 +377,8 @@ public sealed class GatewayApplicationServiceTests
 
         Assert.Equal(accepted.OperationId, executorOperationId);
         Assert.Equal("Plc/POUs/MAIN.TcPOU", changedPath);
-        BuildResult result =
-            Assert.IsType<BuildResult>(completed.Result);
+        XaeBuildResult result =
+            Assert.IsType<XaeBuildResult>(completed.Result);
         Assert.Equal(accepted.OperationId, result.OperationId);
         Assert.Equal(
             new[]
@@ -388,22 +388,18 @@ public sealed class GatewayApplicationServiceTests
             },
             completed.Summary.Resources.Select(
                 resource => resource.Kind));
-        Assert.True(fixture.Service.GetStatus().LastBuild?.Ok);
-        Assert.Equal(
-            GatewayState.Ready,
-            fixture.Service.GetStatus().Gateway.State);
     }
 
     [Fact]
     public async Task BuildFailurePreservesResultAndMarksOperationFailed()
     {
         using ServiceFixture fixture = new(
-            buildExecutor: (
+            xaeBuildExecutor: (
                 operationId,
                 parameters,
                 cancellationToken) =>
                 Task.FromResult(
-                    new BuildResult
+                    new XaeBuildResult
                     {
                         Ok = false,
                         Action = parameters.Action,
@@ -426,8 +422,8 @@ public sealed class GatewayApplicationServiceTests
         });
 
         OperationAccepted accepted =
-            fixture.Service.StartBuild(
-                new BuildParameters
+            fixture.Service.StartXaeBuild(
+                new XaeBuildParameters
                 {
                     Action = BuildAction.Rebuild,
                 });
@@ -445,12 +441,10 @@ public sealed class GatewayApplicationServiceTests
         Assert.Equal(
             ResourceKind.BuildLog,
             Assert.Single(completed.Summary.Resources).Kind);
-        BuildResult result =
-            Assert.IsType<BuildResult>(completed.Result);
+        XaeBuildResult result =
+            Assert.IsType<XaeBuildResult>(completed.Result);
         Assert.False(result.Ok);
         Assert.Equal(1, result.Counts.Errors);
-        Assert.False(fixture.Service.GetStatus().LastBuild?.Ok);
-        Assert.Null(fixture.Service.GetStatus().CurrentOperation);
         Assert.Equal(
             3,
             fixture.Service.GetStatus().LatestEventCursor);
@@ -475,9 +469,6 @@ public sealed class GatewayApplicationServiceTests
         Assert.Equal(
             accepted.OperationId,
             gatewayEvent.Error?.OperationId);
-        Assert.Equal(
-            GatewayState.Ready,
-            fixture.Service.GetStatus().Gateway.State);
     }
 
     [Fact]
@@ -842,46 +833,6 @@ public sealed class GatewayApplicationServiceTests
     }
 
     [Fact]
-    public void ActivationRequiresLatestBuildToBeRecentAndUsable()
-    {
-        DateTimeOffset now = new(
-            2026,
-            7,
-            28,
-            2,
-            0,
-            0,
-            TimeSpan.Zero);
-        ProjectProfile profile = CreateActivationProfile();
-        using ServiceFixture fixture = new(
-            activationExecutor: SuccessfulActivation,
-            activeProfile: profile,
-            clock: new TestClock(now));
-        SeedBuild(
-            fixture.Operations,
-            "build-success",
-            BuildAction.Build,
-            now.AddMinutes(-1));
-        SeedBuild(
-            fixture.Operations,
-            "clean-latest",
-            BuildAction.Clean,
-            now.AddSeconds(-10));
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.StartActivation(
-                    new ActivateParameters
-                    {
-                        Profile = profile.Name,
-                    }));
-
-        Assert.Equal(
-            ErrorCodes.RecentBuildRequired,
-            exception.Code);
-    }
-
-    [Fact]
     public async Task ActivationCompileFailureIsNotActivated()
     {
         DateTimeOffset now = new(
@@ -946,11 +897,6 @@ public sealed class GatewayApplicationServiceTests
                     }),
             activeProfile: profile,
             clock: new TestClock(now));
-        SeedBuild(
-            fixture.Operations,
-            "build-success",
-            BuildAction.Build,
-            now.AddMinutes(-1));
         fixture.Status.Update(status =>
         {
             status.Xae.Connected = true;
@@ -1013,11 +959,6 @@ public sealed class GatewayApplicationServiceTests
             activationExecutor: SuccessfulActivation,
             activeProfile: profile,
             clock: new TestClock(now));
-        SeedBuild(
-            fixture.Operations,
-            "build-success",
-            BuildAction.Build,
-            now.AddMinutes(-1));
         fixture.Status.Update(status =>
         {
             status.Xae.Connected = true;
@@ -1134,11 +1075,6 @@ public sealed class GatewayApplicationServiceTests
                             InitializedSuites = 1,
                         });
                 });
-        SeedBuild(
-            fixture.Operations,
-            "build-success",
-            BuildAction.Build,
-            now.AddMinutes(-1));
         fixture.Status.Update(status =>
         {
             status.Xae.Connected = true;
@@ -1255,11 +1191,6 @@ public sealed class GatewayApplicationServiceTests
             activationExecutor: SuccessfulActivation,
             activeProfile: profile,
             clock: new TestClock(now));
-        SeedBuild(
-            fixture.Operations,
-            "build-success",
-            BuildAction.Build,
-            now.AddMinutes(-1));
 
         GatewayOperationException exception =
             Assert.Throws<GatewayOperationException>(
@@ -1325,34 +1256,7 @@ public sealed class GatewayApplicationServiceTests
                 Name = "WIN-T077ADA",
                 AmsNetId = "192.168.3.31.1.1",
             },
-            RequireRecentSuccessfulBuild = true,
-            RecentBuildMaxAgeSeconds = 600,
         };
-    }
-
-    private static void SeedBuild(
-        OperationStore operations,
-        string operationId,
-        BuildAction action,
-        DateTimeOffset completedAtUtc)
-    {
-        operations.AddQueued(
-            operationId,
-            OperationKind.Build,
-            completedAtUtc.AddSeconds(-2));
-        operations.TryMarkRunning(
-            operationId,
-            completedAtUtc.AddSeconds(-1));
-        operations.TryComplete(
-            operationId,
-            OperationState.Succeeded,
-            completedAtUtc,
-            new BuildResult
-            {
-                Ok = true,
-                OperationId = operationId,
-                Action = action,
-            });
     }
 
     private static TaskCompletionSource<bool> NewCompletionSource()
@@ -1394,7 +1298,7 @@ public sealed class GatewayApplicationServiceTests
 
         public ServiceFixture(
             Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
-            BuildOperationExecutor? buildExecutor = null,
+            XaeBuildOperationExecutor? xaeBuildExecutor = null,
             ActivationOperationExecutor? activationExecutor = null,
             ProjectProfile? activeProfile = null,
             IClock? clock = null,
@@ -1429,7 +1333,7 @@ public sealed class GatewayApplicationServiceTests
                 Logs,
                 Events,
                 diagnosticsProvider,
-                buildExecutor,
+                xaeBuildExecutor,
                 activationExecutor,
                 activeProfile,
                 clock,

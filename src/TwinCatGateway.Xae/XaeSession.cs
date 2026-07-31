@@ -1023,21 +1023,17 @@ public sealed class XaeSession : IDisposable
         }
     }
 
-    internal async Task SelectBuildConfigurationAsync(
+    internal async Task<bool> SelectBuildConfigurationAsync(
         string? configuration,
         string? platform,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         ThrowIfDisposed();
-        await _dispatcher.InvokeAsync(
-            () =>
-            {
-                ApplyBuildConfigurationOnSta(
-                    configuration,
-                    platform);
-                return true;
-            },
+        return await _dispatcher.InvokeAsync(
+            () => ApplyBuildConfigurationOnSta(
+                configuration,
+                platform),
             timeout,
             cancellationToken).ConfigureAwait(false);
     }
@@ -2307,14 +2303,14 @@ public sealed class XaeSession : IDisposable
         return _activeBuild.Completion;
     }
 
-    private void ApplyBuildConfigurationOnSta(
+    private bool ApplyBuildConfigurationOnSta(
         string? requestedConfiguration,
         string? requestedPlatform)
     {
         if (string.IsNullOrWhiteSpace(requestedConfiguration)
             && string.IsNullOrWhiteSpace(requestedPlatform))
         {
-            return;
+            return false;
         }
 
         const string stage = "xae.build.configuration";
@@ -2352,6 +2348,8 @@ public sealed class XaeSession : IDisposable
                         activePlatforms[0],
                         requestedPlatform,
                         StringComparison.OrdinalIgnoreCase));
+            bool changed =
+                !configurationMatches || !platformMatches;
             if (!configurationMatches || !platformMatches)
             {
                 if (string.IsNullOrWhiteSpace(
@@ -2386,6 +2384,7 @@ public sealed class XaeSession : IDisposable
                 activePlatforms.Length == 1
                     ? activePlatforms[0]
                     : null;
+            return changed;
         }
         catch (GatewayOperationException)
         {

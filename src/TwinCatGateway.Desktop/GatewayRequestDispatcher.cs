@@ -136,12 +136,12 @@ public sealed class GatewayRequestDispatcher
                     return _service.GetDiagnostics(parameters);
                 }
 
-            case GatewayMethods.Build:
+            case GatewayMethods.XaeBuild:
                 {
-                    BuildParameters parameters =
-                        request.DeserializeParameters<BuildParameters>(
+                    XaeBuildParameters parameters =
+                        request.DeserializeParameters<XaeBuildParameters>(
                             _serializerOptions);
-                    return _service.StartBuild(parameters);
+                    return _service.StartXaeBuild(parameters);
                 }
 
             case GatewayMethods.Synchronize:

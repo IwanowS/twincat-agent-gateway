@@ -20,7 +20,7 @@ public sealed class OperationCancellationTests
         bool queuedExecuted = false;
 
         queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             async cancellationToken =>
             {
                 firstStarted.SetResult(true);
@@ -28,7 +28,7 @@ public sealed class OperationCancellationTests
                 return OperationExecutionResult.Success();
             });
         OperationAccepted queued = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             cancellationToken =>
             {
                 queuedExecuted = true;
@@ -60,7 +60,7 @@ public sealed class OperationCancellationTests
         TaskCompletionSource<bool> started = NewCompletionSource();
 
         OperationAccepted operation = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             async cancellationToken =>
             {
                 started.SetResult(true);
@@ -91,7 +91,7 @@ public sealed class OperationCancellationTests
         using OperationQueue queue = new(store);
         OperationCancellationService cancellation = new(queue);
         OperationAccepted operation = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             cancellationToken => Task.FromResult(
                 OperationExecutionResult.Success()));
         await WaitForStateAsync(
@@ -122,7 +122,7 @@ public sealed class OperationCancellationTests
         bool cancellationObserved = false;
 
         OperationAccepted operation = queue.Enqueue(
-            OperationKind.Build,
+            OperationKind.XaeBuild,
             async cancellationToken =>
             {
                 started.SetResult(true);
