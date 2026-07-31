@@ -13,15 +13,21 @@ END_VAR
     <Implementation>
       <ST><![CDATA[
 bToggle := NOT bToggle;
-f2 := 1;
+f1 := f1 + f2;
 
-//f1 := f1 / f2;
 
-(*
+{IF defined (THROW_EX1)}
 FOR idx := -1 TO 2 DO
 	bArray[idx] := bToggle;
 END_FOR;
-*)
+{END_IF}
+
+
+{IF defined (THROW_EX2)}
+f1 := 10;
+f2 := 0;
+f1 := f1 / f2;
+{END_IF}
 ]]></ST>
     </Implementation>
   </POU>

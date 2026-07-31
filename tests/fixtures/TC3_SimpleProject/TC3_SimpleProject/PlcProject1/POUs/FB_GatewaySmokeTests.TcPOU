@@ -30,6 +30,8 @@ AssertTrue(
     Condition := FALSE,
     Message := 'Intentional gateway TcUnit failure scenario');
 TEST_FINISHED();
+
+
 ]]></ST>
       </Implementation>
     </Method>
