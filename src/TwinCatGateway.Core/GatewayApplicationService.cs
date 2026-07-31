@@ -62,6 +62,8 @@ public sealed class GatewayApplicationService
     private readonly IClock _clock;
     private readonly GatewayEventJournal _eventJournal;
     private readonly Func<string?>? _currentLogPathProvider;
+    private readonly SourceManifestResourceReader?
+        _sourceManifestReader;
 
     public GatewayApplicationService(
         string version,
@@ -84,7 +86,8 @@ public sealed class GatewayApplicationService
         RecoveryOperationExecutor? recoveryExecutor = null,
         XaeMessagesProvider? xaeMessagesProvider = null,
         Func<string?>? currentLogPathProvider = null,
-        CloseXaeOperationExecutor? closeXaeExecutor = null)
+        CloseXaeOperationExecutor? closeXaeExecutor = null,
+        SourceManifestStore? sourceManifests = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -114,6 +117,9 @@ public sealed class GatewayApplicationService
             ?? throw new ArgumentNullException(
                 nameof(eventJournal));
         _currentLogPathProvider = currentLogPathProvider;
+        _sourceManifestReader = sourceManifests is null
+            ? null
+            : new SourceManifestResourceReader(sourceManifests);
     }
 
     public HealthResult GetHealth()
@@ -689,6 +695,40 @@ public sealed class GatewayApplicationService
                     offset);
             }
 
+            if (GatewayResourceUris.TryParseProfileSources(
+                uri,
+                out string profile,
+                out bool files))
+            {
+                EnsureSourceProfileIdentity(profile);
+                if (maximumCharacters <= 0
+                    || maximumCharacters
+                        > MaximumResourceCharacters)
+                {
+                    throw new ArgumentOutOfRangeException(
+                        nameof(maximumCharacters));
+                }
+
+                SourceManifestResourceReader reader =
+                    _sourceManifestReader
+                    ?? throw new GatewayOperationException(
+                        ErrorCodes.GatewayNotReady,
+                        "The source manifest is unavailable because "
+                            + "no active profile is configured.",
+                        retryable: true,
+                        stage: "profile.sources.read",
+                        component: GatewayComponent.Profile);
+                return files
+                    ? reader.ReadFiles(
+                        profile,
+                        maximumCharacters,
+                        offset)
+                    : reader.ReadManifest(
+                        profile,
+                        maximumCharacters,
+                        offset);
+            }
+
             return _logs.Read(uri, maximumCharacters, offset);
         }
         catch (FileNotFoundException exception)
@@ -705,6 +745,40 @@ public sealed class GatewayApplicationService
                 exception.Message,
                 innerException: exception);
         }
+    }
+
+    private void EnsureSourceProfileIdentity(string profile)
+    {
+        if (_activeProfile is not null
+            && string.Equals(
+                profile,
+                _activeProfile.Name,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new GatewayOperationException(
+            _activeProfile is null
+                ? ErrorCodes.ProfileNotFound
+                : ErrorCodes.XaeSolutionMismatch,
+            _activeProfile is null
+                ? $"Project profile '{profile}' was not found."
+                : $"Profile '{profile}' is not the active XAE context.",
+            stage: "profile.sources.read",
+            component: GatewayComponent.Profile,
+            sideEffectsStarted: false,
+            expected: new IdentityEvidence
+            {
+                Profile = profile,
+            },
+            observed: _activeProfile is null
+                ? null
+                : new IdentityEvidence
+                {
+                    Profile = _activeProfile.Name,
+                    Solution = _activeProfile.Xae.Solution,
+                });
     }
 
     private ResourceContent ReadCurrentLogPath(

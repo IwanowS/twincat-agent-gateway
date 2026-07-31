@@ -180,7 +180,8 @@ public sealed class GatewayDesktopHost : IDisposable
             recoveryExecutor: recoveryExecutor,
             xaeMessagesProvider: xaeMessagesProvider,
             currentLogPathProvider: () => _logging.Path,
-            closeXaeExecutor: closeXaeExecutor);
+            closeXaeExecutor: closeXaeExecutor,
+            sourceManifests: _sourceManifests);
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
             _capabilities,

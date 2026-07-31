@@ -37,8 +37,7 @@ public sealed class SourceManifestStore
 
         _profile = profile;
         _solutionPath = Path.GetFullPath(solutionPath);
-        _filesRef =
-            $"twincat-profile://{Uri.EscapeDataString(profile)}/sources/files";
+        _filesRef = GatewayResourceUris.ProfileSourceFiles(profile);
         _clock = clock ?? SystemClock.Instance;
         _manifest = CreateEmpty(SourceDiscoveryState.Unknown, error: null);
     }
@@ -53,6 +52,8 @@ public sealed class SourceManifestStore
             }
         }
     }
+
+    public string Profile => _profile;
 
     public SourceManifest ReadManifest()
     {
