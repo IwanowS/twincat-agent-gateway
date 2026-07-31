@@ -112,6 +112,44 @@ public sealed class TcUnitRunExecutorTests
     }
 
     [Fact]
+    public void UnreadableCompletionBaselineFailsPreparation()
+    {
+        using ExecutorFixture fixture = new();
+        fixture.Reader.Results.Clear();
+        fixture.Reader.Results.Enqueue(() =>
+            new TcUnitCompletionReadResult
+            {
+                FailureKind =
+                    TcUnitCompletionFailureKind.AdsUnavailable,
+                AdsErrorCode = "TargetMachineNotFound",
+            });
+
+        GatewayOperationException exception = Assert.Throws<
+            GatewayOperationException>(
+                () => fixture.Executor.Prepare("activation-1"));
+
+        Assert.Equal(ErrorCodes.TestAdsUnavailable, exception.Code);
+        Assert.Equal("tcunit.baseline", exception.Stage);
+    }
+
+    [Fact]
+    public async Task CancellationStopsCompletionWait()
+    {
+        using ExecutorFixture fixture = new();
+        fixture.Reader.Fallback = () => Pending(initializedSuites: 1);
+        TcUnitRunPreparation preparation =
+            fixture.Executor.Prepare("activation-1");
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => fixture.Executor.ExecuteAsync(
+                "activation-1",
+                preparation,
+                cancellation.Token));
+    }
+
+    [Fact]
     public async Task MissingSymbolHasDistinctErrorCode()
     {
         using ExecutorFixture fixture = new();

@@ -547,8 +547,6 @@ public sealed class OperationQueue : IDisposable
                 return GetTargetConfigEventType(state);
             case OperationKind.TargetStartRestart:
                 return GetTargetStartRestartEventType(state);
-            case OperationKind.Test:
-                return GetTcUnitEventType(state);
             default:
                 return $"operation.{state.ToString().ToLowerInvariant()}";
         }
@@ -677,27 +675,6 @@ public sealed class OperationQueue : IDisposable
                 return GatewayEventTypes.TargetStartRestartTimedOut;
             case OperationState.Cancelled:
                 return GatewayEventTypes.TargetStartRestartCancelled;
-            default:
-                throw new ArgumentOutOfRangeException(nameof(state));
-        }
-    }
-
-    private static string GetTcUnitEventType(OperationState state)
-    {
-        switch (state)
-        {
-            case OperationState.Queued:
-                return GatewayEventTypes.TcUnitQueued;
-            case OperationState.Running:
-                return GatewayEventTypes.TcUnitStarted;
-            case OperationState.Succeeded:
-                return GatewayEventTypes.TcUnitSucceeded;
-            case OperationState.Failed:
-                return GatewayEventTypes.TcUnitFailed;
-            case OperationState.TimedOut:
-                return GatewayEventTypes.TcUnitTimedOut;
-            case OperationState.Cancelled:
-                return GatewayEventTypes.TcUnitCancelled;
             default:
                 throw new ArgumentOutOfRangeException(nameof(state));
         }

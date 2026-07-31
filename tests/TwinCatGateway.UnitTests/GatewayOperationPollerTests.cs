@@ -244,15 +244,6 @@ public sealed class GatewayOperationPollerTests
             throw new NotSupportedException();
         }
 
-        public Task<
-            GatewayResponse<OperationDetails<TestResult>>>
-            GetTestResultsAsync(
-                string operationId,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
-        }
-
         public Task<GatewayResponse<CancelOperationResult>>
             CancelOperationAsync(
                 string operationId,

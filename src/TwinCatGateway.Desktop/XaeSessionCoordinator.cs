@@ -846,7 +846,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     operationId,
                     expectedAmsNetId,
                     initialRuntimeMode,
-                    runAfterActivation,
                     command.AutostartSelection,
                     command.Dialogs,
                     compile,
@@ -975,7 +974,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 operationId,
                 expectedAmsNetId,
                 initialRuntimeMode,
-                runAfterActivation,
                 command.AutostartSelection,
                 command.Dialogs,
                 compile,
@@ -2815,7 +2813,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
         string operationId,
         string amsNetId,
         RuntimeMode initialRuntimeMode,
-        bool runAfterActivation,
         AutostartBootProjectSelection autostartSelection,
         IReadOnlyList<XaeDialogObservation> dialogs,
         ActivationCompileResult compile,
@@ -2837,7 +2834,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         builder.AppendLine(
             $"InitialRuntimeMode: {initialRuntimeMode}");
         builder.AppendLine(
-            $"RunAfterActivation: {runAfterActivation}");
+            $"FinalTargetMode: {finalTargetMode}");
         builder.AppendLine(
             $"AutostartBootProjects: {autostartSelection}");
         builder.AppendLine($"CompileOk: {compile.Ok}");
@@ -2847,7 +2844,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             $"CompileErrors: {compile.Counts.Errors}");
         builder.AppendLine(
             $"CompileWarnings: {compile.Counts.Warnings}");
-        builder.AppendLine($"FinalTargetMode: {finalTargetMode}");
         builder.AppendLine(
             $"ActiveConfigurationVerified: "
                 + $"{activeConfigurationVerified}");

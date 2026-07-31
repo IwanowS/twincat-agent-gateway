@@ -153,18 +153,6 @@ public static class GatewayEventTypes
     public const string TargetStartRestartCancelled =
         "target.startRestart.cancelled";
 
-    public const string TcUnitQueued = "tcunit.queued";
-
-    public const string TcUnitStarted = "tcunit.started";
-
-    public const string TcUnitSucceeded = "tcunit.succeeded";
-
-    public const string TcUnitFailed = "tcunit.failed";
-
-    public const string TcUnitTimedOut = "tcunit.timedOut";
-
-    public const string TcUnitCancelled = "tcunit.cancelled";
-
     public const string TcUnitCompletionObserved =
         "tcunit.completionObserved";
 

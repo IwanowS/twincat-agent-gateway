@@ -9,5 +9,4 @@ public enum OperationKind
     Activate,
     TargetConfig,
     TargetStartRestart,
-    Test,
 }

@@ -10,6 +10,9 @@ public sealed class TcUnitRunPreparation
     public string RootOperationId { get; set; } =
         string.Empty;
 
+    public OperationKind RootOperationKind { get; set; } =
+        OperationKind.Activate;
+
     public string ExpectedAmsNetId { get; set; } =
         string.Empty;
 

@@ -27,7 +27,6 @@ public sealed class McpAdapterTests
         "twincat_build",
         "twincat_close_xae",
         "twincat_get_diagnostics",
-        "twincat_get_test_results",
         "twincat_get_xae_messages",
         "twincat_status",
         "twincat_sync",
@@ -924,15 +923,6 @@ public sealed class McpAdapterTests
             return Task.FromResult(
                 (GatewayResponse<
                     OperationDetails<TResult>>)response);
-        }
-
-        public Task<GatewayResponse<
-            OperationDetails<TestResult>>>
-            GetTestResultsAsync(
-                string operationId,
-                CancellationToken cancellationToken = default)
-        {
-            throw new NotSupportedException();
         }
 
         public Task<GatewayResponse<CancelOperationResult>>

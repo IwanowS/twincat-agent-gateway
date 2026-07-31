@@ -161,6 +161,7 @@ internal sealed class TcUnitRunExecutor
                 cancellationToken).ConfigureAwait(false);
         RecordEvent(
             operationId,
+            preparation.RootOperationKind,
             GatewayEventTypes.TcUnitCompletionObserved,
             DiagnosticSeverity.Info,
             "tcunit.adsCompletion",
@@ -198,6 +199,7 @@ internal sealed class TcUnitRunExecutor
         {
             RecordEvent(
                 operationId,
+                preparation.RootOperationKind,
                 GatewayEventTypes.TcUnitZeroTests,
                 DiagnosticSeverity.Warning,
                 "tcunit.verify",
@@ -206,6 +208,7 @@ internal sealed class TcUnitRunExecutor
 
         RecordEvent(
             operationId,
+            preparation.RootOperationKind,
             GatewayEventTypes.TcUnitReportProduced,
             DiagnosticSeverity.Info,
             "tcunit.report",
@@ -458,7 +461,9 @@ internal sealed class TcUnitRunExecutor
             return;
         }
 
-        throw CreateCompletionFailure(completion);
+        throw CreateCompletionFailure(
+            completion,
+            "tcunit.baseline");
     }
 
     private ResolvedTcUnitProfile GetTcUnitProfile()
@@ -481,7 +486,8 @@ internal sealed class TcUnitRunExecutor
 
     private static GatewayOperationException
         CreateCompletionFailure(
-            TcUnitCompletionReadResult? last)
+            TcUnitCompletionReadResult? last,
+            string stage = "tcunit.adsCompletion")
     {
         switch (last?.FailureKind)
         {
@@ -495,7 +501,7 @@ internal sealed class TcUnitRunExecutor
                     "A configured TcUnit completion symbol "
                         + "is unavailable.",
                     retryable: true,
-                    stage: "tcunit.adsCompletion");
+                    stage: stage);
             case TcUnitCompletionFailureKind
                 .AdsUnavailable:
                 return new GatewayOperationException(
@@ -503,19 +509,20 @@ internal sealed class TcUnitRunExecutor
                     "TcUnit ADS completion evidence "
                         + "is unavailable.",
                     retryable: true,
-                    stage: "tcunit.adsCompletion");
+                    stage: stage);
             default:
                 return new GatewayOperationException(
                     ErrorCodes.TestCompletionTimeout,
                     "TcUnit completion was not observed "
                         + "before the deadline.",
                     retryable: true,
-                    stage: "tcunit.adsCompletion");
+                    stage: stage);
         }
     }
 
     private void RecordEvent(
         string operationId,
+        OperationKind operationKind,
         string type,
         DiagnosticSeverity severity,
         string stage,
@@ -558,7 +565,7 @@ internal sealed class TcUnitRunExecutor
                 Type = type,
                 Severity = severity,
                 OperationId = operationId,
-                OperationKind = OperationKind.Test,
+                OperationKind = operationKind,
                 Stage = stage,
                 Message = message,
                 Properties = properties,

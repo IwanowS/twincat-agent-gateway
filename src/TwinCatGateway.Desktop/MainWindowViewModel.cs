@@ -387,7 +387,8 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 new ActivateParameters
                 {
                     Profile = profile.Name,
-                    WaitForTcUnit = null,
+                    FinalTargetMode = ActivationFinalTargetMode.Run,
+                    Verification = VerificationMode.None,
                     TimeoutSeconds = 120,
                 });
         Refresh();

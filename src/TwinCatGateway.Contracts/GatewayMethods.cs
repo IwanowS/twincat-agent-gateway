@@ -13,7 +13,6 @@ public static class GatewayMethods
     public const string Activate = "activate";
     public const string TargetConfig = "targetConfig";
     public const string TargetStartRestart = "targetStartRestart";
-    public const string GetTestResults = "getTestResults";
     public const string GetOperation = "getOperation";
     public const string CancelOperation = "cancelOperation";
     public const string GetResource = "getResource";

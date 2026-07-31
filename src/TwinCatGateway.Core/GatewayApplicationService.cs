@@ -733,39 +733,6 @@ public sealed class GatewayApplicationService
         };
     }
 
-    public OperationDetails<TestResult> GetTestResults(
-        string operationId)
-    {
-        if (string.IsNullOrWhiteSpace(operationId))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.RequestInvalid,
-                "Test operation ID is required.");
-        }
-
-        StoredOperation? operation =
-            _operations.Get(operationId);
-        if (operation is null)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.OperationNotFound,
-                $"Operation '{operationId}' was not found.");
-        }
-
-        if (operation.Summary.Kind != OperationKind.Test)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.RequestInvalid,
-                $"Operation '{operationId}' is not a test operation.");
-        }
-
-        return new OperationDetails<TestResult>
-        {
-            Operation = operation.Summary,
-            Result = operation.Result as TestResult,
-        };
-    }
-
     public CancelOperationResult CancelOperation(string operationId)
     {
         if (string.IsNullOrWhiteSpace(operationId))
@@ -1242,6 +1209,11 @@ public sealed class GatewayApplicationService
             parameters.Verification == VerificationMode.TcUnit
                 ? _tcUnitPreparationExecutor!(operationId)
                 : null;
+        if (preparation is not null)
+        {
+            preparation.RootOperationKind =
+                OperationKind.TargetStartRestart;
+        }
         TargetStartRestartResult result =
             await _targetStartRestartExecutor!(
                 operationId,

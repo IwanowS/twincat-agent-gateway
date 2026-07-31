@@ -198,23 +198,6 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
             cancellationToken);
     }
 
-    public Task<GatewayResponse<OperationDetails<TestResult>>>
-        GetTestResultsAsync(
-            string operationId,
-            CancellationToken cancellationToken = default)
-    {
-        return _client.SendAsync<
-            GetTestResultsParameters,
-            OperationDetails<TestResult>>(
-            GatewayMethods.GetTestResults,
-            new GetTestResultsParameters
-            {
-                OperationId = operationId,
-            },
-            wait: true,
-            cancellationToken);
-    }
-
     public Task<GatewayResponse<CancelOperationResult>> CancelOperationAsync(
         string operationId,
         CancellationToken cancellationToken = default)

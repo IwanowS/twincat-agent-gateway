@@ -376,20 +376,16 @@ public sealed class TwinCatTools
         OpenWorld = false)]
     [Description(
         "Explicitly activate the configured allow-listed remote "
-        + "TwinCAT target, optionally enter Run, verify postconditions, and "
-        + "optionally link a TcUnit run.")]
+        + "TwinCAT target and optionally verify it with TcUnit in the same "
+        + "root operation.")]
     public async Task<string> ActivateAsync(
         [Description(
             "Operator-controlled activation profile name.")]
         string profile,
-        [Description(
-            "auto, true, or false. Auto uses profile policy.")]
-        string waitForTcUnit = "auto",
-        [Description(
-            "Confirm the XAE Run prompt after activation. "
-            + "False cancels that prompt without forcing a runtime "
-            + "mode transition.")]
-        bool runAfterActivation = true,
+        [Description("run or unchanged.")]
+        string finalTargetMode = "run",
+        [Description("none or tcunit.")]
+        string verification = "none",
         [Description(
             "Gateway operation timeout in seconds.")]
         int timeoutSeconds =
@@ -403,11 +399,14 @@ public sealed class TwinCatTools
         ActivateParameters parameters = new()
         {
             Profile = RequireText(profile, nameof(profile)),
-            RunAfterActivation = runAfterActivation,
-            WaitForTcUnit =
-                McpGatewayJson.ParseOptionalBoolean(
-                    waitForTcUnit,
-                    nameof(waitForTcUnit)),
+            FinalTargetMode =
+                McpGatewayJson.ParseEnum<ActivationFinalTargetMode>(
+                    finalTargetMode,
+                    nameof(finalTargetMode)),
+            Verification =
+                McpGatewayJson.ParseEnum<VerificationMode>(
+                    verification,
+                    nameof(verification)),
             TimeoutSeconds = timeoutSeconds,
         };
 
@@ -487,36 +486,6 @@ public sealed class TwinCatTools
         GatewayResponse<GatewayDiagnosticsResult> response =
             await session.Client.GetDiagnosticsAsync(
                     parameters,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        return McpGatewayJson.Serialize(response);
-    }
-
-    [McpServerTool(
-        Name = "twincat_get_test_results",
-        ReadOnly = true,
-        Idempotent = true,
-        OpenWorld = false)]
-    [Description(
-        "Return compact TcUnit results for the linked test "
-        + "operation after ADS completion and a fresh xUnit report.")]
-    public async Task<string> GetTestResultsAsync(
-        [Description(
-            "Linked TcUnit test operation ID.")]
-        string operationId,
-        McpServer? server = null,
-        CancellationToken cancellationToken = default)
-    {
-        GatewayToolSession session =
-            await ResolveSessionAsync(
-                    server,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        GatewayResponse<OperationDetails<TestResult>> response =
-            await session.Client.GetTestResultsAsync(
-                    RequireText(
-                        operationId,
-                        nameof(operationId)),
                     cancellationToken)
                 .ConfigureAwait(false);
         return McpGatewayJson.Serialize(response);

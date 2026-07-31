@@ -35,7 +35,6 @@ internal static class CliProgram
           twincat-gateway [--pipe NAME] xae-messages [options]
           twincat-gateway [--pipe NAME] build --profile NAME [options]
           twincat-gateway [--pipe NAME] activate --profile NAME [options]
-          twincat-gateway [--pipe NAME] test-results --operation ID
           twincat-gateway [--pipe NAME] resource --uri URI [options]
 
         diagnostics options:
@@ -56,8 +55,8 @@ internal static class CliProgram
           --timeout SECONDS
 
         activate options:
-          --run-after-activation true|false
-          --wait-for-tcunit auto|true|false
+          --final-target-mode run|unchanged
+          --verification none|tcunit
           --timeout SECONDS
 
         resource options:
@@ -166,11 +165,6 @@ internal static class CliProgram
                 commandArguments,
                 client,
                 poller,
-                output,
-                cancellationToken),
-            "test-results" => ExecuteTestResultsAsync(
-                commandArguments,
-                client,
                 output,
                 cancellationToken),
             "resource" => ExecuteResourceAsync(
@@ -360,29 +354,29 @@ internal static class CliProgram
         OptionBag options = OptionBag.Parse(
             args,
             "--profile",
-            "--run-after-activation",
-            "--wait-for-tcunit",
+            "--final-target-mode",
+            "--verification",
             "--timeout");
         ActivateParameters parameters = new()
         {
             Profile = options.GetRequired("--profile"),
         };
-        if (options.GetOptional("--run-after-activation")
-            is string runAfterActivation)
+        if (options.GetOptional("--final-target-mode")
+            is string finalTargetMode)
         {
-            parameters.RunAfterActivation =
-                ParseBoolean(
-                    runAfterActivation,
-                    "--run-after-activation");
+            parameters.FinalTargetMode =
+                ParseEnum<ActivationFinalTargetMode>(
+                    finalTargetMode,
+                    "--final-target-mode");
         }
 
-        if (options.GetOptional("--wait-for-tcunit")
-            is string waitForTcUnit)
+        if (options.GetOptional("--verification")
+            is string verification)
         {
-            parameters.WaitForTcUnit =
-                ParseOptionalBoolean(
-                    waitForTcUnit,
-                    "--wait-for-tcunit");
+            parameters.Verification =
+                ParseEnum<VerificationMode>(
+                    verification,
+                    "--verification");
         }
 
         if (options.GetOptional("--timeout") is string timeout)
@@ -417,27 +411,6 @@ internal static class CliProgram
         return OperationExitCode(
             completed,
             completed.Result?.Result?.Ok);
-    }
-
-    private static async Task<int> ExecuteTestResultsAsync(
-        string[] args,
-        ITwinCatGatewayClient client,
-        TextWriter output,
-        CancellationToken cancellationToken)
-    {
-        OptionBag options = OptionBag.Parse(
-            args,
-            "--operation");
-        GatewayResponse<OperationDetails<TestResult>> response =
-            await client.GetTestResultsAsync(
-                    options.GetRequired("--operation"),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        await WriteJsonAsync(output, response)
-            .ConfigureAwait(false);
-        return OperationExitCode(
-            response,
-            response.Result?.Result?.Ok);
     }
 
     private static async Task<int> ExecuteResourceAsync(

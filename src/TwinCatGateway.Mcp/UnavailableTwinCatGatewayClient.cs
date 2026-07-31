@@ -142,15 +142,6 @@ internal sealed class UnavailableTwinCatGatewayClient
             cancellationToken);
     }
 
-    public Task<GatewayResponse<OperationDetails<TestResult>>>
-        GetTestResultsAsync(
-            string operationId,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<OperationDetails<TestResult>>(
-            cancellationToken);
-    }
-
     public Task<GatewayResponse<CancelOperationResult>>
         CancelOperationAsync(
             string operationId,

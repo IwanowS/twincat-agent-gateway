@@ -94,11 +94,6 @@ public interface ITwinCatGatewayClient
             string operationId,
             CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<OperationDetails<TestResult>>>
-        GetTestResultsAsync(
-            string operationId,
-            CancellationToken cancellationToken = default);
-
     Task<GatewayResponse<CancelOperationResult>>
         CancelOperationAsync(
             string operationId,
