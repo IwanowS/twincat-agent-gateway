@@ -488,6 +488,8 @@ Compile-fix loop requires no status, Config, or Target diagnostic call.
   diagnostics, cancellation, and project-noise classification;
 - removed Target/runtime Exception reads and recent-build policy from the
   standalone build path while retaining S5 admission and live lock guards;
+- added an executable architecture-boundary regression proving the standalone
+  build coordinator has no Target/runtime reader or build runtime-policy gate;
 - cut internal IPC/client dispatch over to `xaeBuild`; public MCP tool wiring
   remains deferred to S9 and Desktop UI redesign remains deferred to S10.
 
