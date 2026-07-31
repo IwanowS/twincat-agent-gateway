@@ -1,0 +1,77 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <IsTestProject Condition="'$(TargetFramework)' == 'net8.0'">true</IsTestProject>
+    <IsTestProject Condition="'$(TargetFramework)' != 'net8.0'">false</IsTestProject>
+    <NoWarn Condition="'$(TargetFramework)' == 'net8.0'">$(NoWarn);CA1510;CA1512;CA1822;CA1859;CA1861</NoWarn>
+    <Description>Tracked architecture-v2 migration checkpoint for buildable Core slices.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Text.Json" Version="8.0.5" />
+    <ProjectReference Include="..\..\src\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\src\TwinCatGateway.Core\CapabilityEvaluator.cs"
+             Link="Production\CapabilityEvaluator.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\Clock.cs"
+             Link="Production\Clock.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\ConfigurationIssue.cs"
+             Link="Production\ConfigurationIssue.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\ConfigurationValidationResult.cs"
+             Link="Production\ConfigurationValidationResult.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\GatewayConfigurationValidator.cs"
+             Link="Production\GatewayConfigurationValidator.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\GatewayOperationException.cs"
+             Link="Production\GatewayOperationException.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\OperationCapabilityGuard.cs"
+             Link="Production\OperationCapabilityGuard.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\OperatorLockStore.cs"
+             Link="Production\OperatorLockStore.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\ProfileResolver.cs"
+             Link="Production\ProfileResolver.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\ProjectFileFingerprints.cs"
+             Link="Production\ProjectFileFingerprints.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\SourceManifestResourceReader.cs"
+             Link="Production\SourceManifestResourceReader.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\SourceManifestStore.cs"
+             Link="Production\SourceManifestStore.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\TwinCatProjectGraphResolver.cs"
+             Link="Production\TwinCatProjectGraphResolver.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\XaeBuildTargetResolver.cs"
+             Link="Production\XaeBuildTargetResolver.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\XaeCloseConsentStore.cs"
+             Link="Production\XaeCloseConsentStore.cs" />
+    <Compile Include="..\..\src\TwinCatGateway.Core\XaeShutdownCleanupPolicy.cs"
+             Link="Production\XaeShutdownCleanupPolicy.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+
+    <Compile Include="..\TwinCatGateway.ConfigurationTests\CapabilityEvaluatorTests.cs"
+             Link="Tests\CapabilityEvaluatorTests.cs" />
+    <Compile Include="..\TwinCatGateway.ConfigurationTests\OperatorSessionStateTests.cs"
+             Link="Tests\OperatorSessionStateTests.cs" />
+    <Compile Include="..\TwinCatGateway.ConfigurationTests\ProfileResolverTests.cs"
+             Link="Tests\ProfileResolverTests.cs" />
+    <Compile Include="..\TwinCatGateway.UnitTests\ProjectFileFingerprintScannerTests.cs"
+             Link="Tests\ProjectFileFingerprintScannerTests.cs" />
+    <Compile Include="..\TwinCatGateway.UnitTests\SourceManifestResourceReaderTests.cs"
+             Link="Tests\SourceManifestResourceReaderTests.cs" />
+    <Compile Include="..\TwinCatGateway.UnitTests\SourceManifestStoreTests.cs"
+             Link="Tests\SourceManifestStoreTests.cs" />
+    <Compile Include="..\TwinCatGateway.UnitTests\TwinCatProjectGraphResolverTests.cs"
+             Link="Tests\TwinCatProjectGraphResolverTests.cs" />
+    <Compile Include="..\TwinCatGateway.UnitTests\XaeBuildTargetResolverTests.cs"
+             Link="Tests\XaeBuildTargetResolverTests.cs" />
+  </ItemGroup>
+</Project>
