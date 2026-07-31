@@ -119,6 +119,13 @@ activation.
 **Решение:**
 
 - default build scope — PLC project;
+- при единственном PLC `project=null` выбирает его автоматически;
+- при нескольких PLC caller обязан передать logical project id; профиль не
+  задаёт default PLC;
+- неизвестный id отклоняется как `BUILD_PROJECT_NOT_FOUND`, а отсутствующий
+  или дублирующийся выбор при нескольких PLC — как
+  `BUILD_PROJECT_AMBIGUOUS`;
+- `project` недопустим для `scope=solution`;
 - target state не является Gateway policy-precondition PLC compilation;
 - activation не требует standalone/recent build;
 - activation наблюдает собственную встроенную XAE compilation.

@@ -315,8 +315,11 @@ build | rebuild | clean
 plc | solution
 ```
 
-Default scope is `plc`. `project` is an optional logical project identity from
-the source manifest; null means the profile-defined/default PLC selection.
+Default scope is `plc`. `project` is a logical project identity from the
+source manifest, never a filesystem path. With exactly one PLC, null selects
+that PLC automatically. With multiple PLC projects, `project` is required;
+the v2 profile schema does not define a default PLC. `project` must be null
+for `scope=solution`.
 
 Capability:
 
@@ -343,8 +346,10 @@ Typical errors:
 CAPABILITY_DISABLED
 OPERATOR_LOCKED
 BUILD_PROJECT_NOT_FOUND
+BUILD_PROJECT_AMBIGUOUS
 BUILD_CONFIGURATION_NOT_FOUND
 BUILD_CONFIGURATION_AMBIGUOUS
+REQUEST_INVALID
 BUILD_FAILED
 BUILD_RESULT_INCONSISTENT
 COM_CALL_TIMEOUT

@@ -113,7 +113,7 @@ flowchart TD
 | S3 | Source discovery manifest | completed 2026-07-31 |
 | S4 | Separate XAE/System Service/PLC states | completed 2026-07-31 |
 | S5 | Operator locks and XAE close consent backend | completed 2026-07-31 |
-| S6 | XAE build scope and policy cutover | pending |
+| S6 | XAE build scope and policy cutover | completed 2026-07-31 |
 | S7 | Target Config/start-restart | pending |
 | S8 | Activation and TcUnit verification unification | pending |
 | S9 | MCP tools/resources and operation journal cutover | pending |
@@ -473,6 +473,23 @@ policy.
 ### Exit
 
 Compile-fix loop requires no status, Config, or Target diagnostic call.
+
+### Completion note (2026-07-31)
+
+- added `XaeBuildScope`, `XaeBuildParameters`, `XaeBuildResult`, and
+  `OperationKind.XaeBuild` with PLC scope as the serialization default;
+- resolves a logical PLC id from the authoritative project graph immediately
+  before the XAE build side effect; one PLC is automatic, multiple or
+  duplicate PLC ids are ambiguous, and callers never supply a path;
+- PLC Build uses `SolutionBuild.BuildProject`; PLC Clean/Rebuild use the
+  project-specific VSSDK build manager with the exact hierarchy and active
+  configuration; solution scope retains the solution pipeline;
+- preserved synchronization, dirty-document/reload guards, BuildEvents,
+  diagnostics, cancellation, and project-noise classification;
+- removed Target/runtime Exception reads and recent-build policy from the
+  standalone build path while retaining S5 admission and live lock guards;
+- cut internal IPC/client dispatch over to `xaeBuild`; public MCP tool wiring
+  remains deferred to S9 and Desktop UI redesign remains deferred to S10.
 
 ## 13. S7 — Target Config and start/restart
 
