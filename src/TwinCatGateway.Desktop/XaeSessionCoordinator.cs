@@ -694,15 +694,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             "activation.preflight");
         AdsRuntimeStatusReadResult runtime =
             ReadRuntimeStatus(snapshot);
-        if (runtime.Status.Mode == RuntimeMode.Unknown)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.TwinCatStateUnknown,
-                "Activation requires a readable TwinCAT runtime state.",
-                retryable: true,
-                stage: "activation.preflight");
-        }
-
         RuntimeMode initialRuntimeMode = runtime.Status.Mode;
         if (_profile.Xae.Workspace.AutoSynchronizeBeforeOperation)
         {
