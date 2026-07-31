@@ -111,7 +111,7 @@ flowchart TD
 | S1 | Contracts, errors, config schema v2 | completed 2026-07-31 |
 | S2 | Profile resolver and effective capabilities | completed 2026-07-31 |
 | S3 | Source discovery manifest | completed 2026-07-31 |
-| S4 | Separate XAE/System Service/PLC states | pending |
+| S4 | Separate XAE/System Service/PLC states | completed 2026-07-31 |
 | S5 | Operator locks and XAE close consent backend | pending |
 | S6 | XAE build scope and policy cutover | pending |
 | S7 | Target Config/start-restart | pending |
@@ -347,6 +347,15 @@ On TwinCAT 3.1.4024.17 determine how to obtain XAE-observed system state:
 - otherwise return `unavailable`, never copy direct ADS state.
 
 The spike is read-only.
+
+Session result:
+
+- use typed `ITcSysManager.IsTwinCATStarted()` after exact-solution selection;
+- normalize `true` to `Run`;
+- retain `false` as a fresh raw observation with normalized `Unknown` until
+  `Config` can be confirmed on the TwinCAT 3.1.4024.17 bench;
+- return `Unavailable` with XAE-specific error evidence when the call fails;
+- never substitute direct ADS state for the XAE observation.
 
 ### Suggested commits
 
