@@ -1,5 +1,11 @@
 # Troubleshooting
 
+> **Current v1 guide:** this page describes the tools implemented before the
+> incompatible architecture rework. The target object-specific diagnostic
+> resources are defined in [`MCP_REFERENCE.md`](MCP_REFERENCE.md); their
+> implementation is scheduled in
+> [`ARCHITECTURE_REWORK_PLAN.md`](ARCHITECTURE_REWORK_PLAN.md).
+
 Start with the MCP `twincat_status` tool, then read
 `twincat_get_diagnostics` with a cursor. Fetch one raw resource only when those
 results are insufficient. For a remaining gateway-wide, unknown, or

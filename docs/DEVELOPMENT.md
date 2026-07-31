@@ -230,7 +230,7 @@ dotnet vstest `
 The MVP profile designates exactly one TcUnit PLC through `tcUnit.adsPort`.
 Other PLCs may exist in the solution, but must not publish to the configured
 report file. Multi-PLC aggregation is tracked as post-MVP scope in
-[`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md).
+the [explicitly deferred backlog](ARCHITECTURE_REWORK_PLAN.md#20-explicitly-deferred-backlog).
 
 State-changing scenarios run only on a dedicated remote test bench with:
 

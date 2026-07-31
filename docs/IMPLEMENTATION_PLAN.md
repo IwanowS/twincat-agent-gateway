@@ -1,4 +1,10 @@
-# План разработки TwinCAT Agent Gateway
+# План разработки TwinCAT Agent Gateway — исторический MVP baseline
+
+> **Статус:** этот документ сохраняет исходные milestones и acceptance
+> criteria реализованного MVP v1. Новая несовместимая переработка планируется
+> в [`ARCHITECTURE_REWORK_PLAN.md`](ARCHITECTURE_REWORK_PLAN.md).
+> Для новых задач приоритет имеет новый план; этот файл используется только
+> как история исходной реализации и источник ещё полезных test cases.
 
 ## 1. Стратегия
 

@@ -1,247 +1,351 @@
-# Gateway configuration reference
+# Gateway configuration reference — target schema v2
 
-TwinCAT Agent Gateway uses a project-owned JSON file named
-`twincat-gateway.json`. The file selects the exact TwinCAT solution, controls
-whether XAE may be launched, and defines the only target on which activation
-and TcUnit collection may operate.
+> **Status:** approved target contract for the architecture rework. The
+> current implementation still uses schema v1, documented in
+> [`CONFIGURATION_V1_BASELINE.md`](CONFIGURATION_V1_BASELINE.md).
+> Schema v2 is intentionally incompatible with v1.
 
-JSON property names are case-insensitive. Comments and trailing commas are
-accepted. Saved files use the camel-case names shown below.
+`twincat-gateway.json` identifies project resources and defines the maximum
+capabilities available to the agent. Gateway, UI locks, and the current user
+conversation may reduce those capabilities; they cannot expand them.
 
-## Minimal safe configuration
+JSON property names are case-insensitive. Comments and trailing commas may be
+accepted by the implementation. Saved examples use the camel-case names below.
 
-This configuration supports connection and build while keeping activation and
-TcUnit disabled:
-
-```json
-{
-  "schemaVersion": 1,
-  "profiles": [
-    {
-      "name": "default",
-      "solution": "Machine.sln",
-      "allowActivation": false
-    }
-  ]
-}
-```
-
-Place it beside `Machine.sln` or at the project/repository root. Relative
-`solution`, `logDirectory`, and `tcUnit.reportPath` values are resolved from
-the directory containing `twincat-gateway.json`.
-
-## Complete example
-
-The following example shows every configuration property. Activation remains
-disabled until the operator deliberately changes `allowActivation`.
+## 1. Complete target example
 
 ```json
 {
-  "schemaVersion": 1,
-  "pipeName": "TwinCatAgentGateway",
+  "schemaVersion": 2,
   "defaultProfile": "default",
-  "logDirectory": ".gateway-logs",
-  "logMinimumLevel": "information",
-  "logFileSizeLimitBytes": 1048576,
-  "logRetainedFileCountLimit": 10,
-  "logRetentionDays": 14,
+  "gateway": {
+    "pipeName": "TwinCatAgentGateway",
+    "processControl": {
+      "allowStart": true,
+      "allowShutdown": false
+    },
+    "logging": {
+      "directory": ".gateway-logs",
+      "minimumLevel": "information",
+      "fileSizeLimitBytes": 1048576,
+      "retainedFileCountLimit": 10,
+      "retentionDays": 14
+    }
+  },
   "ui": {
     "mode": "auto"
   },
-  "agentProcessControl": {
-    "allowStart": true,
-    "allowShutdown": false
-  },
-  "runtimeMonitoring": {
-    "pollIntervalMilliseconds": 1000,
-    "readTimeoutMilliseconds": 500
-  },
   "profiles": [
     {
       "name": "default",
-      "solution": "Machine.sln",
-      "allowXaeLaunch": true,
-      "xaeProgId": null,
-      "allowActivation": false,
-      "expectedTarget": {
-        "name": "WIN-T077ADA",
-        "amsNetId": "192.168.3.31.1.1"
+      "xae": {
+        "solution": "Machine.sln",
+        "progId": null,
+        "configuration": null,
+        "platform": null,
+        "workspace": {
+          "assumeAttachedSynchronized": true,
+          "externalChangePolicy": "reloadModified",
+          "autoSynchronizeBeforeOperation": true
+        },
+        "capabilities": {
+          "launch": true,
+          "close": false,
+          "synchronize": true,
+          "discardDirtyDocuments": false,
+          "build": true,
+          "activate": false
+        }
       },
-      "configuration": null,
-      "platform": null,
-      "assumeAttachedXaeSynchronized": true,
-      "externalChangePolicy": "reloadModified",
-      "allowForceSynchronization": false,
-      "allowCloseXae": false,
-      "allowDirtyDocumentDiscard": false,
-      "autoSynchronizeBeforeOperation": true,
-      "requireRecentSuccessfulBuild": true,
-      "recentBuildMaxAgeSeconds": 600,
-      "autoWaitForTcUnit": false,
-      "tcUnit": {
-        "adsPort": 851,
-        "finishedSymbol": "GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished",
-        "suiteCountSymbol": "GVL_TcUnit.NumberOfInitializedTestSuites",
-        "reportPath": "reports\\tcunit.xml",
-        "allowDeleteExistingReport": false,
-        "completionTimeoutSeconds": 120,
-        "zeroTests": "fail"
+      "target": {
+        "name": "WIN-T077ADA",
+        "amsNetId": "192.168.3.31.1.1",
+        "monitoring": {
+          "pollIntervalMilliseconds": 1000,
+          "readTimeoutMilliseconds": 500
+        },
+        "capabilities": {
+          "config": false,
+          "startRestart": false,
+          "tcUnitVerification": false
+        },
+        "tcUnit": {
+          "runtimeId": "plc-851",
+          "adsPort": 851,
+          "finishedSymbol": "GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished",
+          "suiteCountSymbol": "GVL_TcUnit.NumberOfInitializedTestSuites",
+          "reportPath": "reports\\tcunit.xml",
+          "allowDeleteExistingReport": false,
+          "completionTimeoutSeconds": 120,
+          "zeroTests": "fail"
+        }
       }
     }
   ]
 }
 ```
 
-## Discovery
+Relative paths are resolved from the directory containing
+`twincat-gateway.json`.
 
-Configuration discovery uses this order:
+## 2. Discovery
+
+Configuration discovery order remains:
 
 1. explicit `--config <path>`;
 2. workspace roots supplied by the MCP client;
-3. the process current directory;
-4. the nearest `twincat-gateway.json` upward, including but not crossing a Git
+3. process current directory;
+4. nearest `twincat-gateway.json` upward, including but not crossing a Git
    root; outside Git, up to the filesystem root.
 
 Different files found from multiple workspace roots produce
-`GATEWAY_CONFIG_AMBIGUOUS`. An explicit missing file and an agent launch with
-no file produce `GATEWAY_CONFIG_NOT_FOUND`. A manual launch with no discovered
-file opens the setup-only UI and does not start the gateway or Named Pipe.
+`GATEWAY_CONFIG_AMBIGUOUS`. Missing explicit config or agent launch without a
+config produces `GATEWAY_CONFIG_NOT_FOUND`.
 
-`appsettings.Local.json` is never discovered implicitly. It is accepted only
-when passed through `--config`.
+Manual launch without a discovered config may open setup-only UI. It does not
+start the configured Gateway host or publish IPC.
 
-## Top-level options
+## 3. Top-level options
 
-| Property | Type and default | Meaning and constraints |
+| Property | Type/default | Meaning |
 |---|---|---|
-| `schemaVersion` | integer, `1` | Required schema identity. Only version 1 is accepted. |
-| `pipeName` | string, `"TwinCatAgentGateway"` | Per-user Named Pipe name. Must be non-empty and contain no `/` or `\`. |
-| `defaultProfile` | string or `null`, `null` | Profile selected when the caller does not specify one. Optional for exactly one profile and required for multiple profiles. Matching is case-insensitive. |
-| `logDirectory` | path or `null`, `null` | Structured and raw log root. Relative paths are resolved from the config directory. When omitted, `%LOCALAPPDATA%\TwinCatAgentGateway\Logs` is used. |
-| `logMinimumLevel` | `verbose`, `debug`, `information`, `warning`, `error`, or `fatal`; `information` | Minimum severity written to the gateway session log. |
-| `logFileSizeLimitBytes` | integer, `1048576` | Maximum size of one gateway session segment before rollover. Valid range: 65536 through 1073741824 bytes. |
-| `logRetainedFileCountLimit` | integer, `10` | Maximum number of segments retained for one application run. Valid range: 1 through 1000. |
-| `logRetentionDays` | integer, `14` | Age retention for previous gateway session files and operation-log directories. Valid range: 1 through 3650 days. |
-| `ui` | object, default object | UI configuration. Must not be `null`. |
-| `agentProcessControl` | object, default object | Agent lifecycle policy. Must not be `null`. |
-| `runtimeMonitoring` | object, default object | Read-only ADS runtime polling. Must not be `null`. |
-| `profiles` | array, empty by default | One or more unique project profiles are required for a configured gateway. |
+| `schemaVersion` | integer, required `2` | Breaking configuration contract. Schema v1 is not accepted by the v2 implementation. |
+| `defaultProfile` | string or `null` | Default profile. Required when more than one profile exists. |
+| `gateway` | object, required | Process, IPC, and logging configuration. |
+| `ui` | object, default object | Desktop presentation settings. |
+| `profiles` | non-empty array | Named solution/target profiles. Names are unique case-insensitively. |
 
-Each application run writes compact NDJSON to a separate file named like
-`gateway-20260729T063245123Z-p1234.ndjson`. Size rollover adds `_001`, `_002`,
-and later segments. Age retention recognizes only these strict session names
-and the legacy `gateway.ndjson`; it does not remove the active session or
-unrelated files.
+## 4. `gateway`
 
-Agents must read MCP resource `twincat-log://gateway/current` to discover the
-exact segment currently open after any rollover. They must not infer that path
-from `logDirectory` or scan all session files. The default directory above is
-reference information for manual operator diagnostics.
+### 4.1 Core
 
-## `ui` options
-
-| Property | Type and default | Meaning |
+| Property | Type/default | Meaning |
 |---|---|---|
-| `mode` | `auto`, `window`, or `tray`; `auto` | `auto` shows a window for manual launch and starts in the tray for agent launch. An explicit command-line `--ui-mode` overrides this value. |
+| `pipeName` | string, `"TwinCatAgentGateway"` | Per-user Named Pipe. Must be non-empty and contain no slash. |
+| `processControl` | object | Agent-controlled Gateway lifecycle capabilities. |
+| `logging` | object | Structured session and operation logging. |
 
-The setup-only UI always shows a window because it is not a configured gateway
-process.
+### 4.2 `gateway.processControl`
 
-## `agentProcessControl` options
-
-| Property | Type and default | Meaning |
+| Property | Type/default | Meaning |
 |---|---|---|
-| `allowStart` | Boolean, `true` | Permits the MCP `gateway_start` tool to launch the desktop gateway for this exact project. |
-| `allowShutdown` | Boolean, `false` | Permits the destructive MCP `gateway_shutdown` tool to close this desktop gateway after its IPC response has been written. It never closes a user-owned XAE instance. |
+| `allowStart` | Boolean, `true` | Allows `gateway_start` for this exact config. |
+| `allowShutdown` | Boolean, `false` | Allows `gateway_shutdown`. It does not imply permission to close XAE. |
 
-Neither option permits an agent to select another solution or target.
+### 4.3 `gateway.logging`
 
-## `runtimeMonitoring` options
-
-The desktop gateway polls the verified System Service and the PLC ADS ports
-discovered from the exact selected `.tsproj`. Unchanged observations remain
-inside the gateway and do not create events or consume model tokens.
-
-| Property | Type and default | Meaning |
+| Property | Type/default | Meaning |
 |---|---|---|
-| `pollIntervalMilliseconds` | integer, `1000` | Delay between completed polling rounds. Valid range: 100 through 60000 milliseconds. |
-| `readTimeoutMilliseconds` | integer, `500` | Upper bound for each ADS state read. Valid range: 100 through 10000 milliseconds. |
+| `directory` | path or `null` | Session/operation log root. `null` uses the per-user application directory. |
+| `minimumLevel` | enum, `information` | `verbose`, `debug`, `information`, `warning`, `error`, or `fatal`. |
+| `fileSizeLimitBytes` | integer, `1048576` | Size rollover limit for one session segment. |
+| `retainedFileCountLimit` | integer, `10` | Segment limit for one Gateway run. |
+| `retentionDays` | integer, `14` | Retention for closed session files and operation directories. |
 
-## Project profile options
+The exact active log is discovered through
+`twincat-log://gateway/current`. Agents do not infer it from `directory`.
 
-| Property | Type and default | Meaning and constraints |
+## 5. `ui`
+
+| Property | Type/default | Meaning |
 |---|---|---|
-| `name` | string, empty by default | Required profile name. Names must be unique, case-insensitively. |
-| `solution` | path, empty by default | Required `.sln` path. Relative paths are resolved from the config directory. XAE attachment uses the normalized exact solution path. |
-| `allowXaeLaunch` | Boolean, `true` | Allows the configured gateway to launch a compatible XAE when the exact solution is not already open. It does not allow activation. |
-| `xaeProgId` | string or `null`, `null` | Optional exact DTE ProgID. `null` enables the gateway's compatible XAE candidate discovery. Empty or whitespace values are invalid. |
-| `allowActivation` | Boolean, `false` | Enables the explicit activation operation for this profile. Build never performs activation. |
-| `expectedTarget` | object or `null`, `null` | Exact target identity. Required when `allowActivation` is true. |
-| `configuration` | string or `null`, `null` | Optional XAE solution configuration name used by build. `null` keeps the verified active selection. Empty or whitespace values are invalid. |
-| `platform` | string or `null`, `null` | Optional XAE solution platform name used by build. `null` keeps the verified active selection. Empty or whitespace values are invalid. |
-| `assumeAttachedXaeSynchronized` | Boolean, `true` | When attaching to an already open exact XAE solution with no dirty project documents, accepts the current disk graph as the initial baseline without reloading XAE. The operator is responsible for ensuring that the XAE in-memory project model is not stale. `false` requires an explicit synchronization before Build/Rebuild/Clean. |
-| `externalChangePolicy` | `reloadAll`, `reloadModified`, or `error`; `reloadModified` | Reaction to non-generated disk changes found by the authoritative project-graph fingerprint scan. `reloadModified` reloads only modified `.TcPOU`/`.TcGVL`/`.TcDUT` and rejects graph or metadata changes. `reloadAll` permits them and reloads the selected TwinCAT project. `error` rejects every non-noise difference. |
-| `allowForceSynchronization` | Boolean, `false` | Permits the destructive MCP `twincat_sync` operation. The desktop UI may always request synchronization for the selected profile. |
-| `allowCloseXae` | Boolean, `false` | Permits the destructive MCP `twincat_close_xae` operation to close the exact XAE process selected by normalized `Solution.FullName`. It does not permit force-killing a process. |
-| `allowDirtyDocumentDiscard` | Boolean, `false` | Allows an explicit build/sync request with `discardDirtyDocuments=true`, and is additionally required for `twincat_close_xae(saveMode="discard")`. It never enables automatic discard. |
-| `autoSynchronizeBeforeOperation` | Boolean, `true` | Runs the authoritative fingerprint scan and policy-controlled typed reload before Build/Rebuild/Clean and activation. It never saves or automatically discards dirty XAE documents. Set to `false` only when the operator deliberately accepts responsibility for keeping the XAE project model synchronized with disk. |
-| `requireRecentSuccessfulBuild` | Boolean, `true` | Requires a recent successful build before activation. |
-| `recentBuildMaxAgeSeconds` | integer, `600` | Maximum age of that build. Must be positive when the recent-build requirement is enabled. |
-| `autoWaitForTcUnit` | Boolean, `false` | Links activation to TcUnit completion and report collection. Requires `tcUnit`. |
-| `tcUnit` | object or `null`, `null` | Narrow read-only ADS completion and fresh xUnit report settings. |
+| `mode` | `auto`, `window`, or `tray`; `auto` | Manual `auto` launch shows the window; agent launch starts in tray. Command-line override has priority. |
 
-## `expectedTarget` options
+Configuration does not persist operator locks. Locks are session state and
+reset when Gateway restarts.
 
-| Property | Type and default | Meaning and constraints |
+UI renders:
+
+- a compact Overview;
+- a separate operator-lock panel;
+- a separate read-only configuration-details view containing every effective
+  option, its explicit/default origin, and a description. Boolean
+  configuration values use disabled/read-only checkboxes; only session locks
+  and PID-scoped consent are interactive controls.
+
+## 6. Profiles
+
+Each profile identifies one solution and optionally one Target System.
+
+| Property | Type/default | Meaning |
 |---|---|---|
-| `name` | string or `null`, `null` | Informational target label for UI and logs. It is not used for identity matching. |
-| `amsNetId` | string or `null`, `null` | Exact six-part AMS NetId. Required for activation; every part must be a canonical byte value from 0 to 255. |
+| `name` | non-empty string | Stable profile identity passed by the agent. |
+| `xae` | object, required | Solution identity, XAE workspace behavior, and XAE capabilities. |
+| `target` | object or `null` | Remote Target identity, monitoring, transitions, and verification. May be omitted for build-only profiles. |
 
-The AMS NetId is the safety identity. The gateway never substitutes another
-target automatically.
+The agent normally passes only `profile`. It does not repeat solution path,
+AMS NetId, ADS ports, or capability flags.
 
-## `tcUnit` options
+## 7. `profile.xae`
 
-| Property | Type and default | Meaning and constraints |
+### 7.1 Identity and selection
+
+| Property | Type/default | Meaning |
 |---|---|---|
-| `adsPort` | integer, `851` | PLC ADS port used only for the fixed completion reads. Valid range: 1 through 65535. |
-| `finishedSymbol` | string, `"GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished"` | Fixed Boolean completion symbol. Must be non-empty. |
-| `suiteCountSymbol` | string, `"GVL_TcUnit.NumberOfInitializedTestSuites"` | Fixed initialized-suite count symbol. Must be non-empty. |
-| `reportPath` | path, empty by default | Required fresh xUnit report path. Relative paths are resolved from the config directory. |
-| `allowDeleteExistingReport` | Boolean, `false` | Allows deletion only of the configured old report before a linked run. A filesystem root is rejected. |
-| `completionTimeoutSeconds` | integer, `120` | Upper bound for completion polling. Must be positive; timeout is not success evidence. |
-| `zeroTests` | `fail`, `warn`, or `allow`; `fail` | Policy when a fresh valid report contains zero tests. |
+| `solution` | path, required | Exact `.sln`. Attachment matches normalized absolute `Solution.FullName`. |
+| `progId` | string or `null` | Optional exact DTE ProgID. `null` uses compatible XAE discovery. |
+| `configuration` | string or `null` | Optional solution configuration. `null` keeps and reports the active selection. |
+| `platform` | string or `null` | Optional solution platform. `null` keeps and reports the active selection. |
 
-ADS remains read-only and limited to `finishedSymbol` and `suiteCountSymbol`.
-Pass/fail comes from the fresh xUnit report, not from XAE/VSTest exit code.
+Project variant is intentionally absent from schema v2 phase 1. The operator
+selects it when preparing/opening the solution. Gateway reports the active
+variant when XAE exposes it but does not change it.
 
-## Safety rules
+### 7.2 `profile.xae.workspace`
 
-- Keep `allowActivation` false until the exact remote target is verified.
-- Activation is always a separate explicit operation and never follows build
-  implicitly.
-- `assumeAttachedXaeSynchronized=true` transfers responsibility for the initial
-  XAE/disk agreement to the operator. Set it to `false` when an explicit typed
-  reload is required before the first operation after gateway startup.
-- Keep `autoSynchronizeBeforeOperation=true` when agents edit PLC project files
-  externally. Disabling it means Build and activation use the current XAE
-  project model without automatic pre-action change detection or typed reload.
-- Keep `allowForceSynchronization`, `allowCloseXae`, and
-  `allowDirtyDocumentDiscard` false unless the operator deliberately accepts
-  those independent capabilities.
-- Build and synchronization never save an XAE editor buffer. Dirty documents
-  fail with `DIRTY_XAE_DOCUMENT` unless discard was explicitly requested and
-  allowed. The separate explicit close operation may save only when invoked
-  with `saveMode="save"`.
-- `twincat_close_xae` accepts `save`, `discard`, or `prompt`. `prompt` leaves
-  the native XAE save decision to the user. Success requires the originally
-  selected PID to exit; the gateway never force-kills it. After a successful
-  explicit close, automatic XAE launch stays suppressed until the gateway is
-  restarted, although a manually opened exact solution can be attached.
-- Local activation, restart, runtime state changes, ADS writes, and arbitrary
-  symbol access are outside the MVP.
-- The agent may select a configured profile but may not supply a different
-  solution, AMS NetId, ADS port, or symbol path.
-- Do not put secrets in this file. Its normalized path and selected profile may
-  appear in local status and logs, but the file contents are not returned by
-  default.
+| Property | Type/default | Meaning |
+|---|---|---|
+| `assumeAttachedSynchronized` | Boolean, `true` | Allows an exact attached XAE with no dirty project documents to establish the initial disk baseline without a forced reload. |
+| `externalChangePolicy` | `reloadAll`, `reloadModified`, or `error`; `reloadModified` | Policy for external changes found in the exact project graph. |
+| `autoSynchronizeBeforeOperation` | Boolean, `true` | Runs graph scan and policy-controlled typed reload before XAE operations. |
+
+Dirty XAE buffers remain conflicts. The workspace section never grants save
+or discard authority.
+
+### 7.3 `profile.xae.capabilities`
+
+| Property | Type/default | Meaning |
+|---|---|---|
+| `launch` | Boolean, `true` | Allows Gateway to launch XAE for the exact solution. |
+| `close` | Boolean, `false` | Maximum permission to close XAE. Effective close also requires PID-scoped session consent. |
+| `synchronize` | Boolean, `true` | Allows explicit and operation-required synchronization. |
+| `discardDirtyDocuments` | Boolean, `false` | Allows an explicitly requested discard path. Never causes automatic discard. |
+| `build` | Boolean, `true` | Allows PLC/solution Build, Rebuild, and Clean. |
+| `activate` | Boolean, `false` | Allows XAE activation of the profile target. |
+
+`close=false` is absolute. With `close=true`, session consent defaults to true
+for Gateway-launched XAE and false for attached user XAE.
+
+## 8. `profile.target`
+
+### 8.1 Identity
+
+| Property | Type/default | Meaning |
+|---|---|---|
+| `name` | string or `null` | Informational label for UI/logs. Not an identity check. |
+| `amsNetId` | canonical six-octet string, required | Exact ADS target identity. |
+| `monitoring` | object | Direct System Service and PLC runtime state polling. |
+| `capabilities` | object | Target transitions and verification. |
+| `tcUnit` | object or `null` | TcUnit completion/report contract. |
+
+Gateway does not substitute another AMS NetId automatically.
+
+### 8.2 `profile.target.monitoring`
+
+| Property | Type/default | Meaning |
+|---|---|---|
+| `pollIntervalMilliseconds` | integer, `1000` | Delay between completed observation rounds. |
+| `readTimeoutMilliseconds` | integer, `500` | Upper bound for one ADS state read. |
+
+Gateway reads:
+
+- System Service at port `10000`;
+- PLC runtime ports discovered from the exact selected project graph;
+- optional configured TcUnit runtime port.
+
+Each observation remains separate. Monitoring does not publish aggregate
+`runtime mode`.
+
+### 8.3 `profile.target.capabilities`
+
+| Property | Type/default | Meaning |
+|---|---|---|
+| `config` | Boolean, `false` | Allows `twincat_target_config` from any observed Target state. |
+| `startRestart` | Boolean, `false` | Allows start from Config/Stopped and restart from Run. |
+| `tcUnitVerification` | Boolean, `false` | Allows TcUnit verification attached to activation or target start/restart. Requires `tcUnit`. |
+
+These booleans are maximum capabilities. Operator session locks may
+temporarily reduce them.
+
+### 8.4 `profile.target.tcUnit`
+
+| Property | Type/default | Meaning |
+|---|---|---|
+| `runtimeId` | non-empty string | Logical PLC runtime identity in resources/results. |
+| `adsPort` | integer, required | PLC ADS port used for completion reads. |
+| `finishedSymbol` | non-empty string | Fixed Boolean completion symbol. |
+| `suiteCountSymbol` | non-empty string | Fixed initialized-suite-count symbol. |
+| `reportPath` | path, required | Fresh xUnit XML location visible to Gateway. |
+| `allowDeleteExistingReport` | Boolean, `false` | Allows removal only of the configured baseline report before a run. |
+| `completionTimeoutSeconds` | integer, `120` | Upper bound for completion/report observation. |
+| `zeroTests` | `fail`, `warn`, or `allow`; `fail` | Policy for a fresh report containing zero tests. |
+
+Pass/fail comes from a fresh valid xUnit report. Completion symbols prove only
+that the designated run completed.
+
+## 9. Source discovery
+
+Source paths are not duplicated in configuration.
+
+Gateway derives them from:
+
+```text
+solution -> selected projects -> .tsproj/.plcproj -> source graph
+```
+
+The agent reads:
+
+```text
+twincat-profile://{profile}/sources
+twincat-profile://{profile}/sources/files
+```
+
+The compact resource returns minimal roots, project association, supported
+extensions, existence, external-to-solution markers, counts, freshness, and a
+bounded files reference.
+
+## 10. Effective capability and denial
+
+Effective capability:
+
+```text
+configured
+AND session consent when required
+AND NOT operator session lock
+```
+
+The Gateway response distinguishes:
+
+- `CAPABILITY_DISABLED` — static configuration forbids the action;
+- `OPERATOR_LOCKED` — temporarily blocked in UI;
+- `XAE_CLOSE_CONSENT_REQUIRED` — configured close exists, but PID-scoped
+  consent is off.
+
+An explicit conversational prohibition prevents the agent from calling the
+operation at all.
+
+## 11. Migration from schema v1
+
+There is no runtime compatibility shim.
+
+Migration implementation must:
+
+1. introduce schema v2 DTOs and validation;
+2. update examples/tests;
+3. reject schema v1 with `CONFIG_VERSION_UNSUPPORTED`;
+4. update UI and generated documentation;
+5. remove v1 properties rather than accept both shapes.
+
+Property mapping is documented only to help the rework:
+
+| Schema v1 | Schema v2 |
+|---|---|
+| `pipeName` | `gateway.pipeName` |
+| log fields | `gateway.logging.*` |
+| `agentProcessControl` | `gateway.processControl` |
+| `solution` | `profile.xae.solution` |
+| `xaeProgId` | `profile.xae.progId` |
+| `allowXaeLaunch` | `profile.xae.capabilities.launch` |
+| `allowCloseXae` | `profile.xae.capabilities.close` |
+| `allowForceSynchronization` | `profile.xae.capabilities.synchronize` |
+| `allowDirtyDocumentDiscard` | `profile.xae.capabilities.discardDirtyDocuments` |
+| `allowActivation` | `profile.xae.capabilities.activate` |
+| `expectedTarget` | `profile.target` identity |
+| `runtimeMonitoring` | `profile.target.monitoring` |
+| `tcUnit` | `profile.target.tcUnit` |
+| `requireRecentSuccessfulBuild` | removed |
+| `recentBuildMaxAgeSeconds` | removed |
+| `autoWaitForTcUnit` | removed; verification is requested per operation |
+
+The complete implementation sequence is in
+[`ARCHITECTURE_REWORK_PLAN.md`](ARCHITECTURE_REWORK_PLAN.md).

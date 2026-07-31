@@ -1,61 +1,45 @@
 ---
 name: twincat-build
-description: Build, rebuild, clean, and repair TwinCAT PLC projects through TwinCAT Agent Gateway. Use for compile checks, PLC build errors or warnings, and normal external source-edit iterations against an open or gateway-launched XAE solution.
+description: Compile, rebuild, clean, and repair TwinCAT PLC projects through the target TwinCAT Agent Gateway XAE API. Use for source discovery, compile checks, PLC compiler errors or warnings, and external file-edit iterations that must synchronize with an exact profile solution.
 ---
 
 # TwinCAT Build
 
-1. Call `twincat_status` and confirm that the selected profile, exact solution,
-   XAE connection, and target identity are the intended ones.
-2. Edit PLC source files with normal patch tools. Do not edit through COM or
-   Automation Interface.
-3. Call `twincat_build` with the profile and the requested action. Prefer
-   `rebuild` for a definitive compile check. Pass explicit
-   configuration/platform only when the task requires them.
-4. Read the compact result first. Collect the bounded diagnostics, fix a
-   coherent batch, and repeat the build only after that batch is ready. Do not
-   build after every individual edit.
-5. Read the referenced build log only for an infrastructure failure, an
-   inconsistent result, or diagnostics that are insufficient to act on.
+1. Accept or determine the intended profile.
+2. If the related source checkout is not already known, read
+   `twincat-profile://{profile}/sources` once. Edit only the relevant returned
+   project roots.
+3. Edit PLC source files on disk with normal patch tools.
+4. Call `twincat_xae_build` directly:
+   - default to `scope: plc`;
+   - use `rebuild` for a definitive compile check;
+   - use `scope: solution` only when the task requires the complete TwinCAT
+     solution build;
+   - pass `changedPaths` only as bounded hints.
+5. Read the compact result first. Collect the complete bounded diagnostic set,
+   fix a coherent batch, and repeat only after that batch is ready.
+6. Read the exact operation build/XAE/project-noise resource only when the
+   compact result is insufficient.
 
-For ordinary source validation, stop after a successful build. Build never
-activates TwinCAT. Activate only when the user explicitly requests runtime
-verification or debugging and the remote target is allowed.
+Do not call a general status preflight. Gateway resolves the solution,
+capability, locks, synchronization, and project identity from the profile.
 
-Prefer several related edits followed by one useful build checkpoint. Do not
-run activation or TcUnit merely because a build succeeded; leave the remote
-runtime checkpoint until the related implementation batch has stabilized.
+Do not transition Target state because a PLC runtime is in Exception. Target
+state is not a Gateway precondition for PLC compilation.
 
-A successful Build or Rebuild is reusable evidence for the same profile,
-solution, target, configuration, and platform. Do not repeat it merely because
-activation or linked testing follows. Treat the evidence as invalid after a
-relevant source/project edit, Clean, a failed build, `syncRequired`, a profile
-or target/configuration/platform change, or an XAE disconnect/reconnect.
+Build never performs Config, activation, restart, or tests. A build-only task
+stays compile-only because that is the requested scope.
 
-If the compact result reports `BUILD_BLOCKED_BY_RUNTIME_EXCEPTION`, treat it
-as a diagnostic stop: do not retry and do not recover the runtime
-automatically. Report that the previous PLC artifacts are being preserved and
-require an explicit user decision before calling
-`twincat_recover_to_config`.
+Treat:
 
-While attached, the gateway suppresses project-level file notifications for
-the exact selected graph and editor-level notifications for its open PLC
-documents. Normal external changes, including manual edits, therefore do not
-produce an XAE file-modification dialog. They remain visible to the
-authoritative fingerprint scan and are validated and reloaded from disk before
-the operation according to `externalChangePolicy`. Use `twincat_sync` when a
-full explicit synchronization is required.
+- `CAPABILITY_DISABLED` as a static profile denial;
+- `OPERATOR_LOCKED` as a temporary operator decision; report it and stop;
+- XAE/solution mismatch as an XAE diagnostic problem;
+- `unknown`, timeout, and missing BuildEvents/postconditions as unverified.
 
-`xae.agentWorkspaceOwned=true` means the gateway owns notification suppression
-and synchronization, not user buffers. A dirty XAE document blocks the
-operation with `DIRTY_XAE_DOCUMENT`; never save or discard it automatically.
-An open saved editor can show stale content until sync/build, while disk
-remains authoritative. Added or removed PLC source files are unsupported by
-the MVP and must be surfaced instead of worked around.
+Do not inspect or rewrite a full `.tsproj`/`.tmc` when the exact operation
+resource classifies it as expected generated noise.
 
-The verified workspace includes the selected `.tsproj` directory when the
-solution references that TwinCAT project outside its own directory.
-
-Trust `ExpectedReorderOnly` for `.tsproj` noise. Do not load the full project
-file, rewrite it, or revert it merely to restore ordering. Inspect only the
-focused diff resource when the classifier reports another result.
+The target API may be temporarily unavailable during the breaking architecture
+rework. Report that state; never fall back to v1 tool names or another TwinCAT
+automation path.

@@ -7,6 +7,14 @@ optional Run confirmation,
 cursor-based diagnostics, bounded XAE Error List reads, local raw logs, and
 linked TcUnit result collection.
 
+> **Architecture rework:** the repository is moving through an intentionally
+> incompatible v2 redesign. The approved target contract is documented in
+> [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md); the implemented v1 baseline
+> is preserved separately in
+> [`docs/ARCHITECTURE_V1_BASELINE.md`](docs/ARCHITECTURE_V1_BASELINE.md).
+> During the staged cutover, the checked-out applications may implement only
+> part of the target contract.
+
 ## Requirements
 
 - Windows 10/11;
@@ -116,8 +124,14 @@ dotnet test tests\TwinCatGateway.ContractTests\TwinCatGateway.ContractTests.cspr
 
 Further documentation:
 
-- [architecture and operation semantics](docs/ARCHITECTURE.md);
-- [implementation milestones and acceptance criteria](docs/IMPLEMENTATION_PLAN.md);
+- [target architecture and operation semantics](docs/ARCHITECTURE.md);
+- [accepted and deferred architecture decisions](docs/ARCHITECTURE_DECISIONS.md);
+- [target configuration schema](docs/CONFIGURATION.md);
+- [target MCP tools and resources](docs/MCP_REFERENCE.md);
+- [agent workflows and deferred debugging scenarios](docs/WORKFLOWS.md);
+- [multi-session architecture rework plan](docs/ARCHITECTURE_REWORK_PLAN.md);
+- [implemented v1 architecture baseline](docs/ARCHITECTURE_V1_BASELINE.md);
+- [historical MVP implementation plan](docs/IMPLEMENTATION_PLAN.md);
 - [development and real-XAE checks](docs/DEVELOPMENT.md);
 - [installation and agent setup](docs/INSTALLATION.md);
 - [troubleshooting](docs/TROUBLESHOOTING.md);

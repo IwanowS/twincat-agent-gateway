@@ -1,4 +1,4 @@
 interface:
   display_name: "TwinCAT Test"
-  short_description: "Run linked TwinCAT and TcUnit tests"
-  default_prompt: "Use $twincat-test to reuse or obtain a verified build, activate the test profile, and collect TcUnit results."
+  short_description: "Run fresh TwinCAT TcUnit verification"
+  default_prompt: "Use $twincat-test to activate changed code or restart unchanged deployed code and collect fresh TcUnit evidence."

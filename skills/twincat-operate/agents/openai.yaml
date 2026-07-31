@@ -1,0 +1,4 @@
+interface:
+  display_name: "TwinCAT Operate"
+  short_description: "Operate XAE and configured TwinCAT targets"
+  default_prompt: "Use $twincat-operate to activate this profile or change its configured TwinCAT target mode."

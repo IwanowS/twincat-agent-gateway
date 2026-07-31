@@ -61,9 +61,13 @@ after MCP or shared IPC contract changes; perform a full replacement instead.
 Copy [the safe example](../examples/twincat-gateway.json) to
 `twincat-gateway.json` in the project or Git root. Relative solution, log, and
 TcUnit report paths are resolved from the configuration file's directory.
-See the [complete configuration reference](CONFIGURATION.md) for every option,
-default, constraint, and a full example. The same reference is installed with
-the desktop application and shown by `Setup instructions`.
+Until the v2 configuration cutover is completed, the executable and shipped
+example use the
+[implemented v1 configuration reference](CONFIGURATION_V1_BASELINE.md).
+The incompatible [target v2 schema](CONFIGURATION.md) is the implementation
+contract for the architecture rework and must not be passed to an older
+binary. The generated reference installed with the current desktop
+application describes the schema supported by that binary.
 
 Discovery order is:
 

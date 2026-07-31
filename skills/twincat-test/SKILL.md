@@ -1,46 +1,49 @@
 ---
 name: twincat-test
-description: Run the linked TwinCAT Agent Gateway TcUnit workflow on an explicitly allowed remote test profile. Use when PLC runtime behavior needs activation/restart, ADS completion evidence, and a fresh compact TcUnit result, reusing an already verified current build when possible.
+description: Run fresh TcUnit verification through the target TwinCAT Agent Gateway workflow. Use when changed PLC code must be activated and tested, when tests must be repeated without code changes, or when TcUnit completion and xUnit evidence must be diagnosed without a redundant standalone build.
 ---
 
 # TwinCAT Test
 
-1. Call `twincat_status`. Confirm the profile, exact solution, activation
-   permission, and remote AMS NetId.
-2. Batch compatible implementation and test changes first. Use focused local
-   checks/builds as needed, but reserve remote activation and TcUnit for one
-   coherent checkpoint, preferably near the end of the task.
-3. Reuse a known successful Build or Rebuild for the same profile, solution,
-   target, configuration, and platform when no relevant edit, Clean, failed
-   build, `syncRequired`, or XAE reconnect followed it. Otherwise call
-   `twincat_build` once with `action: rebuild`. Stop on compile errors; build
-   does not activate.
-4. Call `twincat_activate` explicitly with the same profile and
-   `waitForTcUnit: true`. This activates and restarts only the allow-listed
-   remote target.
-5. Read `testOperationId` from the completed activation result and call
-   `twincat_get_test_results`.
-6. Collect all bounded failures from that run before editing. Fix the coherent
-   failure batch, build once after the fixes, and perform one repeat
-   activation/test. Do not reactivate separately for each failed test.
+1. Accept or determine the intended profile.
+2. If relevant sources are not already known, read
+   `twincat-profile://{profile}/sources`.
+3. Batch compatible implementation and test edits before a remote checkpoint.
+4. Choose one workflow:
+   - changed code: call `twincat_xae_activate` with
+     `verification: tcunit`;
+   - unchanged deployed code: call `twincat_target_start_restart` with
+     `verification: tcunit`.
+5. Read the root operation stage results:
+   - compile;
+   - deploy, when activation was requested;
+   - Target transition;
+   - verification.
+6. Collect all bounded failures from the same fresh run before editing.
+7. Repeat one coherent activation/test or restart/test checkpoint after the
+   failure batch is ready.
 
-Do not repeat Build/Rebuild before activation when step 3 reused or completed a
-valid build and no files changed afterward. If repairing a failure changes PLC
-sources, the previous build no longer validates that new source state.
-The reuse sequence is `twincat_status`, `twincat_activate` with
-`waitForTcUnit: true`, then `twincat_get_test_results`.
+Do not run a standalone build before activation merely to satisfy a Gateway
+precondition. Native XAE activation performs its own compilation. Use a
+standalone PLC build only when compile evidence is independently useful for
+the development loop.
 
-Do not leave required runtime verification undone at task completion. Run an
-earlier checkpoint only when runtime evidence is necessary to decide the next
-implementation step; otherwise prefer the final batched checkpoint.
+Project variant selection is manual in phase 1. Do not ask Gateway to switch
+normal/test variants.
 
-Do not accept a timeout, stale report, missing completion symbol, or missing
-report as a test result. Do not read arbitrary ADS symbols or write runtime
-state.
+Require fresh evidence:
 
-The MVP profile designates exactly one TcUnit PLC and one report publisher.
-Other PLCs may exist in the solution, but multi-PLC aggregation is not
-supported.
+- a new Target Run/restart postcondition;
+- completion belonging to the requested run;
+- a new stable valid xUnit report;
+- the configured zero-test policy.
 
-Never substitute another solution, profile, target, ADS port, symbol, or
-report path automatically.
+Do not accept stale `TRUE`, timeout, missing symbols, missing/stale report, or
+invalid XML as a test result.
+
+`CAPABILITY_DISABLED` is a static profile denial. `OPERATOR_LOCKED` is a
+temporary operator decision; report it and stop instead of polling.
+
+The target API may be temporarily unavailable during the breaking architecture
+rework. Report that state; never fall back to v1 tool names or another TwinCAT
+automation path.

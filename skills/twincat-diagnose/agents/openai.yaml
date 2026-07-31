@@ -1,4 +1,4 @@
 interface:
   display_name: "TwinCAT Diagnose"
-  short_description: "Diagnose TwinCAT gateway and XAE failures"
-  default_prompt: "Use $twincat-diagnose to investigate the current TwinCAT gateway problem."
+  short_description: "Route TwinCAT object-specific diagnostics"
+  default_prompt: "Use $twincat-diagnose to investigate this failure from its exact operation, component, and stage."
