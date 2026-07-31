@@ -161,6 +161,10 @@ public sealed class GatewayDesktopHost : IDisposable
             _xaeCoordinator is null
                 ? null
                 : _xaeCoordinator.ExecuteRecoverToConfigAsync;
+        TargetConfigOperationExecutor? targetConfigExecutor =
+            _xaeCoordinator is null
+                ? null
+                : _xaeCoordinator.ExecuteTargetConfigAsync;
         SynchronizeOperationExecutor? synchronizeExecutor =
             _xaeCoordinator is null
                 ? null
@@ -201,6 +205,7 @@ public sealed class GatewayDesktopHost : IDisposable
             tcUnitExecutor: tcUnitExecutor,
             synchronizeExecutor: synchronizeExecutor,
             recoveryExecutor: recoveryExecutor,
+            targetConfigExecutor: targetConfigExecutor,
             xaeMessagesProvider: xaeMessagesProvider,
             currentLogPathProvider: () => _logging.Path,
             closeXaeExecutor: closeXaeExecutor,

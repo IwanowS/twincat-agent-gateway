@@ -183,6 +183,15 @@ public sealed class GatewayRequestDispatcher
                         parameters);
                 }
 
+            case GatewayMethods.TargetConfig:
+                {
+                    TargetConfigParameters parameters =
+                        request.DeserializeParameters<
+                            TargetConfigParameters>(
+                            _serializerOptions);
+                    return _service.StartTargetConfig(parameters);
+                }
+
             case GatewayMethods.GetOperation:
                 {
                     GetOperationParameters parameters =

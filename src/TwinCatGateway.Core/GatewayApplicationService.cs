@@ -23,6 +23,11 @@ public delegate Task<RecoverToConfigResult> RecoveryOperationExecutor(
     RecoverToConfigParameters parameters,
     CancellationToken cancellationToken);
 
+public delegate Task<TargetConfigResult> TargetConfigOperationExecutor(
+    string operationId,
+    TargetConfigParameters parameters,
+    CancellationToken cancellationToken);
+
 public delegate Task<SynchronizeResult> SynchronizeOperationExecutor(
     string operationId,
     SynchronizeParameters parameters,
@@ -51,6 +56,7 @@ public sealed class GatewayApplicationService
     private readonly SynchronizeOperationExecutor? _synchronizeExecutor;
     private readonly CloseXaeOperationExecutor? _closeXaeExecutor;
     private readonly RecoveryOperationExecutor? _recoveryExecutor;
+    private readonly TargetConfigOperationExecutor? _targetConfigExecutor;
     private readonly XaeMessagesProvider? _xaeMessagesProvider;
     private readonly TcUnitPreparationExecutor?
         _tcUnitPreparationExecutor;
@@ -87,6 +93,7 @@ public sealed class GatewayApplicationService
         TcUnitOperationExecutor? tcUnitExecutor = null,
         SynchronizeOperationExecutor? synchronizeExecutor = null,
         RecoveryOperationExecutor? recoveryExecutor = null,
+        TargetConfigOperationExecutor? targetConfigExecutor = null,
         XaeMessagesProvider? xaeMessagesProvider = null,
         Func<string?>? currentLogPathProvider = null,
         CloseXaeOperationExecutor? closeXaeExecutor = null,
@@ -112,6 +119,7 @@ public sealed class GatewayApplicationService
         _synchronizeExecutor = synchronizeExecutor;
         _closeXaeExecutor = closeXaeExecutor;
         _recoveryExecutor = recoveryExecutor;
+        _targetConfigExecutor = targetConfigExecutor;
         _xaeMessagesProvider = xaeMessagesProvider;
         _tcUnitPreparationExecutor =
             tcUnitPreparationExecutor;
@@ -496,6 +504,50 @@ public sealed class GatewayApplicationService
                     cancellationToken),
             TimeSpan.FromSeconds(
                 captured.TimeoutSeconds ?? 120));
+    }
+
+    public OperationAccepted StartTargetConfig(
+        TargetConfigParameters parameters)
+    {
+        if (parameters is null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (_targetConfigExecutor is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "The Target Config executor is unavailable.",
+                retryable: true,
+                stage: "target.config.enqueue",
+                component: GatewayComponent.Target,
+                sideEffectsStarted: false);
+        }
+
+        ResolvedProfile profile =
+            RequirePreflight("target.config.admission").EnsureAllowed(
+                parameters.Profile,
+                CapabilityKey.TargetConfig,
+                "target.config.admission",
+                requireTarget: true);
+        OperationCapabilityGuard capabilityGuard = new(
+            RequireCapabilities("target.config.admission"),
+            profile,
+            CapabilityKey.TargetConfig);
+        TargetConfigParameters captured = new()
+        {
+            Profile = parameters.Profile,
+        };
+        return _queue.Enqueue(
+            OperationKind.TargetConfig,
+            (operationId, cancellationToken) =>
+                ExecuteTargetConfigAsync(
+                    operationId,
+                    captured,
+                    capabilityGuard,
+                    cancellationToken),
+            TimeSpan.FromSeconds(120));
     }
 
     public OperationAccepted StartSynchronization(
@@ -1201,6 +1253,24 @@ public sealed class GatewayApplicationService
                 return status;
             });
         }
+    }
+
+    private async Task<OperationExecutionResult>
+        ExecuteTargetConfigAsync(
+            string operationId,
+            TargetConfigParameters parameters,
+            OperationCapabilityGuard capabilityGuard,
+            CancellationToken cancellationToken)
+    {
+        capabilityGuard.EnsureAllowed(
+            "target.config.preSideEffect",
+            sideEffectsStarted: false);
+        TargetConfigResult result = await _targetConfigExecutor!(
+            operationId,
+            parameters,
+            cancellationToken).ConfigureAwait(false);
+        result.OperationId = operationId;
+        return OperationExecutionResult.Success(result);
     }
 
     private async Task<OperationExecutionResult>

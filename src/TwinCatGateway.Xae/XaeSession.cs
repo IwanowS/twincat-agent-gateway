@@ -648,7 +648,20 @@ public sealed class XaeSession : IDisposable
         }
     }
 
-    public async Task RestartTwinCatConfigModeAsync(
+    public Task RestartTwinCatConfigModeAsync(
+        string solutionPath,
+        string expectedAmsNetId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        return RequestTargetConfigAsync(
+            solutionPath,
+            expectedAmsNetId,
+            timeout,
+            cancellationToken);
+    }
+
+    public async Task RequestTargetConfigAsync(
         string solutionPath,
         string expectedAmsNetId,
         TimeSpan timeout,
@@ -660,7 +673,7 @@ public sealed class XaeSession : IDisposable
         await _dispatcher.InvokeAsync(
             () =>
             {
-                RestartTwinCatConfigModeOnSta(
+                RequestTargetConfigOnSta(
                     normalizedSolution,
                     expectedAmsNetId);
                 return true;
@@ -1794,11 +1807,11 @@ public sealed class XaeSession : IDisposable
         }
     }
 
-    private void RestartTwinCatConfigModeOnSta(
+    private void RequestTargetConfigOnSta(
         string normalizedSolution,
         string expectedAmsNetId)
     {
-        const string stage = "activation.recoverToConfig";
+        const string stage = "target.config.command";
         using (CreateUserSilentModeLease())
         {
             VerifyActivationBoundaryOnSta(
@@ -1813,11 +1826,13 @@ public sealed class XaeSession : IDisposable
             catch (Exception exception)
             {
                 throw new GatewayOperationException(
-                    ErrorCodes.ConfigModeRecoveryFailed,
-                    "TwinCAT Config Mode recovery request failed.",
+                    ErrorCodes.TargetConfigFailed,
+                    "The TwinCAT Target Config command failed.",
                     retryable: true,
                     stage: stage,
-                    innerException: exception);
+                    innerException: exception,
+                    component: GatewayComponent.Target,
+                    sideEffectsStarted: true);
             }
         }
     }

@@ -7,6 +7,7 @@ public enum OperationKind
     Synchronize,
     CloseXae,
     Activate,
+    TargetConfig,
     RecoverToConfig,
     Test,
 }

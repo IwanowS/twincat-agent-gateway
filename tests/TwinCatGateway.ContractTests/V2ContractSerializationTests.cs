@@ -471,6 +471,57 @@ public sealed class V2ContractSerializationTests
             Assert.Single(result.Resources).Uri);
     }
 
+    [Fact]
+    public void TargetConfigContractPreservesDirectObservations()
+    {
+        TargetConfigResult source = new()
+        {
+            Ok = true,
+            OperationId = "target-config-1",
+            Profile = "bench",
+            Action = TargetTransitionAction.Config,
+            Before = new TargetSystemObservation
+            {
+                Profile = "bench",
+                AmsNetId = "192.168.3.31.1.1",
+                Port = 10000,
+                RawAdsState = 15,
+                RawAdsStateName = "Exception",
+                RawDeviceState = 4,
+                State = TargetSystemState.Exception,
+                ObservedAtUtc = ObservedAt,
+                Freshness = ObservationFreshness.Fresh,
+            },
+            After = new TargetSystemObservation
+            {
+                Profile = "bench",
+                AmsNetId = "192.168.3.31.1.1",
+                Port = 10000,
+                RawAdsState = 16,
+                RawAdsStateName = "Config",
+                RawDeviceState = 2,
+                State = TargetSystemState.Config,
+                ObservedAtUtc = ObservedAt.AddSeconds(2),
+                Freshness = ObservationFreshness.Fresh,
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        TargetConfigResult? result =
+            JsonSerializer.Deserialize<TargetConfigResult>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(TargetTransitionAction.Config, result.Action);
+        Assert.Equal(15, result.Before.RawAdsState);
+        Assert.Equal(4, result.Before.RawDeviceState);
+        Assert.Equal(TargetSystemState.Config, result.After.State);
+        Assert.Contains("\"action\":\"config\"", json);
+    }
+
     private sealed class StageEvidence
     {
         public bool ReportFound { get; set; }

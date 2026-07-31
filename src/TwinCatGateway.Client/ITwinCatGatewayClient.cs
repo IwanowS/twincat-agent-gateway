@@ -78,6 +78,17 @@ public interface ITwinCatGatewayClient
                 "Runtime recovery is not implemented by this client."));
     }
 
+    Task<GatewayResponse<OperationAccepted>>
+        StartTargetConfigAsync(
+            TargetConfigParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        return Task.FromException<
+            GatewayResponse<OperationAccepted>>(
+            new NotSupportedException(
+                "Target Config is not implemented by this client."));
+    }
+
     Task<GatewayResponse<OperationDetails<TResult>>>
         GetOperationAsync<TResult>(
             string operationId,

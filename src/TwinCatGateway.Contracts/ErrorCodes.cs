@@ -32,6 +32,12 @@ public static class ErrorCodes
     public const string ProfileNotFound = "PROFILE_NOT_FOUND";
     public const string ProfileInvalid = "PROFILE_INVALID";
     public const string TargetNotConfigured = "TARGET_NOT_CONFIGURED";
+    public const string TargetAdsUnavailable =
+        "TARGET_ADS_UNAVAILABLE";
+    public const string TargetConfigFailed =
+        "TARGET_CONFIG_FAILED";
+    public const string TargetConfigPostconditionMissing =
+        "TARGET_CONFIG_POSTCONDITION_MISSING";
     public const string CapabilityDisabled = "CAPABILITY_DISABLED";
     public const string OperatorLocked = "OPERATOR_LOCKED";
     public const string XaeCloseConsentRequired =

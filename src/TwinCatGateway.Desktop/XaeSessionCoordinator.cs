@@ -43,6 +43,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly SourceManifestStore _sourceManifests;
     private readonly XaeCloseConsentStore _xaeCloseConsent;
     private readonly CapabilitySnapshotStore _capabilitySnapshots;
+    private readonly TargetOperationService _targetOperations = new();
     private readonly XaeSession _session = new();
     private readonly TcUnitRunExecutor _tcUnit;
     private readonly SemaphoreSlim _wakeSignal = new(0, 1);
@@ -1172,6 +1173,138 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ObservedRuntimeMode = runtime.Status.Mode,
             TransitionRequested = transitionRequested,
         };
+    }
+
+    public Task<TargetConfigResult> ExecuteTargetConfigAsync(
+        string operationId,
+        TargetConfigParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        EnsureProfileIdentity(
+            parameters.Profile,
+            "target.config.preflight");
+        _capabilities.EnsureAllowed(
+            _profile,
+            CapabilityKey.TargetConfig,
+            "target.config.preflight");
+        OperationCapabilityGuard capabilityGuard = new(
+            _capabilities,
+            _profile,
+            CapabilityKey.TargetConfig);
+        return _targetOperations.ExecuteConfigAsync(
+            operationId,
+            _profile,
+            capabilityGuard,
+            ReadDirectTargetObservationAsync,
+            ReadTargetFaultEvidenceAsync,
+            (timeout, commandCancellation) =>
+                ExecuteTargetConfigCommandAsync(
+                    operationId,
+                    timeout,
+                    commandCancellation),
+            TimeSpan.FromSeconds(120),
+            cancellationToken);
+    }
+
+    private Task<TargetSystemObservation>
+        ReadDirectTargetObservationAsync(
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ResolvedTargetProfile target = _profile.Target
+            ?? throw new GatewayOperationException(
+                ErrorCodes.TargetNotConfigured,
+                $"Profile '{_profile.Name}' has no configured Target System.",
+                stage: "target.observe",
+                component: GatewayComponent.Target,
+                sideEffectsStarted: false);
+        AdsStateReadResult read = AdsStateReader.Read(
+            target.AmsNetId,
+            timeout);
+        return Task.FromResult(new TargetSystemObservation
+        {
+            Source = ObservationSource.SystemService,
+            Profile = _profile.Name,
+            AmsNetId = target.AmsNetId,
+            Port = AdsStateReader.SystemServicePort,
+            RawAdsState = read.RawAdsState,
+            RawAdsStateName = read.RawAdsStateName,
+            RawDeviceState = read.RawDeviceState,
+            State = read.RawAdsState.HasValue
+                ? AdsStateMapper.MapSystemService(
+                    read.RawAdsState.Value)
+                : TargetSystemState.Unknown,
+            ObservedAtUtc = read.ObservedAtUtc,
+            Freshness = read.Succeeded
+                ? ObservationFreshness.Fresh
+                : ObservationFreshness.Unavailable,
+            Error = read.Error,
+        });
+    }
+
+    private async Task<XaeMessagesResult?>
+        ReadTargetFaultEvidenceAsync(
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+    {
+        XaeSessionSnapshot snapshot =
+            await _session.VerifyAttachedAsync(
+                _profile.Xae.Solution,
+                timeout,
+                cancellationToken).ConfigureAwait(false);
+        IReadOnlyList<BuildDiagnostic> messages =
+            await _session.ReadErrorListAsync(
+                timeout,
+                cancellationToken).ConfigureAwait(false);
+        BuildDiagnostic[] selected = messages
+            .Where(message =>
+                message.Severity == DiagnosticSeverity.Error
+                || message.Severity == DiagnosticSeverity.Warning)
+            .ToArray();
+        return new XaeMessagesResult
+        {
+            Solution = snapshot.SelectedInstance?.Solution
+                ?? _profile.Xae.Solution,
+            ReadAtUtc = DateTimeOffset.UtcNow,
+            Counts = new DiagnosticCounts
+            {
+                Errors = selected.Count(message =>
+                    message.Severity == DiagnosticSeverity.Error),
+                Warnings = selected.Count(message =>
+                    message.Severity == DiagnosticSeverity.Warning),
+            },
+            Messages = selected
+                .Take(50)
+                .Select(CloneBuildDiagnostic)
+                .ToList(),
+            MoreMessages = Math.Max(0, selected.Length - 50),
+        };
+    }
+
+    private async Task ExecuteTargetConfigCommandAsync(
+        string operationId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        string expectedAmsNetId = _profile.Target?.AmsNetId
+            ?? throw new GatewayOperationException(
+                ErrorCodes.TargetNotConfigured,
+                $"Profile '{_profile.Name}' has no configured Target System.",
+                stage: "target.config.command",
+                component: GatewayComponent.Target,
+                sideEffectsStarted: false);
+        using XaeDialogOperationScope dialogScope =
+            _session.BeginDialogOperation(
+                operationId,
+                "targetConfig",
+                "target.config.command");
+        await dialogScope.ObserveAsync(
+            _session.RequestTargetConfigAsync(
+                _profile.Xae.Solution,
+                expectedAmsNetId,
+                timeout,
+                cancellationToken)).ConfigureAwait(false);
     }
 
     public TcUnitRunPreparation PrepareTcUnitRun(
