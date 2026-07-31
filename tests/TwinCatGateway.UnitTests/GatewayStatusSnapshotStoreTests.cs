@@ -11,81 +11,33 @@ public sealed class GatewayStatusSnapshotStoreTests
     [Fact]
     public void ReturnedSnapshotCannotMutatePublishedState()
     {
-        GatewayStatusResult initial =
+        GatewayStateSnapshot initial =
             GatewayStatusSnapshotStore.CreateInitial("0.1.0");
-        initial.Gateway.State = GatewayState.Ready;
-        initial.Gateway.Ready = true;
-        initial.Gateway.ConfigurationPath =
+        initial.State = GatewayProcessState.Ready;
+        initial.ConfigurationPath =
             @"C:\Project\twincat-gateway.json";
-        initial.Gateway.ActiveProfile = "fixture";
-        initial.Gateway.SolutionPath =
-            @"C:\TwinCAT\Fixture.sln";
-        initial.Gateway.LaunchSource =
-            GatewayLaunchSource.Agent;
-        initial.Gateway.UiMode = GatewayUiMode.Tray;
-        initial.Xae.Connected = true;
-        initial.Xae.AgentWorkspaceOwned = true;
-        initial.Xae.DiscardedDocumentCount = 3;
-        initial.TwinCat.SystemMode = RuntimeMode.Run;
-        initial.TwinCat.Alert = new RuntimeAlert
+        initial.ActiveProfile = "fixture";
+        initial.CurrentOperationId = "operation-1";
+        initial.Error = new ObservationError
         {
-            Code = "PLC_RUNTIME_EXCEPTION",
-            Severity = DiagnosticSeverity.Error,
-            Message = "PLC exception.",
-            RuntimeName = "PlcProject2",
-            AdsPort = 852,
-        };
-        initial.LastActivation = new ActivationSummary
-        {
-            Ok = true,
-            OperationId = "activation-1",
-            Profile = "bench",
-            Target = new TargetIdentity
-            {
-                Name = "target",
-                AmsNetId = "1.2.3.4.1.1",
-            },
+            Code = "GATEWAY_FAULT",
+            Message = "Gateway fault.",
         };
         GatewayStatusSnapshotStore store = new(initial);
 
-        GatewayStatusResult first = store.Read();
-        first.Gateway.State = GatewayState.Faulted;
-        first.Xae.Connected = false;
-        first.Xae.AgentWorkspaceOwned = false;
-        first.Xae.DiscardedDocumentCount = 0;
-        Assert.IsType<RuntimeAlert>(
-            first.TwinCat.Alert).Code = "mutated";
-        Assert.IsType<ActivationSummary>(first.LastActivation).Target.Name = "mutated";
+        GatewayStateSnapshot first = store.Read();
+        first.State = GatewayProcessState.Faulted;
+        Assert.IsType<ObservationError>(first.Error).Code = "mutated";
 
-        GatewayStatusResult second = store.Read();
+        GatewayStateSnapshot second = store.Read();
 
-        Assert.Equal(GatewayState.Ready, second.Gateway.State);
-        Assert.True(second.Gateway.Ready);
+        Assert.Equal(GatewayProcessState.Ready, second.State);
         Assert.Equal(
             @"C:\Project\twincat-gateway.json",
-            second.Gateway.ConfigurationPath);
-        Assert.Equal(
-            "fixture",
-            second.Gateway.ActiveProfile);
-        Assert.Equal(
-            @"C:\TwinCAT\Fixture.sln",
-            second.Gateway.SolutionPath);
-        Assert.Equal(
-            GatewayLaunchSource.Agent,
-            second.Gateway.LaunchSource);
-        Assert.Equal(
-            GatewayUiMode.Tray,
-            second.Gateway.UiMode);
-        Assert.True(second.Xae.Connected);
-        Assert.True(second.Xae.AgentWorkspaceOwned);
-        Assert.Equal(3, second.Xae.DiscardedDocumentCount);
-        Assert.Equal(
-            RuntimeMode.Run,
-            second.TwinCat.SystemMode);
-        Assert.Equal(
-            "PLC_RUNTIME_EXCEPTION",
-            second.TwinCat.Alert?.Code);
-        Assert.Equal("target", second.LastActivation?.Target.Name);
+            second.ConfigurationPath);
+        Assert.Equal("fixture", second.ActiveProfile);
+        Assert.Equal("operation-1", second.CurrentOperationId);
+        Assert.Equal("GATEWAY_FAULT", second.Error?.Code);
     }
 
     [Fact]
@@ -101,58 +53,58 @@ public sealed class GatewayStatusSnapshotStoreTests
             {
                 updateStarted.SetResult(true);
                 releaseUpdate.Task.GetAwaiter().GetResult();
-                current.Gateway.State = GatewayState.Ready;
+                current.State = GatewayProcessState.Ready;
                 return current;
             }));
 
         await updateStarted.Task;
-        Task<GatewayStatusResult> read = Task.Run(store.Read);
+        Task<GatewayStateSnapshot> read = Task.Run(store.Read);
         Task completed = await Task.WhenAny(read, Task.Delay(TimeSpan.FromSeconds(1)));
         releaseUpdate.SetResult(true);
         await writer;
 
         Assert.Same(read, completed);
-        Assert.Equal(GatewayState.Starting, (await read).Gateway.State);
-        Assert.Equal(GatewayState.Ready, store.Read().Gateway.State);
+        Assert.Equal(GatewayProcessState.Starting, (await read).State);
+        Assert.Equal(GatewayProcessState.Ready, store.Read().State);
     }
 
     [Fact]
     public async Task ReadersObserveOnlyWholeSnapshots()
     {
-        GatewayStatusSnapshotStore store = new(CreateStatus(GatewayState.Ready, true));
+        GatewayStatusSnapshotStore store = new(CreateStatus(GatewayProcessState.Ready, "ready"));
 
         Task writer = Task.Run(() =>
         {
             for (int index = 0; index < 1000; index++)
             {
                 store.Replace(index % 2 == 0
-                    ? CreateStatus(GatewayState.Ready, true)
-                    : CreateStatus(GatewayState.Disconnected, false));
+                    ? CreateStatus(GatewayProcessState.Ready, "ready")
+                    : CreateStatus(GatewayProcessState.Unavailable, "unavailable"));
             }
         });
 
         for (int index = 0; index < 1000; index++)
         {
-            GatewayStatusResult snapshot = store.Read();
+            GatewayStateSnapshot snapshot = store.Read();
             bool consistent =
-                (snapshot.Gateway.State == GatewayState.Ready
-                    && snapshot.Xae.Connected)
-                || (snapshot.Gateway.State == GatewayState.Disconnected
-                    && !snapshot.Xae.Connected);
+                (snapshot.State == GatewayProcessState.Ready
+                    && snapshot.ActiveProfile == "ready")
+                || (snapshot.State == GatewayProcessState.Unavailable
+                    && snapshot.ActiveProfile == "unavailable");
             Assert.True(consistent);
         }
 
         await writer;
     }
 
-    private static GatewayStatusResult CreateStatus(
-        GatewayState state,
-        bool connected)
+    private static GatewayStateSnapshot CreateStatus(
+        GatewayProcessState state,
+        string activeProfile)
     {
-        GatewayStatusResult status =
+        GatewayStateSnapshot status =
             GatewayStatusSnapshotStore.CreateInitial("0.1.0");
-        status.Gateway.State = state;
-        status.Xae.Connected = connected;
+        status.State = state;
+        status.ActiveProfile = activeProfile;
         return status;
     }
 

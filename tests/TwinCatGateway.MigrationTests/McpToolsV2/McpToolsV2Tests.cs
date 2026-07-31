@@ -1,7 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
+using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using TwinCatGateway.Contracts;
@@ -12,6 +16,9 @@ namespace TwinCatGateway.McpToolsV2MigrationTests;
 
 public sealed class McpToolsV2Tests
 {
+    private static readonly string[] StdioArguments =
+        { "--pipe", "s9-schema-test-no-gateway" };
+
     [Fact]
     public void ToolSurfaceContainsOnlyExactV2NamesAndTypedSchemas()
     {
@@ -90,5 +97,37 @@ public sealed class McpToolsV2Tests
         Assert.Equal("twincat-operation://op-123/build", link.Uri);
         Assert.Equal("text/plain", link.MimeType);
         Assert.False(result.IsError);
+    }
+
+    [Fact]
+    public async Task StdioAdvertisesOnlyCatalogSurfaceAndProtocolOnStdout()
+    {
+        string serverExecutable = Path.ChangeExtension(
+            typeof(TwinCatTools).Assembly.Location,
+            ".exe");
+        StdioClientTransport transport = new(new StdioClientTransportOptions
+        {
+            Command = serverExecutable,
+            Arguments = StdioArguments,
+            Name = "TwinCAT Gateway S9 stdio smoke",
+            ShutdownTimeout = TimeSpan.FromSeconds(5),
+        });
+        using CancellationTokenSource timeout = new(TimeSpan.FromSeconds(15));
+        await using var client = await McpClient.CreateAsync(
+            transport,
+            cancellationToken: timeout.Token);
+
+        var tools = await client.ListToolsAsync(cancellationToken: timeout.Token);
+        var templates = await client.ListResourceTemplatesAsync(cancellationToken: timeout.Token);
+        var resources = await client.ListResourcesAsync(cancellationToken: timeout.Token);
+
+        Assert.Equal(
+            GatewayMcpCatalog.Tools.Select(item => item.Name).OrderBy(item => item),
+            tools.Select(item => item.Name).OrderBy(item => item));
+        Assert.Equal(
+            GatewayMcpCatalog.Resources.Select(item => item.UriTemplate).OrderBy(item => item),
+            templates.Select(item => item.UriTemplate)
+                .Concat(resources.Select(item => item.Uri))
+                .OrderBy(item => item));
     }
 }
