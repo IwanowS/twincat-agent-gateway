@@ -282,6 +282,87 @@ public sealed class V2ContractSerializationTests
     }
 
     [Fact]
+    public void XaeBuildRequestDefaultsToPlcScope()
+    {
+        XaeBuildParameters source = new()
+        {
+            Profile = "bench",
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        XaeBuildParameters? result =
+            JsonSerializer.Deserialize<XaeBuildParameters>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(BuildAction.Rebuild, result.Action);
+        Assert.Equal(XaeBuildScope.Plc, result.Scope);
+        Assert.Null(result.Project);
+        Assert.DoesNotContain("configuration", json);
+        Assert.DoesNotContain("platform", json);
+        Assert.DoesNotContain("discardDirtyDocuments", json);
+        Assert.DoesNotContain("timeoutSeconds", json);
+    }
+
+    [Fact]
+    public void XaeBuildResultPreservesResolvedProjectIdentity()
+    {
+        XaeBuildResult source = new()
+        {
+            Ok = true,
+            OperationId = "build-1",
+            Action = BuildAction.Build,
+            Scope = XaeBuildScope.Plc,
+            Project = "MachinePlc",
+            Counts = new DiagnosticCounts
+            {
+                Errors = 0,
+                Warnings = 1,
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        XaeBuildResult? result =
+            JsonSerializer.Deserialize<XaeBuildResult>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(XaeBuildScope.Plc, result.Scope);
+        Assert.Equal("MachinePlc", result.Project);
+        Assert.Equal(1, result.Counts.Warnings);
+        Assert.Contains("\"scope\":\"plc\"", json);
+    }
+
+    [Fact]
+    public void XaeBuildSolutionScopeKeepsProjectNull()
+    {
+        XaeBuildParameters source = new()
+        {
+            Profile = "bench",
+            Action = BuildAction.Clean,
+            Scope = XaeBuildScope.Solution,
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        XaeBuildParameters? result =
+            JsonSerializer.Deserialize<XaeBuildParameters>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(XaeBuildScope.Solution, result.Scope);
+        Assert.Null(result.Project);
+    }
+
+    [Fact]
     public void OperationEnvelopePreservesStructuredFailureEvidence()
     {
         OperationResult<object> source = new()

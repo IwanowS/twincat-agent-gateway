@@ -9,6 +9,12 @@ public enum BuildAction
     Clean,
 }
 
+public enum XaeBuildScope
+{
+    Plc,
+    Solution,
+}
+
 public enum ProjectChangeClassification
 {
     ExpectedGeneratedArtifact,
@@ -18,23 +24,19 @@ public enum ProjectChangeClassification
     Unknown,
 }
 
-public sealed class BuildParameters
+public sealed class XaeBuildParameters
 {
     public string Profile { get; set; } = string.Empty;
 
     public BuildAction Action { get; set; } = BuildAction.Rebuild;
 
-    public string? Configuration { get; set; }
+    public XaeBuildScope Scope { get; set; } = XaeBuildScope.Plc;
 
-    public string? Platform { get; set; }
+    public string? Project { get; set; }
 
     public List<string> ChangedPaths { get; set; } = new();
 
-    public bool DiscardDirtyDocuments { get; set; }
-
     public DetailLevel Detail { get; set; } = DetailLevel.Compact;
-
-    public int? TimeoutSeconds { get; set; }
 }
 
 public enum SynchronizationScope
@@ -112,13 +114,17 @@ public sealed class ProjectChangeSummary
     public ResourceReference? Details { get; set; }
 }
 
-public sealed class BuildResult
+public sealed class XaeBuildResult
 {
     public bool Ok { get; set; }
 
     public string OperationId { get; set; } = string.Empty;
 
     public BuildAction Action { get; set; }
+
+    public XaeBuildScope Scope { get; set; } = XaeBuildScope.Plc;
+
+    public string? Project { get; set; }
 
     public long DurationMs { get; set; }
 
@@ -135,13 +141,17 @@ public sealed class BuildResult
     public ResourceReference? Log { get; set; }
 }
 
-public sealed class BuildSummary
+public sealed class XaeBuildSummary
 {
     public bool Ok { get; set; }
 
     public string OperationId { get; set; } = string.Empty;
 
     public BuildAction Action { get; set; }
+
+    public XaeBuildScope Scope { get; set; } = XaeBuildScope.Plc;
+
+    public string? Project { get; set; }
 
     public int Errors { get; set; }
 

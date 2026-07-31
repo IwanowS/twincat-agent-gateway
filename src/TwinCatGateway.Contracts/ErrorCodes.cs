@@ -58,8 +58,10 @@ public static class ErrorCodes
     public const string ComCallRejected = "COM_CALL_REJECTED";
     public const string ComCallTimeout = "COM_CALL_TIMEOUT";
     public const string BuildFailed = "BUILD_FAILED";
-    public const string BuildBlockedByRuntimeException =
-        "BUILD_BLOCKED_BY_RUNTIME_EXCEPTION";
+    public const string BuildProjectNotFound =
+        "BUILD_PROJECT_NOT_FOUND";
+    public const string BuildProjectAmbiguous =
+        "BUILD_PROJECT_AMBIGUOUS";
     public const string BuildConfigurationNotFound =
         "BUILD_CONFIGURATION_NOT_FOUND";
     public const string BuildConfigurationAmbiguous =
@@ -89,8 +91,6 @@ public static class ErrorCodes
     public const string ActivationNotAllowed = "ACTIVATION_NOT_ALLOWED";
     public const string ActivationTargetMismatch =
         "ACTIVATION_TARGET_MISMATCH";
-    public const string RecentBuildRequired =
-        "RECENT_BUILD_REQUIRED";
     public const string ConfigModeRequired = "CONFIG_MODE_REQUIRED";
     public const string ConfigModeRecoveryFailed =
         "CONFIG_MODE_RECOVERY_FAILED";
