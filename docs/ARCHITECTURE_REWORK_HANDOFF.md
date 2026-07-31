@@ -433,3 +433,17 @@ deferred by operator direction. The operator must still undo/discard the
 deliberate unsaved `MAIN*` edit before further clean/synchronization gates.
 The user-owned `twincat-gateway.json` and `.session/` remain unstaged. XAE and
 checkout Gateway are intentionally left open and attached.
+
+The operator then undid the deliberate edit and closed only the `MAIN` editor
+without saving when XAE retained its dirty marker. The disk file remained Git
+clean with the original SHA-256 above. Exact synchronization operation
+`1825f5da6c2d46c8aef06b2b595a5d72` succeeded with no discarded documents;
+v2 XAE state returned `synchronizationState=confirmed`, an empty
+`dirtyDocuments` array, and a confirmed ten-file source graph.
+
+A final compile-only `PlcProject2` Build succeeded as operation
+`7a7a392aa93543fd832ebf3a3fadf5c3` with zero errors/warnings. Postconditions
+retained the exact attached XAE identity, no dialogs or dirty documents, and a
+fresh direct Target Run. The fixture tree stayed Git clean and this attempt
+did not produce a real `.tsproj` noise occurrence, so that observational gate
+remains pending rather than being replaced with synthetic evidence.
