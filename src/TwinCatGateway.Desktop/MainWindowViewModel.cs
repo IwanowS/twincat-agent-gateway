@@ -56,7 +56,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         BuildAction.Rebuild;
     private bool _canStartOperation;
     private bool _canActivate;
-    private bool _canRecoverToConfig;
+    private bool _canConfigTarget;
     private bool _canSynchronize;
     private bool _canReconnect;
     private bool _isVerboseEvents;
@@ -232,11 +232,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         private set => SetField(ref _canActivate, value);
     }
 
-    public bool CanRecoverToConfig
+    public bool CanConfigTarget
     {
-        get => _canRecoverToConfig;
+        get => _canConfigTarget;
         private set =>
-            SetField(ref _canRecoverToConfig, value);
+            SetField(ref _canConfigTarget, value);
     }
 
     public bool CanSynchronize
@@ -302,20 +302,20 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public string RecoveryConfirmation
+    public string TargetConfigConfirmation
     {
         get
         {
             ResolvedProfile? profile = _host.ActiveProfile;
             string target = FormatTarget(
                 profile?.Target);
-            return "Restart the configured remote TwinCAT runtime "
-                + "in Config Mode?\n\n"
+            return "Transition the configured remote TwinCAT Target "
+                + "to Config?\n\n"
                 + $"Profile: {profile?.Name ?? "unknown"}\n"
                 + $"Target: {target}\n"
-                + $"Current runtime state: {_runtimeMode}\n\n"
-                + "This is an explicit state-changing recovery "
-                + "operation. It does not activate a configuration.";
+                + $"Current observed state: {_runtimeMode}\n\n"
+                + "This is an explicit Target state change. If the "
+                + "Target is already in Config, no command is sent.";
         }
     }
 
@@ -349,7 +349,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             CanStartOperation = false;
             CanSynchronize = false;
             CanActivate = false;
-            CanRecoverToConfig = false;
+            CanConfigTarget = false;
             CanReconnect = _host.CanReconnectXae;
         }
     }
@@ -411,22 +411,21 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return accepted;
     }
 
-    public OperationAccepted StartRecoverToConfig()
+    public OperationAccepted StartTargetConfig()
     {
         ResolvedProfile profile =
             RequireActiveProfile();
         _host.Capabilities.EnsureAllowed(
             profile,
             CapabilityKey.TargetConfig,
-            "ui.recovery.admission");
+            "ui.target.config.admission");
 
         EnsureNoActiveOperation();
         OperationAccepted accepted =
-            _host.ApplicationService.StartRecoverToConfig(
-                new RecoverToConfigParameters
+            _host.ApplicationService.StartTargetConfig(
+                new TargetConfigParameters
                 {
                     Profile = profile.Name,
-                    TimeoutSeconds = 60,
                 });
         Refresh();
         return accepted;
@@ -471,7 +470,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             && _host.Capabilities.Evaluate(
                 profile,
                 CapabilityKey.XaeActivate).Effective;
-        bool recoveryAllowed = profile is not null
+        bool targetConfigAllowed = profile is not null
             && _host.Capabilities.Evaluate(
                 profile,
                 CapabilityKey.TargetConfig).Effective;
@@ -515,12 +514,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         CanActivate =
             CanStartOperation
             && activationAllowed;
-        CanRecoverToConfig =
-            IsRecoveryAvailable(
+        CanConfigTarget =
+            IsTargetConfigAvailable(
                 operationActive,
                 status.Xae.Connected,
-                recoveryAllowed,
-                status.TwinCat.Mode);
+                targetConfigAllowed);
         CanReconnect =
             !operationActive
             && _host.CanReconnectXae;
@@ -893,17 +891,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                     StringComparison.Ordinal));
     }
 
-    internal static bool IsRecoveryAvailable(
+    internal static bool IsTargetConfigAvailable(
         bool operationActive,
         bool xaeConnected,
-        bool recoveryAllowed,
-        RuntimeMode runtimeMode)
+        bool targetConfigAllowed)
     {
         return !operationActive
             && xaeConnected
-            && recoveryAllowed
-            && runtimeMode != RuntimeMode.Unknown
-            && runtimeMode != RuntimeMode.Config;
+            && targetConfigAllowed;
     }
 
     private ResolvedProfile RequireActiveProfile()

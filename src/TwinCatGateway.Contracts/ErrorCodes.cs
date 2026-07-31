@@ -102,10 +102,6 @@ public static class ErrorCodes
     public const string ActivationTargetMismatch =
         "ACTIVATION_TARGET_MISMATCH";
     public const string ConfigModeRequired = "CONFIG_MODE_REQUIRED";
-    public const string ConfigModeRecoveryFailed =
-        "CONFIG_MODE_RECOVERY_FAILED";
-    public const string RuntimeRecoveryRequired =
-        "RUNTIME_RECOVERY_REQUIRED";
     public const string ActivateConfigurationFailed = "ACTIVATE_CONFIGURATION_FAILED";
     public const string ActivationDialogDetected =
         "ACTIVATION_DIALOG_DETECTED";

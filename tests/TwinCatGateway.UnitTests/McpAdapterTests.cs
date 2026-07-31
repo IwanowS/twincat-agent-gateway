@@ -29,7 +29,6 @@ public sealed class McpAdapterTests
         "twincat_get_diagnostics",
         "twincat_get_test_results",
         "twincat_get_xae_messages",
-        "twincat_recover_to_config",
         "twincat_status",
         "twincat_sync",
     };
@@ -169,15 +168,6 @@ public sealed class McpAdapterTests
         Assert.True(closeXae.Destructive);
         Assert.False(closeXae.ReadOnly);
         Assert.False(closeXae.Idempotent);
-        McpServerToolAttribute recovery =
-            Assert.Single(
-                attributes,
-                attribute =>
-                    attribute.Name
-                    == "twincat_recover_to_config");
-        Assert.True(recovery.Destructive);
-        Assert.True(recovery.Idempotent);
-        Assert.False(recovery.ReadOnly);
         McpServerToolAttribute xaeMessages =
             Assert.Single(
                 attributes,

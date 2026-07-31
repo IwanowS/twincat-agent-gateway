@@ -368,7 +368,7 @@
                 <Button MinWidth="92"
                         Margin="6,0,0,0"
                         Padding="12,7"
-                        IsEnabled="{Binding CanRecoverToConfig}"
+                        IsEnabled="{Binding CanConfigTarget}"
                         Click="ConfigModeButton_Click"
                         Content="Config…" />
                 <Button MinWidth="104"

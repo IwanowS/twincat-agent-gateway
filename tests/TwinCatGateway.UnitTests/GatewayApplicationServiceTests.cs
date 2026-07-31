@@ -658,181 +658,6 @@ public sealed class GatewayApplicationServiceTests
     }
 
     [Fact]
-    public void RuntimeExceptionPrecedesRecentBuildValidation()
-    {
-        ProjectProfile profile = CreateActivationProfile();
-        using ServiceFixture fixture = new(
-            activationExecutor: SuccessfulActivation,
-            activeProfile: profile);
-        fixture.Status.Update(status =>
-        {
-            status.TwinCat.Mode = RuntimeMode.Exception;
-            status.TwinCat.SystemMode = RuntimeMode.Exception;
-            return status;
-        });
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.StartActivation(
-                    new ActivateParameters
-                    {
-                        Profile = profile.Name,
-                    }));
-
-        Assert.Equal(
-            ErrorCodes.RuntimeRecoveryRequired,
-            exception.Code);
-        Assert.Equal(
-            "activation.runtimePreflight",
-            exception.Stage);
-        Assert.Empty(fixture.Operations.GetRecent(10));
-    }
-
-    [Fact]
-    public async Task RecoveryIsExplicitAndDoesNotRequireRecentBuild()
-    {
-        ProjectProfile profile = CreateActivationProfile();
-        using ServiceFixture fixture = new(
-            activeProfile: profile,
-            recoveryExecutor: (
-                operationId,
-                parameters,
-                cancellationToken) =>
-                Task.FromResult(
-                    new RecoverToConfigResult
-                    {
-                        Ok = true,
-                        Profile = parameters.Profile,
-                        InitialRuntimeMode =
-                            RuntimeMode.Exception,
-                        ObservedRuntimeMode =
-                            RuntimeMode.Config,
-                        TransitionRequested = true,
-                    }));
-        fixture.Status.Update(status =>
-        {
-            status.Xae.Connected = true;
-            status.Gateway.State = GatewayState.Ready;
-            return status;
-        });
-
-        OperationAccepted accepted =
-            fixture.Service.StartRecoverToConfig(
-                new RecoverToConfigParameters
-                {
-                    Profile = profile.Name,
-                    TimeoutSeconds = 10,
-                });
-        StoredOperation completed = await WaitForStateAsync(
-            fixture.Operations,
-            accepted.OperationId,
-            OperationState.Succeeded);
-
-        RecoverToConfigResult result =
-            Assert.IsType<RecoverToConfigResult>(
-                completed.Result);
-        Assert.True(result.TransitionRequested);
-        Assert.Equal(
-            RuntimeMode.Config,
-            result.ObservedRuntimeMode);
-        Assert.Equal(
-            new[]
-            {
-                GatewayEventTypes.RecoveryQueued,
-                GatewayEventTypes.RecoveryStarted,
-                GatewayEventTypes.RecoverySucceeded,
-            },
-            fixture.Events
-                .ReadAfter(null, 0, 100)
-                .Events
-                .Where(gatewayEvent =>
-                    gatewayEvent.OperationId
-                    == accepted.OperationId)
-                .Select(gatewayEvent =>
-                    gatewayEvent.Type));
-        Assert.Equal(
-            GatewayState.Ready,
-            fixture.Service.GetStatus().Gateway.State);
-    }
-
-    [Fact]
-    public void RecoveryFailsClosedWhenProfileDisablesActivation()
-    {
-        ProjectProfile profile = CreateActivationProfile();
-        profile.AllowActivation = false;
-        using ServiceFixture fixture = new(
-            activeProfile: profile,
-            recoveryExecutor: (
-                operationId,
-                parameters,
-                cancellationToken) =>
-                Task.FromResult(
-                    new RecoverToConfigResult
-                    {
-                        Ok = true,
-                    }));
-
-        GatewayOperationException exception =
-            Assert.Throws<GatewayOperationException>(
-                () => fixture.Service.StartRecoverToConfig(
-                    new RecoverToConfigParameters
-                    {
-                        Profile = profile.Name,
-                    }));
-
-        Assert.Equal(
-            ErrorCodes.ActivationNotAllowed,
-            exception.Code);
-        Assert.Empty(fixture.Operations.GetRecent(10));
-    }
-
-    [Fact]
-    public async Task RecoveryTimeoutUsesRecoveryLifecycle()
-    {
-        ProjectProfile profile = CreateActivationProfile();
-        using ServiceFixture fixture = new(
-            activeProfile: profile,
-            recoveryExecutor: async (
-                operationId,
-                parameters,
-                cancellationToken) =>
-            {
-                await Task.Delay(
-                    Timeout.InfiniteTimeSpan,
-                    cancellationToken);
-                return new RecoverToConfigResult
-                {
-                    Ok = true,
-                };
-            });
-
-        OperationAccepted accepted =
-            fixture.Service.StartRecoverToConfig(
-                new RecoverToConfigParameters
-                {
-                    Profile = profile.Name,
-                    TimeoutSeconds = 1,
-                });
-        StoredOperation completed = await WaitForStateAsync(
-            fixture.Operations,
-            accepted.OperationId,
-            OperationState.TimedOut);
-
-        Assert.Equal(
-            ErrorCodes.OperationTimeout,
-            completed.Summary.Error?.Code);
-        Assert.Equal(
-            GatewayEventTypes.RecoveryTimedOut,
-            fixture.Events
-                .ReadAfter(null, 0, 100)
-                .Events
-                .Last(gatewayEvent =>
-                    gatewayEvent.OperationId
-                    == accepted.OperationId)
-                .Type);
-    }
-
-    [Fact]
     public async Task ActivationCompileFailureIsNotActivated()
     {
         DateTimeOffset now = new(
@@ -1306,7 +1131,6 @@ public sealed class GatewayApplicationServiceTests
                 tcUnitPreparationExecutor = null,
             TcUnitOperationExecutor? tcUnitExecutor = null,
             SynchronizeOperationExecutor? synchronizeExecutor = null,
-            RecoveryOperationExecutor? recoveryExecutor = null,
             XaeMessagesProvider? xaeMessagesProvider = null,
             Func<string?>? currentLogPathProvider = null,
             CloseXaeOperationExecutor? closeXaeExecutor = null)
@@ -1332,18 +1156,17 @@ public sealed class GatewayApplicationServiceTests
                 Queue,
                 Logs,
                 Events,
-                diagnosticsProvider,
-                xaeBuildExecutor,
-                activationExecutor,
-                activeProfile,
-                clock,
-                tcUnitPreparationExecutor,
-                tcUnitExecutor,
-                synchronizeExecutor,
-                recoveryExecutor,
-                xaeMessagesProvider,
-                currentLogPathProvider,
-                closeXaeExecutor);
+                diagnosticsProvider: diagnosticsProvider,
+                xaeBuildExecutor: xaeBuildExecutor,
+                activationExecutor: activationExecutor,
+                activeProfile: activeProfile,
+                clock: clock,
+                tcUnitPreparationExecutor: tcUnitPreparationExecutor,
+                tcUnitExecutor: tcUnitExecutor,
+                synchronizeExecutor: synchronizeExecutor,
+                xaeMessagesProvider: xaeMessagesProvider,
+                currentLogPathProvider: currentLogPathProvider,
+                closeXaeExecutor: closeXaeExecutor);
         }
 
         public GatewayStatusSnapshotStore Status { get; }

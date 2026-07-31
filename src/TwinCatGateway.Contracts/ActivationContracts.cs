@@ -42,8 +42,6 @@ public sealed class ActivationResult
 
     public TargetIdentity Target { get; set; } = new();
 
-    public bool RecoveryAttempted { get; set; }
-
     public bool RunAfterActivation { get; set; }
 
     public ActivationCompletion Completion { get; set; }

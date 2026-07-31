@@ -18,11 +18,6 @@ public delegate Task<ActivationResult> ActivationOperationExecutor(
     ActivateParameters parameters,
     CancellationToken cancellationToken);
 
-public delegate Task<RecoverToConfigResult> RecoveryOperationExecutor(
-    string operationId,
-    RecoverToConfigParameters parameters,
-    CancellationToken cancellationToken);
-
 public delegate Task<TargetConfigResult> TargetConfigOperationExecutor(
     string operationId,
     TargetConfigParameters parameters,
@@ -61,7 +56,6 @@ public sealed class GatewayApplicationService
     private readonly ActivationOperationExecutor? _activationExecutor;
     private readonly SynchronizeOperationExecutor? _synchronizeExecutor;
     private readonly CloseXaeOperationExecutor? _closeXaeExecutor;
-    private readonly RecoveryOperationExecutor? _recoveryExecutor;
     private readonly TargetConfigOperationExecutor? _targetConfigExecutor;
     private readonly TargetStartRestartOperationExecutor?
         _targetStartRestartExecutor;
@@ -100,7 +94,6 @@ public sealed class GatewayApplicationService
             tcUnitPreparationExecutor = null,
         TcUnitOperationExecutor? tcUnitExecutor = null,
         SynchronizeOperationExecutor? synchronizeExecutor = null,
-        RecoveryOperationExecutor? recoveryExecutor = null,
         TargetConfigOperationExecutor? targetConfigExecutor = null,
         TargetStartRestartOperationExecutor?
             targetStartRestartExecutor = null,
@@ -128,7 +121,6 @@ public sealed class GatewayApplicationService
         _activationExecutor = activationExecutor;
         _synchronizeExecutor = synchronizeExecutor;
         _closeXaeExecutor = closeXaeExecutor;
-        _recoveryExecutor = recoveryExecutor;
         _targetConfigExecutor = targetConfigExecutor;
         _targetStartRestartExecutor = targetStartRestartExecutor;
         _xaeMessagesProvider = xaeMessagesProvider;
@@ -437,11 +429,6 @@ public sealed class GatewayApplicationService
                 CapabilityKey.TargetTcUnitVerification);
         }
 
-        TwinCatStatus runtimeStatus =
-            _status.Read().TwinCat;
-        RuntimeOperationPolicy.EnsureActivationAllowed(
-            runtimeStatus.Mode,
-            details: runtimeStatus.Alert?.Details);
         ActivateParameters captured =
             CloneActivateParameters(parameters);
         TimeSpan timeout = TimeSpan.FromSeconds(
@@ -456,65 +443,6 @@ public sealed class GatewayApplicationService
                     verificationGuard,
                     cancellationToken),
             timeout);
-    }
-
-    public OperationAccepted StartRecoverToConfig(
-        RecoverToConfigParameters parameters)
-    {
-        if (parameters is null)
-        {
-            throw new ArgumentNullException(nameof(parameters));
-        }
-
-        if (_recoveryExecutor is null)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.GatewayNotReady,
-                "The TwinCAT Config recovery executor is unavailable.",
-                retryable: true,
-                stage: "recovery.enqueue");
-        }
-
-        if (string.IsNullOrWhiteSpace(parameters.Profile))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.RequestInvalid,
-                "Runtime recovery requires an explicit profile name.",
-                stage: "recovery.validate");
-        }
-
-        ResolvedProfile profile =
-            RequirePreflight("recovery.admission").EnsureAllowed(
-            parameters.Profile,
-            CapabilityKey.TargetConfig,
-            "recovery.admission",
-            requireTarget: true);
-        OperationCapabilityGuard recoveryGuard = new(
-            _capabilities!,
-            profile,
-            CapabilityKey.TargetConfig);
-
-        if (parameters.TimeoutSeconds.HasValue
-            && parameters.TimeoutSeconds.Value <= 0)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.RequestInvalid,
-                "Recovery timeout must be positive.",
-                stage: "recovery.validate");
-        }
-
-        RecoverToConfigParameters captured =
-            CloneRecoverToConfigParameters(parameters);
-        return _queue.Enqueue(
-            OperationKind.RecoverToConfig,
-            (operationId, cancellationToken) =>
-                ExecuteRecoverToConfigAsync(
-                    operationId,
-                    captured,
-                    recoveryGuard,
-                    cancellationToken),
-            TimeSpan.FromSeconds(
-                captured.TimeoutSeconds ?? 120));
     }
 
     public OperationAccepted StartTargetConfig(
@@ -1264,53 +1192,6 @@ public sealed class GatewayApplicationService
     }
 
     private async Task<OperationExecutionResult>
-        ExecuteRecoverToConfigAsync(
-            string operationId,
-            RecoverToConfigParameters parameters,
-            OperationCapabilityGuard recoveryGuard,
-            CancellationToken cancellationToken)
-    {
-        DateTimeOffset startedAtUtc = _clock.UtcNow;
-        _status.Update(status =>
-        {
-            status.Gateway.State =
-                GatewayState.RecoveringToConfig;
-            status.CurrentOperation = new OperationSummary
-            {
-                OperationId = operationId,
-                Kind = OperationKind.RecoverToConfig,
-                State = OperationState.Running,
-                QueuedAtUtc = startedAtUtc,
-                StartedAtUtc = startedAtUtc,
-            };
-            return status;
-        });
-        try
-        {
-            recoveryGuard.EnsureAllowed(
-                "recovery.preSideEffect");
-            RecoverToConfigResult result =
-                await _recoveryExecutor!(
-                    operationId,
-                    parameters,
-                    cancellationToken).ConfigureAwait(false);
-            result.OperationId = operationId;
-            return OperationExecutionResult.Success(result);
-        }
-        finally
-        {
-            _status.Update(status =>
-            {
-                status.CurrentOperation = null;
-                status.Gateway.State = status.Xae.Connected
-                    ? GatewayState.Ready
-                    : GatewayState.Disconnected;
-                return status;
-            });
-        }
-    }
-
-    private async Task<OperationExecutionResult>
         ExecuteTargetConfigAsync(
             string operationId,
             TargetConfigParameters parameters,
@@ -1508,17 +1389,6 @@ public sealed class GatewayApplicationService
         return new CloseXaeParameters
         {
             SaveMode = source.SaveMode,
-            TimeoutSeconds = source.TimeoutSeconds,
-        };
-    }
-
-    private static RecoverToConfigParameters
-        CloneRecoverToConfigParameters(
-            RecoverToConfigParameters source)
-    {
-        return new RecoverToConfigParameters
-        {
-            Profile = source.Profile,
             TimeoutSeconds = source.TimeoutSeconds,
         };
     }

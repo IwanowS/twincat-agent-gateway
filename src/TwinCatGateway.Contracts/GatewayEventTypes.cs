@@ -102,12 +102,6 @@ public static class GatewayEventTypes
     public const string ActivationCancelled =
         "activation.cancelled";
 
-    public const string ActivationRecoveryStarted =
-        "activation.recoveryStarted";
-
-    public const string ActivationRecoverySucceeded =
-        "activation.recoverySucceeded";
-
     public const string ActivationConfigurationStarted =
         "activation.configurationStarted";
 
@@ -129,17 +123,35 @@ public static class GatewayEventTypes
     public const string ActivationRuntimeReady =
         "activation.runtimeReady";
 
-    public const string RecoveryQueued = "recovery.queued";
+    public const string TargetConfigQueued = "target.config.queued";
 
-    public const string RecoveryStarted = "recovery.started";
+    public const string TargetConfigStarted = "target.config.started";
 
-    public const string RecoverySucceeded = "recovery.succeeded";
+    public const string TargetConfigSucceeded = "target.config.succeeded";
 
-    public const string RecoveryFailed = "recovery.failed";
+    public const string TargetConfigFailed = "target.config.failed";
 
-    public const string RecoveryTimedOut = "recovery.timedOut";
+    public const string TargetConfigTimedOut = "target.config.timedOut";
 
-    public const string RecoveryCancelled = "recovery.cancelled";
+    public const string TargetConfigCancelled = "target.config.cancelled";
+
+    public const string TargetStartRestartQueued =
+        "target.startRestart.queued";
+
+    public const string TargetStartRestartStarted =
+        "target.startRestart.started";
+
+    public const string TargetStartRestartSucceeded =
+        "target.startRestart.succeeded";
+
+    public const string TargetStartRestartFailed =
+        "target.startRestart.failed";
+
+    public const string TargetStartRestartTimedOut =
+        "target.startRestart.timedOut";
+
+    public const string TargetStartRestartCancelled =
+        "target.startRestart.cancelled";
 
     public const string TcUnitQueued = "tcunit.queued";
 

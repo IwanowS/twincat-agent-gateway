@@ -704,27 +704,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         RuntimeMode initialRuntimeMode = runtime.Status.Mode;
-        string? runtimeExceptionDetails =
-            XaeRuntimeExceptionDetails.Select(
-                snapshot.ErrorListMessages);
-        if (initialRuntimeMode
-                == RuntimeMode.Exception
-            && runtimeExceptionDetails is null)
-        {
-            runtimeExceptionDetails =
-                await ReadRuntimeExceptionDetailsAsync(
-                    GetRemaining(
-                        deadlineUtc,
-                        "activation.runtimePreflight"),
-                    cancellationToken)
-                    .ConfigureAwait(false);
-        }
-
-        RuntimeOperationPolicy.EnsureActivationAllowed(
-            initialRuntimeMode,
-            details: runtimeExceptionDetails);
-        const bool recoveryAttempted = false;
-
         if (_profile.Xae.Workspace.AutoSynchronizeBeforeOperation)
         {
             _capabilities.EnsureAllowed(
@@ -852,7 +831,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 FormatActivationLog(
                     operationId,
                     expectedAmsNetId,
-                    recoveryAttempted,
                     initialRuntimeMode,
                     parameters.RunAfterActivation,
                     command.AutostartSelection,
@@ -874,7 +852,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     Name = _profile.Target?.Name,
                     AmsNetId = expectedAmsNetId,
                 },
-                RecoveryAttempted = recoveryAttempted,
                 RunAfterActivation =
                     parameters.RunAfterActivation,
                 Completion = ActivationCompletion.Unknown,
@@ -987,7 +964,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             FormatActivationLog(
                 operationId,
                 expectedAmsNetId,
-                recoveryAttempted,
                 initialRuntimeMode,
                 parameters.RunAfterActivation,
                 command.AutostartSelection,
@@ -1009,7 +985,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 Name = _profile.Target?.Name,
                 AmsNetId = expectedAmsNetId,
             },
-            RecoveryAttempted = recoveryAttempted,
             RunAfterActivation =
                 parameters.RunAfterActivation,
             Completion = completion,
@@ -1035,8 +1010,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 ["profile"] = _profile.Name,
                 ["solution"] = _profile.Xae.Solution,
                 ["amsNetId"] = expectedAmsNetId,
-                ["recoveryAttempted"] =
-                    recoveryAttempted.ToString(),
                 ["runAfterActivation"] =
                     parameters.RunAfterActivation.ToString(),
                 ["autostartBootProjects"] =
@@ -1045,134 +1018,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     CultureInfo.InvariantCulture),
             });
         return result;
-    }
-
-    public async Task<RecoverToConfigResult>
-        ExecuteRecoverToConfigAsync(
-            string operationId,
-            RecoverToConfigParameters parameters,
-            CancellationToken cancellationToken)
-    {
-        EnsureProfileIdentity(
-            parameters.Profile,
-            "recovery.preflight");
-
-        _capabilities.EnsureAllowed(
-            _profile,
-            CapabilityKey.TargetConfig,
-            "recovery.preflight");
-        OperationCapabilityGuard recoveryGuard = new(
-            _capabilities,
-            _profile,
-            CapabilityKey.TargetConfig);
-
-        string expectedAmsNetId =
-            _profile.Target?.AmsNetId
-            ?? throw new GatewayOperationException(
-                ErrorCodes.ProfileInvalid,
-                "The recovery profile has no expected AMS NetId.",
-                stage: "recovery.validate");
-        DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
-        DateTimeOffset deadlineUtc = startedAtUtc.AddSeconds(
-            parameters.TimeoutSeconds ?? 120);
-        using XaeDialogOperationScope dialogScope =
-            _session.BeginDialogOperation(
-                operationId,
-                "recoverToConfig",
-                "recovery.preflight");
-        XaeSessionSnapshot snapshot =
-            await dialogScope.ObserveAsync(
-                _session.VerifyAttachedAsync(
-                        _profile.Xae.Solution,
-                    GetRemaining(
-                        deadlineUtc,
-                        "recovery.preflight"),
-                    cancellationToken)).ConfigureAwait(false);
-        VerifyTarget(
-            snapshot,
-            "recovery.preflight");
-        AdsRuntimeStatusReadResult runtime =
-            ReadRuntimeStatus(snapshot);
-        if (runtime.Status.Mode == RuntimeMode.Unknown)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.TwinCatStateUnknown,
-                "Runtime recovery requires a readable TwinCAT "
-                    + "runtime state.",
-                retryable: true,
-                stage: "recovery.preflight");
-        }
-
-        RuntimeMode initialRuntimeMode = runtime.Status.Mode;
-        bool transitionRequested =
-            initialRuntimeMode != RuntimeMode.Config;
-        if (transitionRequested)
-        {
-            recoveryGuard.EnsureAllowed(
-                "recovery.command.preSideEffect");
-            dialogScope.SetStage("recovery.command");
-            await dialogScope.ObserveAsync(
-                _session.RestartTwinCatConfigModeAsync(
-                        _profile.Xae.Solution,
-                    expectedAmsNetId,
-                    GetRemaining(
-                        deadlineUtc,
-                        "recovery.command"),
-                    cancellationToken)).ConfigureAwait(false);
-            dialogScope.SetStage("recovery.verify");
-            runtime = await dialogScope.ObserveAsync(
-                WaitForRuntimeModeAsync(
-                    expectedAmsNetId,
-                    RuntimeMode.Config,
-                    deadlineUtc,
-                    ErrorCodes.ConfigModeRecoveryFailed,
-                    "TwinCAT did not reach Config Mode after the "
-                        + "explicit recovery request.",
-                    "recovery.verify",
-                    cancellationToken)).ConfigureAwait(false);
-        }
-
-        PublishConnected(snapshot);
-        long durationMs = Math.Max(
-            0,
-            (long)(DateTimeOffset.UtcNow - startedAtUtc)
-                .TotalMilliseconds);
-        _logger.Write(
-            LogLevel.Information,
-            "runtime.recoverToConfig.completed",
-            transitionRequested
-                ? "TwinCAT reached Config Mode after an explicit "
-                    + "recovery request."
-                : "TwinCAT was already in Config Mode.",
-            operationId,
-            properties: new Dictionary<string, string>
-            {
-                ["profile"] = _profile.Name,
-                ["solution"] = _profile.Xae.Solution,
-                ["amsNetId"] = expectedAmsNetId,
-                ["initialRuntimeMode"] =
-                    initialRuntimeMode.ToString(),
-                ["observedRuntimeMode"] =
-                    runtime.Status.Mode.ToString(),
-                ["transitionRequested"] =
-                    transitionRequested.ToString(),
-            });
-        return new RecoverToConfigResult
-        {
-            Ok = true,
-            OperationId = operationId,
-            DurationMs = durationMs,
-            Profile = _profile.Name,
-            Solution = _profile.Xae.Solution,
-            Target = new TargetIdentity
-            {
-                Name = _profile.Target?.Name,
-                AmsNetId = expectedAmsNetId,
-            },
-            InitialRuntimeMode = initialRuntimeMode,
-            ObservedRuntimeMode = runtime.Status.Mode,
-            TransitionRequested = transitionRequested,
-        };
     }
 
     public Task<TargetConfigResult> ExecuteTargetConfigAsync(
@@ -2498,7 +2343,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 OperationKind.XaeBuild,
             "synchronize" => OperationKind.Synchronize,
             "activate" => OperationKind.Activate,
-            "recovertoconfig" => OperationKind.RecoverToConfig,
+            "targetconfig" => OperationKind.TargetConfig,
+            "targetstartrestart" => OperationKind.TargetStartRestart,
             "opensolution" => OperationKind.OpenSolution,
             _ => null,
         };
@@ -2550,14 +2396,15 @@ internal sealed class XaeSessionCoordinator : IDisposable
                                 .ConfigureAwait(false);
                     }
 
-                    RuntimeOperationPolicy.EnsureActivationAllowed(
-                        runtime.Status.Mode,
-                        stage,
+                    throw new GatewayOperationException(
+                        errorCode,
                         "Activation did not reach Run because the TwinCAT "
-                            + "runtime entered Exception. Explicitly "
-                            + "recover the runtime to Config before "
-                            + "building or activating again.",
-                        details);
+                            + "Target entered Exception.",
+                        details,
+                        retryable: false,
+                        stage: stage,
+                        component: GatewayComponent.Target,
+                        sideEffectsStarted: true);
                 }
             }
 
@@ -2773,7 +2620,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private string FormatActivationLog(
         string operationId,
         string amsNetId,
-        bool recoveryAttempted,
         RuntimeMode initialRuntimeMode,
         bool runAfterActivation,
         AutostartBootProjectSelection autostartSelection,
@@ -2794,8 +2640,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
         {
             builder.AppendLine($"TargetName: {targetName}");
         }
-        builder.AppendLine(
-            $"RecoveryAttempted: {recoveryAttempted}");
         builder.AppendLine(
             $"InitialRuntimeMode: {initialRuntimeMode}");
         builder.AppendLine(

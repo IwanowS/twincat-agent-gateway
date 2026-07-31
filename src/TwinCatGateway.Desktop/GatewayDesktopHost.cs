@@ -157,10 +157,6 @@ public sealed class GatewayDesktopHost : IDisposable
             _xaeCoordinator is null
                 ? null
                 : _xaeCoordinator.ExecuteActivationAsync;
-        RecoveryOperationExecutor? recoveryExecutor =
-            _xaeCoordinator is null
-                ? null
-                : _xaeCoordinator.ExecuteRecoverToConfigAsync;
         TargetConfigOperationExecutor? targetConfigExecutor =
             _xaeCoordinator is null
                 ? null
@@ -210,7 +206,6 @@ public sealed class GatewayDesktopHost : IDisposable
                 tcUnitPreparationExecutor,
             tcUnitExecutor: tcUnitExecutor,
             synchronizeExecutor: synchronizeExecutor,
-            recoveryExecutor: recoveryExecutor,
             targetConfigExecutor: targetConfigExecutor,
             targetStartRestartExecutor:
                 targetStartRestartExecutor,

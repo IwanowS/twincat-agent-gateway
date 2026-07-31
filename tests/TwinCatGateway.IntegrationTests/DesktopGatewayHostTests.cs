@@ -208,7 +208,7 @@ public sealed class DesktopGatewayHostTests
 
         Assert.False(viewModel.CanStartOperation);
         Assert.False(viewModel.CanActivate);
-        Assert.False(viewModel.CanRecoverToConfig);
+        Assert.False(viewModel.CanConfigTarget);
         Assert.True(viewModel.CanReconnect);
         Assert.Equal(
             BuildAction.Rebuild,
@@ -394,26 +394,22 @@ public sealed class DesktopGatewayHostTests
     }
 
     [Theory]
-    [InlineData(false, true, true, RuntimeMode.Exception, true)]
-    [InlineData(true, true, true, RuntimeMode.Exception, false)]
-    [InlineData(false, false, true, RuntimeMode.Exception, false)]
-    [InlineData(false, true, false, RuntimeMode.Exception, false)]
-    [InlineData(false, true, true, RuntimeMode.Unknown, false)]
-    [InlineData(false, true, true, RuntimeMode.Config, false)]
-    public void ConfigModeButtonAvailabilityFailsClosed(
+    [InlineData(false, true, true, true)]
+    [InlineData(true, true, true, false)]
+    [InlineData(false, false, true, false)]
+    [InlineData(false, true, false, false)]
+    public void TargetConfigButtonUsesCapabilityAndConnection(
         bool operationActive,
         bool xaeConnected,
-        bool recoveryAllowed,
-        RuntimeMode runtimeMode,
+        bool targetConfigAllowed,
         bool expected)
     {
         Assert.Equal(
             expected,
-            MainWindowViewModel.IsRecoveryAvailable(
+            MainWindowViewModel.IsTargetConfigAvailable(
                 operationActive,
                 xaeConnected,
-                recoveryAllowed,
-                runtimeMode));
+                targetConfigAllowed));
     }
 
     [Fact]

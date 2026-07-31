@@ -27,18 +27,13 @@ public sealed class XaeBuildArchitectureBoundaryTests
     }
 
     [Fact]
-    public void RuntimePolicyHasNoStandaloneBuildGate()
+    public void RuntimeRecoveryPolicyIsRemoved()
     {
-        string source = File.ReadAllText(
+        Assert.False(File.Exists(
             RepositoryFile(
                 "src",
                 "TwinCatGateway.Core",
-                "RuntimeOperationPolicy.cs"));
-
-        Assert.DoesNotContain("EnsureBuildAllowed", source);
-        Assert.DoesNotContain(
-            "BUILD_BLOCKED_BY_RUNTIME_EXCEPTION",
-            source);
+                "RuntimeOperationPolicy.cs")));
     }
 
     private static string Slice(

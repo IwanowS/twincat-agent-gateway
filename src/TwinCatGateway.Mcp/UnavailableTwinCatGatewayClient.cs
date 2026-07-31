@@ -116,15 +116,6 @@ internal sealed class UnavailableTwinCatGatewayClient
     }
 
     public Task<GatewayResponse<OperationAccepted>>
-        StartRecoverToConfigAsync(
-            RecoverToConfigParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<OperationAccepted>(
-            cancellationToken);
-    }
-
-    public Task<GatewayResponse<OperationAccepted>>
         StartSynchronizationAsync(
             SynchronizeParameters parameters,
             CancellationToken cancellationToken = default)

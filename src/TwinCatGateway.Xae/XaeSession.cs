@@ -648,19 +648,6 @@ public sealed class XaeSession : IDisposable
         }
     }
 
-    public Task RestartTwinCatConfigModeAsync(
-        string solutionPath,
-        string expectedAmsNetId,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
-    {
-        return RequestTargetConfigAsync(
-            solutionPath,
-            expectedAmsNetId,
-            timeout,
-            cancellationToken);
-    }
-
     public async Task RequestTargetConfigAsync(
         string solutionPath,
         string expectedAmsNetId,

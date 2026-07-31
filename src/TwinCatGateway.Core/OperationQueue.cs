@@ -543,8 +543,10 @@ public sealed class OperationQueue : IDisposable
                 return GetXaeCloseEventType(state);
             case OperationKind.Activate:
                 return GetActivationEventType(state);
-            case OperationKind.RecoverToConfig:
-                return GetRecoveryEventType(state);
+            case OperationKind.TargetConfig:
+                return GetTargetConfigEventType(state);
+            case OperationKind.TargetStartRestart:
+                return GetTargetStartRestartEventType(state);
             case OperationKind.Test:
                 return GetTcUnitEventType(state);
             default:
@@ -637,22 +639,44 @@ public sealed class OperationQueue : IDisposable
         }
     }
 
-    private static string GetRecoveryEventType(OperationState state)
+    private static string GetTargetConfigEventType(OperationState state)
     {
         switch (state)
         {
             case OperationState.Queued:
-                return GatewayEventTypes.RecoveryQueued;
+                return GatewayEventTypes.TargetConfigQueued;
             case OperationState.Running:
-                return GatewayEventTypes.RecoveryStarted;
+                return GatewayEventTypes.TargetConfigStarted;
             case OperationState.Succeeded:
-                return GatewayEventTypes.RecoverySucceeded;
+                return GatewayEventTypes.TargetConfigSucceeded;
             case OperationState.Failed:
-                return GatewayEventTypes.RecoveryFailed;
+                return GatewayEventTypes.TargetConfigFailed;
             case OperationState.TimedOut:
-                return GatewayEventTypes.RecoveryTimedOut;
+                return GatewayEventTypes.TargetConfigTimedOut;
             case OperationState.Cancelled:
-                return GatewayEventTypes.RecoveryCancelled;
+                return GatewayEventTypes.TargetConfigCancelled;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(state));
+        }
+    }
+
+    private static string GetTargetStartRestartEventType(
+        OperationState state)
+    {
+        switch (state)
+        {
+            case OperationState.Queued:
+                return GatewayEventTypes.TargetStartRestartQueued;
+            case OperationState.Running:
+                return GatewayEventTypes.TargetStartRestartStarted;
+            case OperationState.Succeeded:
+                return GatewayEventTypes.TargetStartRestartSucceeded;
+            case OperationState.Failed:
+                return GatewayEventTypes.TargetStartRestartFailed;
+            case OperationState.TimedOut:
+                return GatewayEventTypes.TargetStartRestartTimedOut;
+            case OperationState.Cancelled:
+                return GatewayEventTypes.TargetStartRestartCancelled;
             default:
                 throw new ArgumentOutOfRangeException(nameof(state));
         }

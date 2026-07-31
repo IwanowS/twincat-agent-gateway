@@ -566,6 +566,23 @@ public sealed class V2ContractSerializationTests
         Assert.Contains("\"action\":\"restart\"", json);
     }
 
+    [Fact]
+    public void TargetTransitionCutoverHasNoRecoveryContractAlias()
+    {
+        Assert.False(Enum.TryParse(
+            "RecoverToConfig",
+            ignoreCase: false,
+            out OperationKind _));
+        Assert.Null(typeof(GatewayMethods).GetField(
+            "RecoverToConfig"));
+        Assert.Equal(
+            "target.config.succeeded",
+            GatewayEventTypes.TargetConfigSucceeded);
+        Assert.Equal(
+            "target.startRestart.succeeded",
+            GatewayEventTypes.TargetStartRestartSucceeded);
+    }
+
     private sealed class StageEvidence
     {
         public bool ReportFound { get; set; }

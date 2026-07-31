@@ -9,6 +9,5 @@ public enum OperationKind
     Activate,
     TargetConfig,
     TargetStartRestart,
-    RecoverToConfig,
     Test,
 }

@@ -103,7 +103,7 @@ public partial class MainWindow : Window
     {
         MessageBoxResult confirmation =
             MessageBox.Show(
-                _viewModel.RecoveryConfirmation,
+                _viewModel.TargetConfigConfirmation,
                 "Confirm TwinCAT Config Mode",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning,
@@ -114,8 +114,8 @@ public partial class MainWindow : Window
         }
 
         ExecuteUiAction(
-            () => _viewModel.StartRecoverToConfig(),
-            "The Config Mode recovery operation could not be queued.");
+            () => _viewModel.StartTargetConfig(),
+            "The Target Config operation could not be queued.");
     }
 
     private void OpenLogsButton_Click(object sender, RoutedEventArgs e)
