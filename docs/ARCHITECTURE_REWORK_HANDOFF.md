@@ -165,3 +165,79 @@ is intentionally one later documentation-only commit containing this handoff;
 it changes no tested production code. Local checks are repeated after that
 documentation commit. The next implementation scope is S8 only; S9 and S10
 remain deferred.
+
+## 2026-07-31 — S8 activation and TcUnit verification cutover
+
+### Scope and production commits
+
+S8 production implementation is complete through `3404004`:
+
+- `c687c95` — removed the standalone recent-build/direct-runtime activation
+  precondition without restoring build-as-deploy behavior;
+- `a7bb7b9` — replaced activation booleans and aggregate completion with
+  `finalTargetMode`, `verification`, and five typed stage outcomes;
+- `ee948d5` — attached TcUnit to activation and Target start/restart in the
+  same root operation, with completion and report baselines captured before
+  the root side effect;
+- `3404004` — removed the normal `getTestResults` IPC/client/CLI/MCP route,
+  separate test operation kind and lifecycle events, and retained xUnit as an
+  immutable root-operation resource.
+
+Native activation is issued once and observes its own compilation. A failed
+verification no longer erases a successful deploy stage. Restart-only
+verification preserves S7 `Start` versus `Restart` selection and its fresh
+direct Run postcondition. When the completion flag is already true at baseline,
+verification requires a reset-to-false followed by a new true edge; it then
+requires a fresh stable XML report and applies the configured zero-test policy.
+
+### Local validation on `3404004`
+
+- Contract serialization: 28/28 on net8.0 and 28/28 on net48.
+- Core S2-S5 migration suite: 82/82 on net8.0.
+- Observation migration suite (`net48`, x86): 59 passed, one opt-in real test
+  skipped.
+- S6 XAE build-event migration suite (`net48`, x86): 7/7.
+- S7 Target operations migration suite: 23/23 on net8.0.
+- S8 activation-verification migration suite (`net48`, x86): 12/12. It covers
+  successful and failed reports, stale report rejection, an already-true
+  completion baseline requiring a new edge, unreadable baseline failure before
+  the root side effect, ADS/symbol errors, timeout, cancellation, invalid XML,
+  and fail/warn/allow zero-test policies.
+
+The full solution remains expected-red with zero warnings and 54 `CS0246`
+errors: `RuntimeAlert` (12), `GatewayStatusResult` (10), `OperationAccepted`
+(8), `ResourceKind` (8), `OperationSummary` (6),
+`GatewayDiagnosticsResult` (3), `BuildSummary` (2), `GatewayResponse<T>` (2),
+`CancelOperationResult` (1), `HealthResult` (1), and `OperationDetails<T>` (1).
+They occur in `TwinCatGateway.Core` (42) and `TwinCatGateway.Ipc` (12). The one
+fewer `OperationDetails<T>` error than the S7 baseline is the intentional
+removal of the standalone test-result lookup; no deprecated v1 DTO was
+reintroduced. The excluded exact log is `.session/S8_FULL_BUILD.log`.
+
+### Real-XAE gate blocked without side effects
+
+The before and after ROT checks both found one attached session: XAE PID
+`14480`, `TcXaeShell.DTE.15.0`, with exact solution
+`tests/fixtures/TC3_SimpleProject/TC3_SimpleProject.sln`. The tracked but
+unstaged user configuration names AMS NetId `192.168.3.31.1.1`, PLC port 851,
+and enables TcUnit verification, but those live identities were not accepted
+as verified because the Gateway could not load the profile.
+
+The installed MCP/Gateway is a v1 binary and returned
+`GATEWAY_NOT_READY` at `gateway.config.validate`: it supports only schema
+version 1 and expected the removed profile-level `solution` field. Its public
+activation tool also still exposes `runAfterActivation`, `waitForTcUnit`, and a
+separate `twincat_get_test_results`. Running that binary would validate the old
+workflow, not the production code above. No build, activation, restart, TcUnit,
+recovery, XAE close, or remote state change was attempted after this mismatch.
+
+Therefore the inherited S6 matrix and the combined S8
+`activation + tcunit -> fresh result -> target restart + tcunit -> second fresh
+result` checkpoint remain pending. S8 is implemented and locally green but is
+not accepted. The next session must first provide a v2-capable tracked
+Gateway/executable path (normally through the remaining S9 consumer cutover),
+then run both remote gates against the exact fixture and finish in fresh Target
+Run without closing the attached XAE.
+
+The tracked `twincat-gateway.json` user changes and all `.session/` contents
+remain excluded from commits.

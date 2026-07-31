@@ -132,7 +132,7 @@ real-XAE gates.
 | S5 | Operator locks and XAE close consent backend | yes | partial: tracked session-state coverage passes; cancellation coverage remains local-only until S9 cutover | not required | pending local gate |
 | S6 | XAE build scope and policy cutover | yes | production-TFM compile passes; migration 82/82; XAE event suite 7/7 | pending | pending |
 | S7 | Target Config/start-restart | yes | target suite: 23/23; Contracts: 26/26 on net8.0 and net48 | exact fixture cycle passed | accepted |
-| S8 | Activation and TcUnit verification unification | no | pending | pending | pending |
+| S8 | Activation and TcUnit verification unification | yes | activation-verification suite: 12/12; Contracts: 28/28 on net8.0 and net48 | blocked: installed v1 Gateway rejects schema v2; S6 matrix also pending | pending |
 | S9 | MCP tools/resources and operation journal cutover | no | pending | pending | pending |
 | S10 | Desktop UI redesign | no | pending | pending | pending |
 | S11 | Skills, project template, installed docs, packaging | no | pending | pending | pending |
@@ -665,6 +665,22 @@ target restart with tcunit -> fresh second result
 ### Exit
 
 Skills can express code+tests in one mutating tool call after edits.
+
+### 2026-07-31 implementation checkpoint
+
+The S8 production cutover and tracked local gate are complete. Activation now
+returns `sync`, `compile`, `deploy`, `target-transition`, and `verification`
+stages; activation and Target start/restart run TcUnit inside the same root
+operation; and the normal `getTestResults` workflow and separate test operation
+identity are removed. The full solution remains deliberately red for the S9
+and S10 consumer migration.
+
+Real-XAE acceptance is not claimed. The installed Gateway is still a v1
+binary: it rejected the checkout's `schemaVersion: 2` configuration before
+status/identity resolution, so it cannot execute or validate the tracked S8
+production slice. The inherited S6 real-XAE matrix also remains pending. Both
+remote gates must run through a v2-capable tracked executable before S8 may be
+accepted.
 
 ## 15. S9 — MCP tools/resources and journal cutover
 
