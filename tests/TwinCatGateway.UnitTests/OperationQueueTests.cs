@@ -79,13 +79,16 @@ public sealed class OperationQueueTests
             });
 
         await firstStarted.Task;
-        OperationCancellationResult cancellation = queue.CancelBeforeStart(second.OperationId);
+        OperationCancellationResult cancellation =
+            queue.Cancel(second.OperationId);
         releaseFirst.SetResult(true);
 
         await WaitForStateAsync(store, second.OperationId, OperationState.Cancelled);
         await queue.StopAsync();
 
-        Assert.Equal(OperationCancellationResult.Cancelled, cancellation);
+        Assert.Equal(
+            OperationCancellationResult.CancelledBeforeStart,
+            cancellation);
         Assert.False(secondExecuted);
     }
 

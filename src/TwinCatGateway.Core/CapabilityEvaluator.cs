@@ -101,12 +101,11 @@ public sealed class CapabilityEvaluator
                 key,
                 "A Gateway process capability is required."),
         };
-        bool operatorLocked = _operatorLocks.IsLocked(null, key);
         return CreateState(
             key,
             configured,
             sessionConsented: null,
-            operatorLocked);
+            operatorLocked: false);
     }
 
     public CapabilityState Evaluate(
@@ -157,12 +156,14 @@ public sealed class CapabilityEvaluator
         ResolvedProfile profile,
         CapabilityKey key,
         string stage,
-        CapabilityEvaluationContext? context = null)
+        CapabilityEvaluationContext? context = null,
+        bool sideEffectsStarted = false)
     {
         EnsureAllowed(
             Evaluate(profile, key, context),
             profile.Name,
-            stage);
+            stage,
+            sideEffectsStarted);
     }
 
     private static CapabilityState CreateState(
@@ -193,7 +194,8 @@ public sealed class CapabilityEvaluator
     private static void EnsureAllowed(
         CapabilityState state,
         string? profile,
-        string stage)
+        string stage,
+        bool sideEffectsStarted = false)
     {
         if (string.IsNullOrWhiteSpace(stage))
         {
@@ -226,7 +228,7 @@ public sealed class CapabilityEvaluator
                     + $"'{profile}'.",
             stage: stage,
             component: ComponentFor(state.Key),
-            sideEffectsStarted: false,
+            sideEffectsStarted: sideEffectsStarted,
             expected: profile is null
                 ? null
                 : new IdentityEvidence

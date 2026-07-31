@@ -26,6 +26,42 @@ public sealed class AgentWorkspaceOwnershipResult
 
 internal static class AgentWorkspaceOwnership
 {
+    public static bool HasAnyDirtyDocument(DTE2 dte)
+    {
+        if (dte is null)
+        {
+            throw new ArgumentNullException(nameof(dte));
+        }
+
+        Documents? documents = null;
+        try
+        {
+            documents = dte.Documents;
+            for (int index = 1; index <= documents.Count; index++)
+            {
+                Document? document = null;
+                try
+                {
+                    document = documents.Item(index);
+                    if (!document.Saved)
+                    {
+                        return true;
+                    }
+                }
+                finally
+                {
+                    ComObject.Release(document);
+                }
+            }
+
+            return false;
+        }
+        finally
+        {
+            ComObject.Release(documents);
+        }
+    }
+
     public static IReadOnlyList<string> FindDirtyDocuments(
         DTE2 dte,
         IEnumerable<string> projectGraphPaths)

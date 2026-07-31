@@ -8,6 +8,23 @@ namespace TwinCatGateway.ContractTests;
 public sealed class V2ContractSerializationTests
 {
     [Fact]
+    public void OperatorLockKeysUseStableStringNames()
+    {
+        string json = JsonSerializer.Serialize(
+            OperatorLockKey.XaeSynchronizationBuild,
+            ContractJson.SerializerOptions);
+        OperatorLockKey result =
+            JsonSerializer.Deserialize<OperatorLockKey>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.Equal("\"xaeSynchronizationBuild\"", json);
+        Assert.Equal(
+            OperatorLockKey.XaeSynchronizationBuild,
+            result);
+    }
+
+    [Fact]
     public void GatewaySnapshotPreservesFaultEvidence()
     {
         GatewayStateSnapshot source = new()

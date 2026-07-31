@@ -15,6 +15,45 @@ namespace TwinCatGateway.IntegrationTests;
 public sealed class XaeEnvironmentTests
 {
     [XaeLaunchFact]
+    public async Task CleanGatewayLaunchedXaeClosesWithoutSaveOrDiscard()
+    {
+        string solution = Path.GetFullPath(
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_SOLUTION")!);
+        using XaeSession session = new();
+        XaeSessionSnapshot snapshot = await session.LaunchAsync(
+            solution,
+            Environment.GetEnvironmentVariable(
+                "TWINCAT_GATEWAY_XAE_PROGID"),
+            TimeSpan.FromSeconds(60),
+            CancellationToken.None);
+        int processId = Assert.IsType<int>(
+            snapshot.SelectedInstance?.ProcessId);
+        bool closed = false;
+        try
+        {
+            closed = await session.CloseCleanAttachedAsync(
+                solution,
+                processId,
+                TimeSpan.FromSeconds(60),
+                CancellationToken.None);
+
+            Assert.True(closed);
+            Assert.Throws<ArgumentException>(
+                () => Process.GetProcessById(processId));
+        }
+        finally
+        {
+            if (!closed)
+            {
+                await session.CloseGatewayLaunchedAsync(
+                    TimeSpan.FromSeconds(15),
+                    CancellationToken.None);
+            }
+        }
+    }
+
+    [XaeLaunchFact]
     public async Task GatewayLaunchedXaeClosesByExactProcessIdentity()
     {
         string solution = Path.GetFullPath(
@@ -30,6 +69,9 @@ public sealed class XaeEnvironmentTests
                 CancellationToken.None);
         int processId = Assert.IsType<int>(
             snapshot.SelectedInstance?.ProcessId);
+        Assert.Equal(
+            XaeProcessOwnership.GatewayLaunched,
+            snapshot.Ownership);
         bool closed = false;
         try
         {
@@ -143,6 +185,9 @@ public sealed class XaeEnvironmentTests
                 CancellationToken.None);
             processId = Assert.IsType<int>(
                 snapshot.SelectedInstance?.ProcessId);
+            Assert.Equal(
+                XaeProcessOwnership.Attached,
+                snapshot.Ownership);
         }
 
         using Process process = Process.GetProcessById(processId);

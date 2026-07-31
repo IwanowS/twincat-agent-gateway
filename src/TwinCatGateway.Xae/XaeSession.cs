@@ -150,6 +150,25 @@ public sealed class XaeSession : IDisposable
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        return await EnsureAttachedAsync(
+            solutionPath,
+            allowLaunch,
+            configuredProgId,
+            assumeAttachedXaeSynchronized,
+            beforeLaunch: null,
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<XaeSessionSnapshot> EnsureAttachedAsync(
+        string solutionPath,
+        bool allowLaunch,
+        string? configuredProgId,
+        bool assumeAttachedXaeSynchronized,
+        Action? beforeLaunch,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
         ThrowIfDisposed();
         DateTimeOffset deadlineUtc = CreateDeadline(timeout);
         try
@@ -164,6 +183,7 @@ public sealed class XaeSession : IDisposable
             exception.Code == ErrorCodes.XaeNotFound
             && allowLaunch)
         {
+            beforeLaunch?.Invoke();
             return await LaunchAsync(
                 solutionPath,
                 configuredProgId,
@@ -417,6 +437,60 @@ public sealed class XaeSession : IDisposable
             ProcessExited = true,
             CommandErrorObserved = command.Error is not null,
         };
+    }
+
+    internal async Task<bool> CloseCleanAttachedAsync(
+        string solutionPath,
+        int processId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        if (timeout <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(nameof(timeout));
+        }
+
+        string normalizedSolution =
+            NormalizeSolutionPath(solutionPath);
+        DateTimeOffset deadlineUtc =
+            DateTimeOffset.UtcNow.Add(timeout);
+        using DiagnosticsProcess? process =
+            TryGetProcess(processId);
+        if (process is null)
+        {
+            return true;
+        }
+
+        bool closeStarted = await _dispatcher.InvokeAsync(
+            () => CloseCleanAttachedOnSta(
+                normalizedSolution,
+                processId),
+            GetRemaining(
+                deadlineUtc,
+                "xae.close.shutdown.command"),
+            cancellationToken).ConfigureAwait(false);
+        if (!closeStarted)
+        {
+            return false;
+        }
+
+        bool processExited = await WaitForProcessExitAsync(
+            process,
+            GetRemaining(
+                deadlineUtc,
+                "xae.close.shutdown.verify"),
+            cancellationToken).ConfigureAwait(false);
+        if (!processExited)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeCloseFailed,
+                $"XAE process {processId} did not exit before the shutdown cleanup deadline.",
+                retryable: true,
+                stage: "xae.close.shutdown.verify");
+        }
+
+        return true;
     }
 
     public XaeDialogOperationScope BeginDialogOperation(
@@ -893,6 +967,33 @@ public sealed class XaeSession : IDisposable
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
+        return await ExecuteBuildAsync(
+            action,
+            changedPaths,
+            configuration,
+            platform,
+            externalChangePolicy,
+            discardDirtyDocuments,
+            allowDirtyDocumentDiscard,
+            autoSynchronizeBeforeOperation,
+            beforeBuild: null,
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<XaeBuildExecutionResult> ExecuteBuildAsync(
+        BuildAction action,
+        IEnumerable<string>? changedPaths,
+        string? configuration,
+        string? platform,
+        ExternalChangePolicy externalChangePolicy,
+        bool discardDirtyDocuments,
+        bool allowDirtyDocumentDiscard,
+        bool autoSynchronizeBeforeOperation,
+        Action<bool>? beforeBuild,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
         ThrowIfDisposed();
         DateTimeOffset deadlineUtc = CreateDeadline(timeout);
         ExternalChangeSynchronizationResult synchronization =
@@ -908,6 +1009,10 @@ public sealed class XaeSession : IDisposable
                         "xae.build.synchronize"),
                     cancellationToken).ConfigureAwait(false)
                 : ExternalChangeSynchronizationResult.None;
+        bool synchronizationSideEffectsStarted =
+            synchronization.SynchronizedDocuments.Count != 0
+            || synchronization.DiscardedDocuments.Count != 0;
+        beforeBuild?.Invoke(synchronizationSideEffectsStarted);
         using XaeProjectGraphChangeScope projectChanges =
             BeginProjectGraphChangeTracking();
         Task<XaeBuildEventEvidence> completion =
@@ -1229,6 +1334,7 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(_snapshot.SelectedInstance),
             SysManagerAvailable = _sysManager is not null,
             LaunchedByGateway = _snapshot.LaunchedByGateway,
+            Ownership = _snapshot.Ownership,
             DiscoveredInstances = scan.Candidates
                 .Select(candidate => CloneInfo(candidate.Info)!)
                 .ToArray(),
@@ -1291,6 +1397,7 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = info,
             SysManagerAvailable = false,
             LaunchedByGateway = true,
+            Ownership = XaeProcessOwnership.GatewayLaunched,
             DiscoveredInstances = new[] { CloneInfo(info)! },
         };
         return true;
@@ -1412,6 +1519,7 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(info),
             SysManagerAvailable = true,
             LaunchedByGateway = true,
+            Ownership = XaeProcessOwnership.GatewayLaunched,
             AgentWorkspaceOwned =
                 _workspaceFileChangeGuard?.IsActive == true,
             ClosedDocumentCount = 0,
@@ -1542,6 +1650,10 @@ public sealed class XaeSession : IDisposable
             LaunchedByGateway =
                 retainBaseline
                 && _fingerprintLaunchedByGateway,
+            Ownership = retainBaseline
+                && _fingerprintLaunchedByGateway
+                    ? XaeProcessOwnership.GatewayLaunched
+                    : XaeProcessOwnership.Attached,
             AgentWorkspaceOwned =
                 _workspaceFileChangeGuard?.IsActive == true,
             ClosedDocumentCount = 0,
@@ -1638,6 +1750,7 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(info),
             SysManagerAvailable = true,
             LaunchedByGateway = _snapshot.LaunchedByGateway,
+            Ownership = _snapshot.Ownership,
             AgentWorkspaceOwned =
                 _workspaceFileChangeGuard?.IsActive == true,
             ClosedDocumentCount = _snapshot.ClosedDocumentCount,
@@ -3204,6 +3317,70 @@ public sealed class XaeSession : IDisposable
         };
     }
 
+    private bool CloseCleanAttachedOnSta(
+        string normalizedSolution,
+        int processId)
+    {
+        if (_dte is null
+            || _snapshot.SelectedInstance?.ProcessId != processId)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeNotFound,
+                $"XAE process {processId} is no longer attached.",
+                retryable: true,
+                stage: "xae.close.shutdown.verify");
+        }
+
+        string? selectedSolution = NormalizeOptionalPath(
+            _snapshot.SelectedInstance.Solution);
+        if (!string.Equals(
+            selectedSolution,
+            normalizedSolution,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.SolutionMismatch,
+                "The selected XAE solution changed before shutdown cleanup.",
+                retryable: true,
+                stage: "xae.close.shutdown.verify");
+        }
+
+        if (AgentWorkspaceOwnership.HasAnyDirtyDocument(_dte))
+        {
+            return false;
+        }
+
+        DTE2 automation = _dte;
+        Solution? solution = null;
+        try
+        {
+            solution = automation.Solution;
+            string? actualSolution = NormalizeOptionalPath(
+                solution.FullName);
+            if (!string.Equals(
+                actualSolution,
+                normalizedSolution,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.SolutionMismatch,
+                    "The active XAE solution changed before shutdown cleanup.",
+                    retryable: true,
+                    stage: "xae.close.shutdown.verify");
+            }
+
+            ReleaseSilentModeLeaseOnSta();
+            solution.Close(false);
+            automation.Quit();
+            return true;
+        }
+        finally
+        {
+            ComObject.Release(solution);
+            ReleaseSessionOnSta();
+        }
+    }
+
     private static DiagnosticsProcess? TryGetProcess(int processId)
     {
         try
@@ -3505,6 +3682,7 @@ public sealed class XaeSession : IDisposable
             SelectedInstance = CloneInfo(source.SelectedInstance),
             SysManagerAvailable = source.SysManagerAvailable,
             LaunchedByGateway = source.LaunchedByGateway,
+            Ownership = source.Ownership,
             AgentWorkspaceOwned = source.AgentWorkspaceOwned,
             ClosedDocumentCount = source.ClosedDocumentCount,
             DiscardedDocumentCount = source.DiscardedDocumentCount,

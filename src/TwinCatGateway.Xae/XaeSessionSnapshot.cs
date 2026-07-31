@@ -14,6 +14,9 @@ public sealed class XaeSessionSnapshot
 
     public bool LaunchedByGateway { get; set; }
 
+    public XaeProcessOwnership Ownership { get; set; } =
+        XaeProcessOwnership.Unknown;
+
     public bool AgentWorkspaceOwned { get; set; }
 
     public int ClosedDocumentCount { get; set; }

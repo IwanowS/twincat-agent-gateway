@@ -41,6 +41,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly XaeErrorListSnapshotStore
         _errorListSnapshots;
     private readonly SourceManifestStore _sourceManifests;
+    private readonly XaeCloseConsentStore _xaeCloseConsent;
+    private readonly CapabilitySnapshotStore _capabilitySnapshots;
     private readonly XaeSession _session = new();
     private readonly TcUnitRunExecutor _tcUnit;
     private readonly SemaphoreSlim _wakeSignal = new(0, 1);
@@ -65,7 +67,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
         IGatewayEventSink events,
         AdsRuntimeMonitor? runtimeMonitor,
         XaeErrorListSnapshotStore errorListSnapshots,
-        SourceManifestStore sourceManifests)
+        SourceManifestStore sourceManifests,
+        XaeCloseConsentStore xaeCloseConsent,
+        CapabilitySnapshotStore capabilitySnapshots)
     {
         _profile = profile
             ?? throw new ArgumentNullException(nameof(profile));
@@ -94,6 +98,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
         _sourceManifests = sourceManifests
             ?? throw new ArgumentNullException(
                 nameof(sourceManifests));
+        _xaeCloseConsent = xaeCloseConsent
+            ?? throw new ArgumentNullException(
+                nameof(xaeCloseConsent));
+        _capabilitySnapshots = capabilitySnapshots
+            ?? throw new ArgumentNullException(
+                nameof(capabilitySnapshots));
         _tcUnit = new TcUnitRunExecutor(
             _profile,
             _logs,
@@ -143,6 +153,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         _profile.Xae.ProgId,
                         _profile.Xae.Workspace
                             .AssumeAttachedSynchronized,
+                        () => _capabilities.EnsureAllowed(
+                            _profile,
+                            CapabilityKey.XaeLaunch,
+                            "xae.launch.preSideEffect"),
                         AttachTimeout,
                         cancellationToken).ConfigureAwait(false);
                 snapshot = _session.RefreshSynchronizationStatus(
@@ -356,6 +370,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 runtime.Status.Mode,
                 runtimeExceptionDetails);
 
+            OperationCapabilityGuard buildGuard = new(
+                _capabilities,
+                _profile,
+                CapabilityKey.XaeBuild);
+            buildGuard.EnsureAllowed(
+                "xae.build.preSideEffect");
             dialogScope.SetStage("xae.build");
             execution = await dialogScope.ObserveAsync(
                 _session.ExecuteBuildAsync(
@@ -369,6 +389,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                         CapabilityKey.XaeDiscardDirtyDocuments),
                     _profile.Xae.Workspace
                         .AutoSynchronizeBeforeOperation,
+                    sideEffectsStarted =>
+                        buildGuard.EnsureAllowed(
+                            "xae.build.safeBoundary",
+                            sideEffectsStarted),
                     GetRemaining(deadlineUtc, "xae.build"),
                     cancellationToken))
                 .ConfigureAwait(false);
@@ -536,6 +560,18 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 "xae.synchronize");
         try
         {
+            _capabilities.EnsureAllowed(
+                _profile,
+                CapabilityKey.XaeSynchronize,
+                "xae.synchronize.preSideEffect");
+            if (parameters.DiscardDirtyDocuments)
+            {
+                _capabilities.EnsureAllowed(
+                    _profile,
+                    CapabilityKey.XaeDiscardDirtyDocuments,
+                    "xae.synchronize.discard.preSideEffect");
+            }
+
             execution =
                 await dialogScope.ObserveAsync(
                     _session.SynchronizeExternalChangesAsync(
@@ -600,6 +636,21 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 retryable: true,
                 stage: "xae.close.verify");
 
+        CapabilityEvaluationContext context = new(processId);
+        _capabilities.EnsureAllowed(
+            _profile,
+            CapabilityKey.XaeClose,
+            "xae.close.preSideEffect",
+            context);
+        if (parameters.SaveMode == XaeSaveMode.Discard)
+        {
+            _capabilities.EnsureAllowed(
+                _profile,
+                CapabilityKey.XaeDiscardDirtyDocuments,
+                "xae.close.discard.preSideEffect",
+                context);
+        }
+
         Interlocked.Exchange(ref _autoLaunchSuppressed, 1);
         CloseXaeResult result =
             await _session.CloseAttachedAsync(
@@ -635,6 +686,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
             _profile,
             CapabilityKey.XaeActivate,
             "activation.preflight");
+        OperationCapabilityGuard activationGuard = new(
+            _capabilities,
+            _profile,
+            CapabilityKey.XaeActivate);
+        bool sideEffectsStarted = false;
 
         string expectedAmsNetId =
             _profile.Target?.AmsNetId
@@ -704,7 +760,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             dialogScope.SetStage("activation.synchronize");
             try
             {
-                await dialogScope.ObserveAsync(
+                ExternalChangeSynchronizationResult synchronization =
+                    await dialogScope.ObserveAsync(
                     _session.SynchronizeExternalChangesAsync(
                         changedPaths: null,
                         _profile.Xae.Workspace.ExternalChangePolicy,
@@ -716,6 +773,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
                             deadlineUtc,
                             "activation.synchronize"),
                         cancellationToken)).ConfigureAwait(false);
+                sideEffectsStarted =
+                    synchronization.SynchronizedDocuments.Count > 0
+                    || synchronization.DiscardedDocuments.Count > 0;
             }
             catch (GatewayOperationException exception) when (
                 RequiresSynchronization(exception.Code)
@@ -729,6 +789,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
             }
         }
 
+        activationGuard.EnsureAllowed(
+            "activation.activateConfiguration.preSideEffect",
+            sideEffectsStarted);
         dialogScope.SetStage("activation.activateConfiguration");
         RecordActivationEvent(
             operationId,
@@ -1024,6 +1087,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
             _profile,
             CapabilityKey.TargetConfig,
             "recovery.preflight");
+        OperationCapabilityGuard recoveryGuard = new(
+            _capabilities,
+            _profile,
+            CapabilityKey.TargetConfig);
 
         string expectedAmsNetId =
             _profile.Target?.AmsNetId
@@ -1067,6 +1134,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             initialRuntimeMode != RuntimeMode.Config;
         if (transitionRequested)
         {
+            recoveryGuard.EnsureAllowed(
+                "recovery.command.preSideEffect");
             dialogScope.SetStage("recovery.command");
             await dialogScope.ObserveAsync(
                 _session.RestartTwinCatConfigModeAsync(
@@ -1179,6 +1248,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
         TcUnitRunPreparation preparation,
         CancellationToken cancellationToken)
     {
+        OperationCapabilityGuard verificationGuard = new(
+            _capabilities,
+            _profile,
+            CapabilityKey.TargetTcUnitVerification);
         XaeSessionSnapshot snapshot =
             await _session.VerifyAttachedAsync(
                         _profile.Xae.Solution,
@@ -1187,6 +1260,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         VerifyTarget(
             snapshot,
             "tcunit.preflight");
+        verificationGuard.EnsureAllowed(
+            "tcunit.execute.preSideEffect");
         return await _tcUnit.ExecuteAsync(
             operationId,
             activationOperationId,
@@ -1296,6 +1371,106 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
     }
 
+    internal async Task<bool> CloseConsentedCleanXaeOnShutdownAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            XaeSessionSnapshot snapshot =
+                await _session.GetSnapshotAsync(
+                    timeout,
+                    cancellationToken).ConfigureAwait(false);
+            int? processId = snapshot.SelectedInstance?.ProcessId;
+            if (!snapshot.Connected || !processId.HasValue)
+            {
+                return false;
+            }
+
+            XaeShutdownCleanupPolicy cleanupPolicy = new(
+                _capabilities,
+                _profile);
+            if (!cleanupPolicy.CanClose(
+                    processId.Value,
+                    snapshot.DirtyDocumentCount,
+                    "xae.close.shutdown.preSideEffect"))
+            {
+                _logger.Write(
+                    LogLevel.Information,
+                    "xae.close.shutdown.skipped",
+                    "XAE shutdown cleanup was skipped because the session snapshot contains dirty documents.",
+                    properties: new Dictionary<string, string>
+                    {
+                        ["processId"] = processId.Value.ToString(
+                            CultureInfo.InvariantCulture),
+                        ["dirtyDocumentCount"] =
+                            snapshot.DirtyDocumentCount.ToString(
+                                CultureInfo.InvariantCulture),
+                    });
+                return false;
+            }
+
+            bool closed = await _session.CloseCleanAttachedAsync(
+                _profile.Xae.Solution,
+                processId.Value,
+                timeout,
+                cancellationToken).ConfigureAwait(false);
+            if (!closed)
+            {
+                _logger.Write(
+                    LogLevel.Information,
+                    "xae.close.shutdown.skipped",
+                    "XAE shutdown cleanup was skipped because an open document has unsaved changes.",
+                    properties: new Dictionary<string, string>
+                    {
+                        ["processId"] = processId.Value.ToString(
+                            CultureInfo.InvariantCulture),
+                    });
+                return false;
+            }
+
+            _xaeCloseConsent.Clear(
+                _profile.Name,
+                processId.Value);
+            _capabilitySnapshots.RefreshProfile(_profile);
+            _logger.Write(
+                LogLevel.Information,
+                "xae.close.shutdown.completed",
+                "The consented clean XAE process exited during Gateway shutdown.",
+                properties: new Dictionary<string, string>
+                {
+                    ["processId"] = processId.Value.ToString(
+                        CultureInfo.InvariantCulture),
+                    ["ownership"] = snapshot.Ownership.ToString(),
+                });
+            return true;
+        }
+        catch (GatewayOperationException exception)
+        {
+            _logger.Write(
+                LogLevel.Information,
+                "xae.close.shutdown.denied",
+                "XAE shutdown cleanup was not authorized or did not complete.",
+                properties: new Dictionary<string, string>
+                {
+                    ["code"] = exception.Code,
+                    ["stage"] = exception.Stage
+                        ?? "xae.close.shutdown",
+                },
+                exception: exception);
+            return false;
+        }
+        catch (Exception exception)
+        {
+            _logger.Write(
+                LogLevel.Warning,
+                "xae.close.shutdown.failed",
+                "XAE shutdown cleanup failed; Gateway shutdown will continue.",
+                exception: exception);
+            return false;
+        }
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
@@ -1304,6 +1479,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         _session.DialogObserved -= OnDialogObserved;
+        _xaeCloseConsent.Clear(_profile.Name);
+        _capabilitySnapshots.RefreshProfile(_profile);
         _session.Dispose();
         _wakeSignal.Dispose();
     }
@@ -1348,6 +1525,17 @@ internal sealed class XaeSessionCoordinator : IDisposable
         DteInstanceInfo selected = snapshot.SelectedInstance
             ?? throw new InvalidOperationException(
                 "A connected XAE snapshot has no selected instance.");
+        int processId = selected.ProcessId
+            ?? throw new InvalidOperationException(
+                "A connected XAE snapshot has no process identity.");
+        XaeCloseConsentState closeConsent =
+            _xaeCloseConsent.Observe(
+                _profile.Name,
+                processId,
+                snapshot.Ownership);
+        _capabilitySnapshots.RefreshProfile(
+            _profile,
+            new CapabilityEvaluationContext(processId));
         _runtimeMonitor?.PublishXaeObservation(
             snapshot.TwinCatSystem);
         _runtimeMonitor?.UpdateProject(
@@ -1378,11 +1566,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
             Dictionary<string, string> properties = new()
             {
                 ["processId"] =
-                    selected.ProcessId?.ToString(
-                        CultureInfo.InvariantCulture)
-                    ?? "unknown",
+                    processId.ToString(
+                        CultureInfo.InvariantCulture),
                 ["progId"] = selected.ProgId ?? "unknown",
                 ["solution"] = selected.Solution ?? "unknown",
+                ["ownership"] = snapshot.Ownership.ToString(),
+                ["closeConsented"] =
+                    closeConsent.Consented.ToString(),
                 ["agentWorkspaceOwned"] =
                     snapshot.AgentWorkspaceOwned.ToString(),
                 ["closedDocumentCount"] =
@@ -1416,6 +1606,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         int processId,
         XaeSaveMode saveMode)
     {
+        _xaeCloseConsent.Clear(_profile.Name, processId);
+        _capabilitySnapshots.RefreshProfile(_profile);
         lock (_sync)
         {
             _lastSnapshot = new XaeSessionSnapshot();
@@ -1730,6 +1922,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 "Could not release the failed XAE session.",
                 exception: exception);
         }
+        finally
+        {
+            _xaeCloseConsent.Clear(_profile.Name);
+            _capabilitySnapshots.RefreshProfile(_profile);
+        }
     }
 
     private static int? GetMeaningfulHResult(Exception exception)
@@ -1771,6 +1968,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 : CloneInfo(source.SelectedInstance),
             SysManagerAvailable = source.SysManagerAvailable,
             LaunchedByGateway = source.LaunchedByGateway,
+            Ownership = source.Ownership,
             AgentWorkspaceOwned = source.AgentWorkspaceOwned,
             ClosedDocumentCount = source.ClosedDocumentCount,
             DiscardedDocumentCount =

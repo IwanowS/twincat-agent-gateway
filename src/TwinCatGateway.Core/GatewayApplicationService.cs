@@ -64,6 +64,9 @@ public sealed class GatewayApplicationService
     private readonly Func<string?>? _currentLogPathProvider;
     private readonly SourceManifestResourceReader?
         _sourceManifestReader;
+    private readonly Func<int?>? _xaeProcessIdProvider;
+    private readonly OperationCancellationService
+        _operationCancellation;
 
     public GatewayApplicationService(
         string version,
@@ -87,7 +90,9 @@ public sealed class GatewayApplicationService
         XaeMessagesProvider? xaeMessagesProvider = null,
         Func<string?>? currentLogPathProvider = null,
         CloseXaeOperationExecutor? closeXaeExecutor = null,
-        SourceManifestStore? sourceManifests = null)
+        SourceManifestStore? sourceManifests = null,
+        Func<int?>? xaeProcessIdProvider = null,
+        OperationCancellationService? operationCancellation = null)
     {
         _version = version
             ?? throw new ArgumentNullException(nameof(version));
@@ -97,6 +102,8 @@ public sealed class GatewayApplicationService
             ?? throw new ArgumentNullException(nameof(operations));
         _queue = queue
             ?? throw new ArgumentNullException(nameof(queue));
+        _operationCancellation = operationCancellation
+            ?? new OperationCancellationService(_queue);
         _logs = logs
             ?? throw new ArgumentNullException(nameof(logs));
         _diagnosticsProvider = diagnosticsProvider;
@@ -112,6 +119,7 @@ public sealed class GatewayApplicationService
         _activeProfile = activeProfile;
         _preflight = preflight;
         _capabilities = capabilities;
+        _xaeProcessIdProvider = xaeProcessIdProvider;
         _clock = clock ?? SystemClock.Instance;
         _eventJournal = eventJournal
             ?? throw new ArgumentNullException(
@@ -273,6 +281,10 @@ public sealed class GatewayApplicationService
             parameters.Profile,
             CapabilityKey.XaeBuild,
             "build.admission");
+        OperationCapabilityGuard buildGuard = new(
+            RequireCapabilities("build.admission"),
+            profile,
+            CapabilityKey.XaeBuild);
         if (parameters.DiscardDirtyDocuments)
         {
             preflight.EnsureAllowed(
@@ -309,6 +321,7 @@ public sealed class GatewayApplicationService
                 ExecuteBuildAsync(
                     operationId,
                     captured,
+                    buildGuard,
                     cancellationToken),
             timeout);
     }
@@ -345,6 +358,10 @@ public sealed class GatewayApplicationService
             CapabilityKey.XaeActivate,
             "activation.admission",
             requireTarget: true);
+        OperationCapabilityGuard activationGuard = new(
+            _capabilityEvaluator!,
+            profile,
+            CapabilityKey.XaeActivate);
 
         if (parameters.TimeoutSeconds.HasValue
             && parameters.TimeoutSeconds.Value <= 0)
@@ -385,6 +402,7 @@ public sealed class GatewayApplicationService
                 stage: "activation.tcunit");
         }
 
+        OperationCapabilityGuard? verificationGuard = null;
         if (waitForTcUnit)
         {
             preflight.EnsureAllowed(
@@ -392,6 +410,10 @@ public sealed class GatewayApplicationService
                 CapabilityKey.TargetTcUnitVerification,
                 "activation.tcunit.admission",
                 requireTarget: true);
+            verificationGuard = new OperationCapabilityGuard(
+                _capabilityEvaluator!,
+                profile,
+                CapabilityKey.TargetTcUnitVerification);
         }
 
         TwinCatStatus runtimeStatus =
@@ -409,6 +431,8 @@ public sealed class GatewayApplicationService
                 ExecuteActivationAsync(
                     operationId,
                     captured,
+                    activationGuard,
+                    verificationGuard,
                     cancellationToken),
             timeout);
     }
@@ -438,11 +462,16 @@ public sealed class GatewayApplicationService
                 stage: "recovery.validate");
         }
 
-        RequirePreflight("recovery.admission").EnsureAllowed(
+        ResolvedProfile profile =
+            RequirePreflight("recovery.admission").EnsureAllowed(
             parameters.Profile,
             CapabilityKey.TargetConfig,
             "recovery.admission",
             requireTarget: true);
+        OperationCapabilityGuard recoveryGuard = new(
+            _capabilityEvaluator!,
+            profile,
+            CapabilityKey.TargetConfig);
 
         if (parameters.TimeoutSeconds.HasValue
             && parameters.TimeoutSeconds.Value <= 0)
@@ -461,6 +490,7 @@ public sealed class GatewayApplicationService
                 ExecuteRecoverToConfigAsync(
                     operationId,
                     captured,
+                    recoveryGuard,
                     cancellationToken),
             TimeSpan.FromSeconds(
                 captured.TimeoutSeconds ?? 120));
@@ -490,6 +520,10 @@ public sealed class GatewayApplicationService
             parameters.Profile,
             CapabilityKey.XaeSynchronize,
             "synchronize.admission");
+        OperationCapabilityGuard synchronizeGuard = new(
+            RequireCapabilities("synchronize.admission"),
+            profile,
+            CapabilityKey.XaeSynchronize);
         if (parameters.DiscardDirtyDocuments)
         {
             preflight.EnsureAllowed(
@@ -515,6 +549,7 @@ public sealed class GatewayApplicationService
                 ExecuteSynchronizationAsync(
                     operationId,
                     captured,
+                    synchronizeGuard,
                     cancellationToken),
             TimeSpan.FromSeconds(
                 captured.TimeoutSeconds ?? 120));
@@ -539,13 +574,14 @@ public sealed class GatewayApplicationService
 
         CapabilityEvaluator capabilities =
             RequireCapabilities("xae.close.admission");
-        CapabilityEvaluationContext context = new(
-            _status.Read().Xae.ProcessId);
-        capabilities.EnsureAllowed(
+        OperationCapabilityGuard closeGuard = new(
+            capabilities,
             _activeProfile,
             CapabilityKey.XaeClose,
-            "xae.close.admission",
-            context);
+            () => new CapabilityEvaluationContext(
+                _xaeProcessIdProvider?.Invoke()
+                    ?? _status.Read().Xae.ProcessId));
+        closeGuard.EnsureAllowed("xae.close.admission");
 
         if (!Enum.IsDefined(
             typeof(XaeSaveMode),
@@ -563,7 +599,9 @@ public sealed class GatewayApplicationService
                 _activeProfile,
                 CapabilityKey.XaeDiscardDirtyDocuments,
                 "xae.close.discard.admission",
-                context);
+                new CapabilityEvaluationContext(
+                    _xaeProcessIdProvider?.Invoke()
+                        ?? _status.Read().Xae.ProcessId));
         }
 
         if (parameters.TimeoutSeconds.HasValue
@@ -583,6 +621,7 @@ public sealed class GatewayApplicationService
                 ExecuteCloseXaeAsync(
                     operationId,
                     captured,
+                    closeGuard,
                     cancellationToken),
             TimeSpan.FromSeconds(
                 (captured.TimeoutSeconds ?? 120) + 5d));
@@ -655,7 +694,7 @@ public sealed class GatewayApplicationService
         }
 
         OperationCancellationResult cancellation =
-            _queue.CancelBeforeStart(operationId);
+            _operationCancellation.Cancel(operationId);
         if (cancellation == OperationCancellationResult.NotFound)
         {
             throw new GatewayOperationException(
@@ -663,18 +702,21 @@ public sealed class GatewayApplicationService
                 $"Operation '{operationId}' was not found.");
         }
 
-        if (cancellation == OperationCancellationResult.AlreadyStarted)
+        if (cancellation == OperationCancellationResult.AlreadyTerminal)
         {
             throw new GatewayOperationException(
                 ErrorCodes.OperationNotCancellable,
-                $"Operation '{operationId}' has already started or completed.");
+                $"Operation '{operationId}' has already completed.");
         }
 
         return new CancelOperationResult
         {
             OperationId = operationId,
             Cancelled = true,
-            State = OperationState.Cancelled,
+            State = cancellation
+                == OperationCancellationResult.CancelledBeforeStart
+                    ? OperationState.Cancelled
+                    : OperationState.Running,
         };
     }
 
@@ -837,6 +879,7 @@ public sealed class GatewayApplicationService
     private async Task<OperationExecutionResult> ExecuteBuildAsync(
         string operationId,
         BuildParameters parameters,
+        OperationCapabilityGuard buildGuard,
         CancellationToken cancellationToken)
     {
         DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
@@ -855,6 +898,8 @@ public sealed class GatewayApplicationService
         });
         try
         {
+            buildGuard.EnsureAllowed(
+                "build.preSideEffect");
             BuildResult result = await _buildExecutor!(
                 operationId,
                 parameters,
@@ -923,6 +968,7 @@ public sealed class GatewayApplicationService
         ExecuteSynchronizationAsync(
             string operationId,
             SynchronizeParameters parameters,
+            OperationCapabilityGuard synchronizeGuard,
             CancellationToken cancellationToken)
     {
         DateTimeOffset startedAtUtc = _clock.UtcNow;
@@ -942,6 +988,8 @@ public sealed class GatewayApplicationService
         });
         try
         {
+            synchronizeGuard.EnsureAllowed(
+                "synchronize.preSideEffect");
             SynchronizeResult result =
                 await _synchronizeExecutor!(
                     operationId,
@@ -978,6 +1026,7 @@ public sealed class GatewayApplicationService
     private async Task<OperationExecutionResult> ExecuteCloseXaeAsync(
         string operationId,
         CloseXaeParameters parameters,
+        OperationCapabilityGuard closeGuard,
         CancellationToken cancellationToken)
     {
         DateTimeOffset startedAtUtc = _clock.UtcNow;
@@ -996,6 +1045,8 @@ public sealed class GatewayApplicationService
         });
         try
         {
+            closeGuard.EnsureAllowed(
+                "xae.close.preSideEffect");
             CloseXaeResult result =
                 await _closeXaeExecutor!(
                     operationId,
@@ -1031,6 +1082,8 @@ public sealed class GatewayApplicationService
         ExecuteActivationAsync(
             string operationId,
             ActivateParameters parameters,
+            OperationCapabilityGuard activationGuard,
+            OperationCapabilityGuard? verificationGuard,
             CancellationToken cancellationToken)
     {
         DateTimeOffset startedAtUtc = _clock.UtcNow;
@@ -1049,6 +1102,8 @@ public sealed class GatewayApplicationService
         });
         try
         {
+            activationGuard.EnsureAllowed(
+                "activation.preSideEffect");
             bool waitForTcUnit = parameters.WaitForTcUnit ?? false;
             TcUnitRunPreparation? preparation =
                 waitForTcUnit
@@ -1075,6 +1130,7 @@ public sealed class GatewayApplicationService
                                 testOperationId,
                                 operationId,
                                 preparation,
+                                verificationGuard!,
                                 testCancellation),
                         TimeSpan.FromSeconds(
                             timeoutSeconds + 5d));
@@ -1142,6 +1198,7 @@ public sealed class GatewayApplicationService
         ExecuteRecoverToConfigAsync(
             string operationId,
             RecoverToConfigParameters parameters,
+            OperationCapabilityGuard recoveryGuard,
             CancellationToken cancellationToken)
     {
         DateTimeOffset startedAtUtc = _clock.UtcNow;
@@ -1161,6 +1218,8 @@ public sealed class GatewayApplicationService
         });
         try
         {
+            recoveryGuard.EnsureAllowed(
+                "recovery.preSideEffect");
             RecoverToConfigResult result =
                 await _recoveryExecutor!(
                     operationId,
@@ -1187,6 +1246,7 @@ public sealed class GatewayApplicationService
             string operationId,
             string activationOperationId,
             TcUnitRunPreparation preparation,
+            OperationCapabilityGuard verificationGuard,
             CancellationToken cancellationToken)
     {
         DateTimeOffset startedAtUtc = _clock.UtcNow;
@@ -1205,6 +1265,8 @@ public sealed class GatewayApplicationService
         });
         try
         {
+            verificationGuard.EnsureAllowed(
+                "tcunit.preSideEffect");
             TestResult result = await _tcUnitExecutor!(
                 operationId,
                 activationOperationId,

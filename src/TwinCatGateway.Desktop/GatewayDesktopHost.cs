@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -20,12 +21,15 @@ public sealed class GatewayDesktopHost : IDisposable
     private readonly NamedPipeGatewayServer _server;
     private readonly GatewayStatusSnapshotStore _status;
     private readonly GatewayEventJournal _events;
+    private readonly OperatorLockStore _operatorLocks;
+    private readonly XaeCloseConsentStore _xaeCloseConsent;
     private readonly CapabilityEvaluator _capabilities;
     private readonly CapabilitySnapshotStore _capabilitySnapshots;
     private readonly SourceManifestStore? _sourceManifests;
     private readonly ProfileObservationStore? _observations;
     private readonly AdsRuntimeMonitor? _runtimeMonitor;
     private readonly XaeSessionCoordinator? _xaeCoordinator;
+    private readonly OperationCancellationService _operationCancellation;
     private Task? _serverTask;
     private Task? _runtimeMonitorTask;
     private Task? _xaeTask;
@@ -45,7 +49,12 @@ public sealed class GatewayDesktopHost : IDisposable
         StartupError = hostConfiguration.Error;
         Configuration = hostConfiguration.Configuration;
         ActiveProfile = hostConfiguration.ActiveProfile;
-        _capabilities = new CapabilityEvaluator(Configuration);
+        _operatorLocks = new OperatorLockStore();
+        _xaeCloseConsent = new XaeCloseConsentStore();
+        _capabilities = new CapabilityEvaluator(
+            Configuration,
+            _xaeCloseConsent,
+            _operatorLocks);
         _capabilitySnapshots = new CapabilitySnapshotStore(
             _capabilities);
         _capabilitySnapshots.RefreshGateway();
@@ -118,6 +127,8 @@ public sealed class GatewayDesktopHost : IDisposable
             exceptionSink: new OperationExceptionLoggingSink(
                 _logging.CreateLogger<OperationQueue>()),
             gatewayEventSink: _events);
+        _operationCancellation = new OperationCancellationService(
+            _queue);
         _xaeCoordinator = ActiveProfile is null
             ? null
             : new XaeSessionCoordinator(
@@ -131,7 +142,9 @@ public sealed class GatewayDesktopHost : IDisposable
                 _events,
                 _runtimeMonitor,
                 errorListSnapshots,
-                _sourceManifests!);
+                _sourceManifests!,
+                _xaeCloseConsent,
+                _capabilitySnapshots);
         Func<GatewayDiagnosticsResult>? diagnosticsProvider =
             _xaeCoordinator is null
                 ? null
@@ -191,7 +204,12 @@ public sealed class GatewayDesktopHost : IDisposable
             xaeMessagesProvider: xaeMessagesProvider,
             currentLogPathProvider: () => _logging.Path,
             closeXaeExecutor: closeXaeExecutor,
-            sourceManifests: _sourceManifests);
+            sourceManifests: _sourceManifests,
+            xaeProcessIdProvider: ActiveProfile is null
+                ? null
+                : () => _xaeCloseConsent.ReadProcessId(
+                    ActiveProfile!.Name),
+            operationCancellation: _operationCancellation);
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
             _capabilities,
@@ -237,6 +255,37 @@ public sealed class GatewayDesktopHost : IDisposable
     public CapabilitySnapshotStore CapabilitySnapshots =>
         _capabilitySnapshots;
 
+    public OperatorLockStore OperatorLocks => _operatorLocks;
+
+    public XaeCloseConsentStore XaeCloseConsent => _xaeCloseConsent;
+
+    public OperationCancellationService OperationCancellation =>
+        _operationCancellation;
+
+    public IReadOnlyList<CapabilityState> SetOperatorLock(
+        string profile,
+        OperatorLockKey key,
+        bool locked)
+    {
+        ResolvedProfile activeProfile = ResolveActiveProfile(profile);
+        _operatorLocks.SetLocked(activeProfile.Name, key, locked);
+        return RefreshActiveProfileCapabilities(activeProfile);
+    }
+
+    public XaeCloseConsentState SetXaeCloseConsent(
+        string profile,
+        int processId,
+        bool consented)
+    {
+        ResolvedProfile activeProfile = ResolveActiveProfile(profile);
+        XaeCloseConsentState state = _xaeCloseConsent.SetConsent(
+            activeProfile.Name,
+            processId,
+            consented);
+        RefreshActiveProfileCapabilities(activeProfile);
+        return state;
+    }
+
     public string? ConfigurationPath { get; }
 
     public string PipeName { get; }
@@ -252,6 +301,39 @@ public sealed class GatewayDesktopHost : IDisposable
     public bool CanReconnectXae => _xaeCoordinator is not null;
 
     public event EventHandler? ShutdownRequested;
+
+    private ResolvedProfile ResolveActiveProfile(string profile)
+    {
+        if (string.IsNullOrWhiteSpace(profile))
+        {
+            throw new ArgumentException(
+                "Profile name is required.",
+                nameof(profile));
+        }
+
+        if (ActiveProfile is null
+            || !string.Equals(
+                ActiveProfile.Name,
+                profile,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileNotFound,
+                $"Profile '{profile}' is not the active profile.",
+                stage: "operatorSessionState.profile");
+        }
+
+        return ActiveProfile;
+    }
+
+    private IReadOnlyList<CapabilityState>
+        RefreshActiveProfileCapabilities(ResolvedProfile profile)
+    {
+        return _capabilitySnapshots.RefreshProfile(
+            profile,
+            new CapabilityEvaluationContext(
+                _xaeCloseConsent.ReadProcessId(profile.Name)));
+    }
 
     public void Start()
     {
@@ -419,6 +501,15 @@ public sealed class GatewayDesktopHost : IDisposable
         }
 
         await _queue.StopAsync().ConfigureAwait(false);
+        if (_xaeCoordinator is not null)
+        {
+            await _xaeCoordinator
+                .CloseConsentedCleanXaeOnShutdownAsync(
+                    TimeSpan.FromSeconds(10),
+                    CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+
         _xaeCoordinator?.Dispose();
         _runtimeMonitor?.Dispose();
         _server.Dispose();

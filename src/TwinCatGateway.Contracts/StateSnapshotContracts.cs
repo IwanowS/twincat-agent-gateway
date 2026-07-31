@@ -96,6 +96,16 @@ public enum CapabilityKey
     TargetTcUnitVerification,
 }
 
+public enum OperatorLockKey
+{
+    AllMutating,
+    XaeLifecycle,
+    XaeSynchronizationBuild,
+    XaeActivation,
+    TargetConfigStartRestart,
+    TcUnitVerification,
+}
+
 public enum CapabilityDenialReason
 {
     None,

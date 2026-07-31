@@ -112,7 +112,7 @@ flowchart TD
 | S2 | Profile resolver and effective capabilities | completed 2026-07-31 |
 | S3 | Source discovery manifest | completed 2026-07-31 |
 | S4 | Separate XAE/System Service/PLC states | completed 2026-07-31 |
-| S5 | Operator locks and XAE close consent backend | pending |
+| S5 | Operator locks and XAE close consent backend | completed 2026-07-31 |
 | S6 | XAE build scope and policy cutover | pending |
 | S7 | Target Config/start-restart | pending |
 | S8 | Activation and TcUnit verification unification | pending |

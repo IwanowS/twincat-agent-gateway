@@ -11,9 +11,10 @@ namespace TwinCatGateway.Core;
 
 public enum OperationCancellationResult
 {
-    Cancelled,
+    CancelledBeforeStart,
+    CancellationRequested,
     NotFound,
-    AlreadyStarted,
+    AlreadyTerminal,
 }
 
 [SuppressMessage(
@@ -119,18 +120,20 @@ public sealed class OperationQueue : IDisposable
         }
     }
 
-    public OperationCancellationResult CancelBeforeStart(string operationId)
+    public OperationCancellationResult Cancel(string operationId)
     {
         if (!_items.TryGetValue(operationId, out QueueItem? item))
         {
             return _store.Get(operationId) is null
                 ? OperationCancellationResult.NotFound
-                : OperationCancellationResult.AlreadyStarted;
+                : OperationCancellationResult.AlreadyTerminal;
         }
 
-        if (!item.TryCancelBeforeStart())
+        OperationCancellationResult cancellation = item.TryCancel();
+        if (cancellation
+            != OperationCancellationResult.CancelledBeforeStart)
         {
-            return OperationCancellationResult.AlreadyStarted;
+            return cancellation;
         }
 
         DateTimeOffset completedAtUtc = _clock.UtcNow;
@@ -148,7 +151,8 @@ public sealed class OperationQueue : IDisposable
         }
 
         _items.TryRemove(operationId, out _);
-        return OperationCancellationResult.Cancelled;
+        item.Dispose();
+        return cancellation;
     }
 
     public async Task StopAsync()
@@ -189,6 +193,7 @@ public sealed class OperationQueue : IDisposable
                 {
                     if (!item.TryStart())
                     {
+                        item.Dispose();
                         continue;
                     }
 
@@ -223,10 +228,13 @@ public sealed class OperationQueue : IDisposable
             ? new CancellationTokenSource(item.Timeout.Value)
             : null;
         using CancellationTokenSource execution = timeout is null
-            ? CancellationTokenSource.CreateLinkedTokenSource(_shutdown.Token)
+            ? CancellationTokenSource.CreateLinkedTokenSource(
+                _shutdown.Token,
+                item.CancellationToken)
             : CancellationTokenSource.CreateLinkedTokenSource(
                 _shutdown.Token,
-                timeout.Token);
+                timeout.Token,
+                item.CancellationToken);
 
         try
         {
@@ -285,6 +293,23 @@ public sealed class OperationQueue : IDisposable
             }
         }
         catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        {
+            DateTimeOffset completedAtUtc = _clock.UtcNow;
+            bool completed = _store.TryComplete(
+                item.OperationId,
+                OperationState.Cancelled,
+                completedAtUtc);
+            if (completed)
+            {
+                RecordOperationEvent(
+                    item.OperationId,
+                    item.Kind,
+                    OperationState.Cancelled,
+                    completedAtUtc);
+            }
+        }
+        catch (OperationCanceledException) when (
+            item.IsCancellationRequested)
         {
             DateTimeOffset completedAtUtc = _clock.UtcNow;
             bool completed = _store.TryComplete(
@@ -375,6 +400,7 @@ public sealed class OperationQueue : IDisposable
         {
             item.MarkCompleted();
             _items.TryRemove(item.OperationId, out _);
+            item.Dispose();
         }
     }
 
@@ -382,7 +408,8 @@ public sealed class OperationQueue : IDisposable
     {
         while (_queue.TryDequeue(out QueueItem? item))
         {
-            if (!item.TryCancelBeforeStart())
+            if (item.TryCancel()
+                != OperationCancellationResult.CancelledBeforeStart)
             {
                 continue;
             }
@@ -402,6 +429,7 @@ public sealed class OperationQueue : IDisposable
             }
 
             _items.TryRemove(item.OperationId, out _);
+            item.Dispose();
         }
     }
 
@@ -666,12 +694,14 @@ public sealed class OperationQueue : IDisposable
             };
     }
 
-    private sealed class QueueItem
+    private sealed class QueueItem : IDisposable
     {
         private const int Queued = 0;
         private const int Running = 1;
-        private const int Cancelled = 2;
-        private const int Completed = 3;
+        private const int CancelledBeforeStart = 2;
+        private const int CancellationRequested = 3;
+        private const int Completed = 4;
+        private readonly CancellationTokenSource _cancellation = new();
         private int _state;
 
         public QueueItem(
@@ -700,19 +730,69 @@ public sealed class OperationQueue : IDisposable
 
         public TimeSpan? Timeout { get; }
 
+        public CancellationToken CancellationToken =>
+            _cancellation.Token;
+
+        public bool IsCancellationRequested =>
+            _cancellation.IsCancellationRequested;
+
         public bool TryStart()
         {
             return Interlocked.CompareExchange(ref _state, Running, Queued) == Queued;
         }
 
-        public bool TryCancelBeforeStart()
+        public OperationCancellationResult TryCancel()
         {
-            return Interlocked.CompareExchange(ref _state, Cancelled, Queued) == Queued;
+            while (true)
+            {
+                int state = Volatile.Read(ref _state);
+                switch (state)
+                {
+                    case Queued:
+                        if (Interlocked.CompareExchange(
+                                ref _state,
+                                CancelledBeforeStart,
+                                Queued) != Queued)
+                        {
+                            continue;
+                        }
+
+                        _cancellation.Cancel();
+                        return OperationCancellationResult
+                            .CancelledBeforeStart;
+                    case Running:
+                        if (Interlocked.CompareExchange(
+                                ref _state,
+                                CancellationRequested,
+                                Running) != Running)
+                        {
+                            continue;
+                        }
+
+                        _cancellation.Cancel();
+                        return OperationCancellationResult
+                            .CancellationRequested;
+                    case CancellationRequested:
+                        return OperationCancellationResult
+                            .CancellationRequested;
+                    case CancelledBeforeStart:
+                    case Completed:
+                        return OperationCancellationResult.AlreadyTerminal;
+                    default:
+                        throw new InvalidOperationException(
+                            "The operation queue item has an invalid state.");
+                }
+            }
         }
 
         public void MarkCompleted()
         {
             Interlocked.Exchange(ref _state, Completed);
+        }
+
+        public void Dispose()
+        {
+            _cancellation.Dispose();
         }
     }
 }
