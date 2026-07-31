@@ -150,8 +150,9 @@ NetId, and (by default) a recent successful build.
   Repair/reset the test target through the approved operator workflow, then
   reconnect. Do not treat it as unavailable.
 
-The gateway may attempt the documented recovery-to-Config sequence. A failed
-recovery is reported; it is not silently retried through ADS control.
+Config is an explicit Target operation. It is never invoked automatically by
+build or activation, and a failed Target transition is never retried through
+ADS control.
 
 ## TcUnit does not complete
 

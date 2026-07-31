@@ -78,7 +78,7 @@ Compact success не повторяет solution path и AMS NetId без нео
 ### 2.3 Публичные операции отражают объекты TwinCAT
 
 Gateway сохраняет нативные понятия XAE, Target System и PLC runtime. Он не
-должен вводить policy-команды вроде `recover_to_config`, когда TwinCAT уже
+должен вводить отдельные policy-команды для возврата в Config, когда TwinCAT уже
 имеет обычную операцию перехода в Config.
 
 Это не означает публикацию raw COM invoke или caller-selected ADS request.
@@ -712,7 +712,7 @@ twincat_target_start_restart
 
 `twincat_status`, `twincat_get_diagnostics`,
 `twincat_get_xae_messages`, `twincat_get_test_results` и
-`twincat_recover_to_config` не входят в target contract.
+Legacy recovery aliases do not enter the target contract.
 
 ## 14. Target MCP resources
 

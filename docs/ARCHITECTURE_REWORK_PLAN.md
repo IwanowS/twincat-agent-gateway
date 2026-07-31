@@ -128,10 +128,10 @@ real-XAE gates.
 | S1 | Contracts, errors, config schema v2 | yes | Contracts: 23/23 on net8.0 and 23/23 on net48 | not required | accepted locally |
 | S2 | Profile resolver and effective capabilities | yes | covered by tracked migration suite: 82/82 | not required | accepted locally |
 | S3 | Source discovery manifest | yes | covered by tracked migration suite: 82/82 | not required | accepted locally |
-| S4 | Separate XAE/System Service/PLC states | yes | observation suite: 59 passed, 1 skipped | pending | pending |
+| S4 | Separate XAE/System Service/PLC states | yes | observation suite: 59 passed, 1 skipped | exact fixture provenance captured by S7 checkpoint | accepted |
 | S5 | Operator locks and XAE close consent backend | yes | partial: tracked session-state coverage passes; cancellation coverage remains local-only until S9 cutover | not required | pending local gate |
 | S6 | XAE build scope and policy cutover | yes | production-TFM compile passes; migration 82/82; XAE event suite 7/7 | pending | pending |
-| S7 | Target Config/start-restart | no | pending | pending | pending |
+| S7 | Target Config/start-restart | yes | target suite: 23/23; Contracts: 26/26 on net8.0 and net48 | exact fixture cycle passed | accepted |
 | S8 | Activation and TcUnit verification unification | no | pending | pending | pending |
 | S9 | MCP tools/resources and operation journal cutover | no | pending | pending | pending |
 | S10 | Desktop UI redesign | no | pending | pending | pending |
@@ -546,10 +546,7 @@ Replace recovery policy with explicit Target operations and postconditions.
    - fresh direct Run postcondition.
 4. Use profile/capability/lock services.
 5. Keep target semantics separate from PLC application states.
-6. Remove:
-   - recovery operation kind;
-   - `RUNTIME_RECOVERY_REQUIRED`;
-   - `twincat_recover_to_config`.
+6. Remove the legacy recovery operation kind, error, tool, and aliases.
 
 ### Suggested commits
 
@@ -583,6 +580,30 @@ No activation or test run in this checkpoint.
 ### Exit
 
 No public/internal policy refers to recovery as a separate user action.
+
+### Completion — 2026-07-31
+
+Accepted on production code commit `8dee04e`:
+
+- Target Config and start/restart use separate internal IPC methods and typed
+  direct-observation results;
+- Config supports a fresh Config no-op and a single guarded command from every
+  other/unknown observation, with best-effort pre-command fault evidence;
+- start/restart selects Start from Config/Stop and Restart from Run, rejects an
+  unreadable or unsupported initial state, and requires a fresh direct Run
+  postcondition;
+- cancellation/timeout evidence preserves whether a command had started;
+- the legacy recovery contract, policy, CLI command, MCP tool, UI naming, and
+  operation events were removed without an alias;
+- the tracked Target suite passed 23/23, ContractTests passed 26/26 on both
+  target frameworks, the Core migration suite passed 82/82, observation passed
+  59 with one opt-in test skipped, and the XAE build-event suite passed 7/7;
+- the exact fixture completed one `observe -> Config -> observe -> start ->
+  observe -> restart -> observe` cycle and finished in fresh direct Run;
+- the same first observation closed the S4 real-XAE gate with XAE, direct
+  System Service, and PLC 851 provenance and raw evidence;
+- the S6 real-XAE matrix remains pending. No activation, build, TcUnit, or
+  fault injection was performed for this checkpoint.
 
 ## 14. S8 — activation and TcUnit verification unification
 

@@ -161,36 +161,16 @@ diagnostics, `completion=unknown`, and
 transition, or TcUnit operation. The test restores the exact original source
 bytes and explicitly synchronizes XAE in `finally`.
 
-The runtime fault/recovery acceptance is a separate destructive opt-in for the
-repository fixture and the dedicated remote bench. It also launches and owns
-its exact-solution XAE instance. In addition to the no-Run variables above, it
-requires:
+The previous runtime-fault acceptance depended on the removed legacy Target
+transition surface and is not a current executable acceptance command. The S6
+real-XAE fault matrix remains pending until it is replaced by a plan item that
+uses standalone build and explicit Target Config semantics. Never run the old
+fault-injection scenario or add it to routine validation.
 
-```powershell
-$env:TWINCAT_GATEWAY_ALLOW_REMOTE_FAULT_INJECTION = '1'
-dotnet vstest `
-  'tests\TwinCatGateway.IntegrationTests\bin\Debug\net48\TwinCatGateway.IntegrationTests.dll' `
-  '/Platform:x86' `
-  '/TestCaseFilter:FullyQualifiedName~DesktopGatewayActivationTests.RuntimeFaultRequiresExplicitRecoveryBeforeHealthyRebuildThroughIpc'
-```
-
-The test verifies the exact disabled fault sentinel before changing the
-repository-owned `MAIN.TcPOU`. It rebuilds and activates a deliberate NULL
-pointer Page Fault, preserves `Page Fault`/`0xc0000005` diagnostics, verifies
-that a subsequent Build is blocked, explicitly recovers to Config, restores
-the original source bytes, synchronizes XAE, and completes a healthy Rebuild.
-The source bytes are also restored in `finally`. An unexpected dialog, target
-identity, or transition stops further runtime commands; inspect the bench
-before any manual recovery.
-
-Never add this destructive test to routine automated validation. Run it only
-after an explicit change to the runtime test pipeline or recovery workflow,
-with an operator available to log in to the remote system and restore Config
-Mode. On `WIN-T077ADA`, several repeated Exception transitions have sometimes
-prevented the automated Config transition from completing; this has not been
-confirmed on other runtimes. A recovery timeout or failure must stop the
-pipeline without an automatic retry. After the operator restores Config Mode,
-confirm it through the gateway before continuing.
+For any future approved fault scenario, an unexpected dialog, identity
+mismatch, Exception transition, timeout, or missing postcondition must stop
+further mutating commands. Collect read-only evidence and require deliberate
+operator direction; do not retry or change Target state automatically.
 
 The bench may also show `Target system reports a fatal error` after the fault
 operation has already completed, including `AdsError: 1804 (0x70c)` while
@@ -199,7 +179,7 @@ restart prompt. The next explicit gateway operation may dismiss only its `OK`
 button, must return `XAE_DIALOG_REPORTED_FAILURE`, and must not retry the
 runtime transition automatically.
 
-After a completed fault/recovery lifecycle, this XAE has also shown `Closing
+After an earlier fault lifecycle, this XAE has also shown `Closing
 project failed! Visual Studio will restart now. Key cannot be null. Parameter
 name: key` while closing the solution. Corrupted Visual Studio/TwinCAT caches
 or hidden project configuration are suspected on this bench, but the root

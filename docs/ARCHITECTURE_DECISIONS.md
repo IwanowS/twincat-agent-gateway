@@ -98,7 +98,7 @@ freshness и failure modes. System Service Run не означает, что к�
 - best-effort fault snapshot выполняется до transition;
 - dump collection не блокирует Config;
 - success требует свежего System Service postcondition;
-- `twincat_recover_to_config` удаляется без alias.
+- legacy recovery tool удаляется без alias.
 
 ## D-006. Start/restart имеет явную non-idempotent семантику
 

@@ -667,7 +667,6 @@ twincat_build
 twincat_sync
 twincat_close_xae
 twincat_activate
-twincat_recover_to_config
 twincat_get_diagnostics
 twincat_get_xae_messages
 twincat_get_test_results
