@@ -8,7 +8,7 @@ public sealed class GatewayStartResult
 
     public int? ProcessId { get; set; }
 
-    public GatewayStatusResult Status { get; set; } = new();
+    public GatewayStateSnapshot Status { get; set; } = new();
 }
 
 public sealed class GatewayShutdownResult

@@ -17,6 +17,5 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
-    <ProjectReference Include="..\..\src\TwinCatGateway.Ipc\TwinCatGateway.Ipc.csproj" />
   </ItemGroup>
 </Project>

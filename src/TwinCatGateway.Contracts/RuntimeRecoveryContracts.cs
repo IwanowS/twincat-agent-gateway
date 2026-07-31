@@ -21,9 +21,11 @@ public sealed class RecoverToConfigResult
 
     public TargetIdentity Target { get; set; } = new();
 
-    public RuntimeMode InitialRuntimeMode { get; set; }
+    public TargetSystemState InitialTargetState { get; set; } =
+        TargetSystemState.Unknown;
 
-    public RuntimeMode ObservedRuntimeMode { get; set; }
+    public TargetSystemState ObservedTargetState { get; set; } =
+        TargetSystemState.Unknown;
 
     public bool TransitionRequested { get; set; }
 }

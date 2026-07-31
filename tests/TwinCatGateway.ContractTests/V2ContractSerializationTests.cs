@@ -8,6 +8,41 @@ namespace TwinCatGateway.ContractTests;
 public sealed class V2ContractSerializationTests
 {
     [Fact]
+    public void GatewaySnapshotPreservesFaultEvidence()
+    {
+        GatewayStateSnapshot source = new()
+        {
+            State = GatewayProcessState.Faulted,
+            Version = "2.0.0",
+            ConfigurationPath = @"C:\Gateway\twincat-gateway.json",
+            ActiveProfile = "bench",
+            JournalId = "journal-1",
+            LatestEventCursor = 17,
+            ObservedAtUtc = ObservedAt,
+            Error = new ObservationError
+            {
+                Code = "GATEWAY_FAULTED",
+                Message = "Gateway state could not be refreshed.",
+                Retryable = true,
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        GatewayStateSnapshot? result =
+            JsonSerializer.Deserialize<GatewayStateSnapshot>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(GatewayProcessState.Faulted, result.State);
+        Assert.Equal(17, result.LatestEventCursor);
+        Assert.Equal("GATEWAY_FAULTED", result.Error?.Code);
+        Assert.True(result.Error?.Retryable);
+    }
+
+    [Fact]
     public void StateObservationsPreserveSourceAndRawEvidence()
     {
         TargetSystemObservation source = new()
@@ -90,6 +125,49 @@ public sealed class V2ContractSerializationTests
         Assert.Equal(
             TargetSystemState.Config,
             result.TwinCatSystem?.State);
+    }
+
+    [Fact]
+    public void PlcObservationPreservesAddressFreshnessAndReadError()
+    {
+        PlcRuntimeObservation source = new()
+        {
+            Profile = "bench",
+            RuntimeId = "plc-851",
+            Project = "MachinePlc",
+            Instance = "PLC1",
+            AmsNetId = "192.168.3.31.1.1",
+            Port = 851,
+            RawAdsState = 15,
+            RawAdsStateName = "Exception",
+            RawDeviceState = 4,
+            State = PlcRuntimeState.Exception,
+            ObservedAtUtc = ObservedAt,
+            Freshness = ObservationFreshness.Stale,
+            Error = new ObservationError
+            {
+                Code = "ADS_READ_TIMEOUT",
+                Message = "The PLC state read timed out.",
+                Retryable = true,
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        PlcRuntimeObservation? result =
+            JsonSerializer.Deserialize<PlcRuntimeObservation>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(ObservationSource.Plc, result.Source);
+        Assert.Equal("192.168.3.31.1.1", result.AmsNetId);
+        Assert.Equal(851, result.Port);
+        Assert.Equal(15, result.RawAdsState);
+        Assert.Equal(4, result.RawDeviceState);
+        Assert.Equal(ObservationFreshness.Stale, result.Freshness);
+        Assert.Equal("ADS_READ_TIMEOUT", result.Error?.Code);
     }
 
     [Fact]
@@ -201,6 +279,67 @@ public sealed class V2ContractSerializationTests
             result.Error?.Observed?.Solution);
         Assert.Contains("\"component\":\"xae\"", json);
         Assert.Contains("\"completion\":\"failed\"", json);
+    }
+
+    [Fact]
+    public void StageEnvelopePreservesTypedResultDiagnosticsAndResources()
+    {
+        OperationStageResult<StageEvidence> source = new()
+        {
+            OperationId = "operation-1",
+            Component = GatewayComponent.Verification,
+            Stage = "verification.tcunit",
+            Completion = OperationCompletion.Succeeded,
+            SideEffectsStarted = true,
+            Result = new StageEvidence
+            {
+                ReportFound = true,
+            },
+            Diagnostics =
+            {
+                new OperationDiagnostic
+                {
+                    Code = "TCUNIT_REPORT_FRESH",
+                    Component = GatewayComponent.Verification,
+                    Stage = "verification.tcunit.report",
+                    Severity = DiagnosticSeverity.Info,
+                    Message = "A fresh report was observed.",
+                    OccurredAtUtc = ObservedAt,
+                },
+            },
+            Resources =
+            {
+                new ResourceReference
+                {
+                    Uri = "twincat-operation://operation-1/test",
+                    MimeType = "application/json",
+                },
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        OperationStageResult<StageEvidence>? result =
+            JsonSerializer.Deserialize<OperationStageResult<StageEvidence>>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal("operation-1", result.OperationId);
+        Assert.True(result.Result?.ReportFound);
+        Assert.Single(result.Diagnostics);
+        Assert.Equal(
+            "TCUNIT_REPORT_FRESH",
+            result.Diagnostics[0].Code);
+        Assert.Equal(
+            "twincat-operation://operation-1/test",
+            Assert.Single(result.Resources).Uri);
+    }
+
+    private sealed class StageEvidence
+    {
+        public bool ReportFound { get; set; }
     }
 
     private static DateTimeOffset ObservedAt { get; } =

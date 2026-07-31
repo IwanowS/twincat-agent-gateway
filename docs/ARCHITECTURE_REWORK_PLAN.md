@@ -108,7 +108,7 @@ flowchart TD
 | Session | Scope | Status |
 |---|---|---|
 | S0 | Target documents, decisions, plan, instructions | completed by this documentation change |
-| S1 | Contracts, errors, config schema v2 | pending |
+| S1 | Contracts, errors, config schema v2 | completed 2026-07-31 |
 | S2 | Profile resolver and effective capabilities | pending |
 | S3 | Source discovery manifest | pending |
 | S4 | Separate XAE/System Service/PLC states | pending |

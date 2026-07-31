@@ -50,7 +50,8 @@ public sealed class ActivationResult
 
     public bool ActiveConfigurationVerified { get; set; }
 
-    public RuntimeMode ObservedRuntimeMode { get; set; }
+    public TargetSystemState ObservedTargetState { get; set; } =
+        TargetSystemState.Unknown;
 
     public AutostartBootProjectSelection AutostartBootProjects { get; set; }
 

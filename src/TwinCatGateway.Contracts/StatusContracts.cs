@@ -1,54 +1,6 @@
-using System;
 using System.Collections.Generic;
 
 namespace TwinCatGateway.Contracts;
-
-public sealed class HealthResult
-{
-    public string Version { get; set; } = string.Empty;
-
-    public GatewayState State { get; set; }
-
-    public bool Ready { get; set; }
-}
-
-public sealed class GatewayStatus
-{
-    public GatewayState State { get; set; }
-
-    public string Version { get; set; } = string.Empty;
-
-    public bool Ready { get; set; }
-
-    public string? ConfigurationPath { get; set; }
-
-    public string? ActiveProfile { get; set; }
-
-    public string? SolutionPath { get; set; }
-
-    public GatewayLaunchSource LaunchSource { get; set; } =
-        GatewayLaunchSource.Manual;
-
-    public GatewayUiMode UiMode { get; set; } = GatewayUiMode.Auto;
-}
-
-public sealed class XaeStatus
-{
-    public bool Connected { get; set; }
-
-    public string? Version { get; set; }
-
-    public string? Solution { get; set; }
-
-    public bool AgentWorkspaceOwned { get; set; }
-
-    public int DiscardedDocumentCount { get; set; }
-
-    public SynchronizationState SynchronizationState { get; set; } =
-        SynchronizationState.Uninitialized;
-
-    public int DirtyDocumentCount { get; set; }
-}
 
 public enum SynchronizationState
 {
@@ -56,59 +8,6 @@ public enum SynchronizationState
     SyncRequired,
     Synchronizing,
     Confirmed,
-}
-
-public sealed class TwinCatStatus
-{
-    public bool? Started { get; set; }
-
-    public RuntimeMode Mode { get; set; } = RuntimeMode.Unknown;
-
-    public RuntimeMode SystemMode { get; set; } = RuntimeMode.Unknown;
-
-    public DateTimeOffset? ObservedAtUtc { get; set; }
-
-    public RuntimeAlert? Alert { get; set; }
-}
-
-public sealed class RuntimeAlert
-{
-    public string Code { get; set; } = string.Empty;
-
-    public DiagnosticSeverity Severity { get; set; }
-
-    public string Message { get; set; } = string.Empty;
-
-    public string? Details { get; set; }
-
-    public DateTimeOffset OccurredAtUtc { get; set; }
-
-    public long EventCursor { get; set; }
-
-    public string? RuntimeName { get; set; }
-
-    public int? AdsPort { get; set; }
-}
-
-public sealed class GatewayStatusResult
-{
-    public GatewayStatus Gateway { get; set; } = new();
-
-    public XaeStatus Xae { get; set; } = new();
-
-    public TwinCatStatus TwinCat { get; set; } = new();
-
-    public OperationSummary? CurrentOperation { get; set; }
-
-    public BuildSummary? LastBuild { get; set; }
-
-    public ActivationSummary? LastActivation { get; set; }
-
-    public TestSummary? LastTest { get; set; }
-
-    public string EventStreamId { get; set; } = string.Empty;
-
-    public long LatestEventCursor { get; set; }
 }
 
 public sealed class GetDiagnosticsParameters
@@ -188,23 +87,6 @@ public enum SynchronizationFileRole
     PlcSource,
 }
 
-public sealed class AdsRuntimeDiagnostics
-{
-    public string? RuntimeName { get; set; }
-
-    public string? AmsNetId { get; set; }
-
-    public int Port { get; set; } = 10000;
-
-    public string? AdsState { get; set; }
-
-    public short? DeviceState { get; set; }
-
-    public string? ErrorCode { get; set; }
-
-    public DateTimeOffset? ReadAtUtc { get; set; }
-}
-
 public sealed class ComDiagnostics
 {
     public long RejectedCallCount { get; set; }
@@ -214,37 +96,4 @@ public sealed class ComDiagnostics
     public long LastCallLatencyMs { get; set; }
 
     public int? LastHResult { get; set; }
-}
-
-public sealed class GatewayDiagnosticsResult
-{
-    public GatewayStatusResult Status { get; set; } = new();
-
-    public List<DteInstanceInfo> DteInstances { get; set; } = new();
-
-    public XaeDiagnostics Xae { get; set; } = new();
-
-    public AdsRuntimeDiagnostics Runtime { get; set; } = new();
-
-    public List<AdsRuntimeDiagnostics> PlcRuntimes { get; set; } = new();
-
-    public ComDiagnostics Com { get; set; } = new();
-
-    public ComponentHealth Ipc { get; set; } = new();
-
-    public ComponentHealth LogStore { get; set; } = new();
-
-    public List<ResourceReference> Resources { get; set; } = new();
-
-    public List<GatewayEvent> Events { get; set; } = new();
-
-    public string EventStreamId { get; set; } = string.Empty;
-
-    public long NextScanCursor { get; set; }
-
-    public long LatestEventCursor { get; set; }
-
-    public bool MoreMatchingEventsAvailable { get; set; }
-
-    public bool EventHistoryTruncated { get; set; }
 }

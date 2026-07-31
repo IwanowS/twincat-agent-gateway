@@ -45,6 +45,8 @@ public sealed class OperationDiagnostic
 
 public sealed class OperationStageResult<TResult>
 {
+    public string OperationId { get; set; } = string.Empty;
+
     public GatewayComponent Component { get; set; }
 
     public string Stage { get; set; } = string.Empty;
