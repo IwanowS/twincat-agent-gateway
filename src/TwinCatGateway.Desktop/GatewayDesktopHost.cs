@@ -22,6 +22,7 @@ public sealed class GatewayDesktopHost : IDisposable
     private readonly GatewayEventJournal _events;
     private readonly CapabilityEvaluator _capabilities;
     private readonly CapabilitySnapshotStore _capabilitySnapshots;
+    private readonly SourceManifestStore? _sourceManifests;
     private readonly AdsRuntimeMonitor? _runtimeMonitor;
     private readonly XaeSessionCoordinator? _xaeCoordinator;
     private Task? _serverTask;
@@ -51,6 +52,11 @@ public sealed class GatewayDesktopHost : IDisposable
         {
             _capabilitySnapshots.RefreshProfile(ActiveProfile);
         }
+        _sourceManifests = ActiveProfile is null
+            ? null
+            : new SourceManifestStore(
+                ActiveProfile.Name,
+                ActiveProfile.Xae.Solution);
 
         OperationCapabilityPreflight? preflight =
             hostConfiguration.Profiles is null
@@ -114,7 +120,8 @@ public sealed class GatewayDesktopHost : IDisposable
                 logs,
                 _events,
                 _runtimeMonitor!,
-                errorListSnapshots);
+                errorListSnapshots,
+                _sourceManifests!);
         Func<GatewayDiagnosticsResult>? diagnosticsProvider =
             _xaeCoordinator is null
                 ? null

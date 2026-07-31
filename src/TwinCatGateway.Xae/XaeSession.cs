@@ -243,6 +243,29 @@ public sealed class XaeSession : IDisposable
             cancellationToken);
     }
 
+    public TwinCatProjectGraphSnapshot ResolveProjectGraph(
+        string solutionPath,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        string normalizedSolution = NormalizeSolutionPath(solutionPath);
+        string twinCatProjectPath;
+        lock (_fingerprintSync)
+        {
+            twinCatProjectPath = _twinCatProjectPath
+                ?? throw new GatewayOperationException(
+                    ErrorCodes.SysManagerNotAvailable,
+                    "The selected TwinCAT project path is unavailable.",
+                    retryable: true,
+                    stage: "xae.workspace.graph");
+        }
+
+        return TwinCatProjectGraphResolver.Resolve(
+            normalizedSolution,
+            twinCatProjectPath,
+            cancellationToken);
+    }
+
     public XaeSessionSnapshot RefreshSynchronizationStatus(
         CancellationToken cancellationToken)
     {

@@ -40,6 +40,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly AdsRuntimeMonitor _runtimeMonitor;
     private readonly XaeErrorListSnapshotStore
         _errorListSnapshots;
+    private readonly SourceManifestStore _sourceManifests;
     private readonly XaeSession _session = new();
     private readonly TcUnitRunExecutor _tcUnit;
     private readonly SemaphoreSlim _wakeSignal = new(0, 1);
@@ -63,7 +64,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         LocalLogStore logs,
         IGatewayEventSink events,
         AdsRuntimeMonitor runtimeMonitor,
-        XaeErrorListSnapshotStore errorListSnapshots)
+        XaeErrorListSnapshotStore errorListSnapshots,
+        SourceManifestStore sourceManifests)
     {
         _profile = profile
             ?? throw new ArgumentNullException(nameof(profile));
@@ -91,6 +93,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
         _errorListSnapshots = errorListSnapshots
             ?? throw new ArgumentNullException(
                 nameof(errorListSnapshots));
+        _sourceManifests = sourceManifests
+            ?? throw new ArgumentNullException(
+                nameof(sourceManifests));
         _tcUnit = new TcUnitRunExecutor(
             _profile,
             _logs,
@@ -121,12 +126,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
             try
             {
-                if (!connected)
+                bool wasConnected = connected;
+                if (!wasConnected)
                 {
                     PublishAttaching();
                 }
 
-                XaeSessionSnapshot snapshot = connected
+                XaeSessionSnapshot snapshot = wasConnected
                     ? await _session.VerifyAttachedAsync(
                         _profile.Xae.Solution,
                         HealthTimeout,
@@ -144,6 +150,21 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 snapshot = _session.RefreshSynchronizationStatus(
                     cancellationToken);
                 connected = true;
+                if (snapshot.SynchronizationState
+                    != SynchronizationState.Confirmed)
+                {
+                    _sourceManifests.MarkStale(
+                        ErrorCodes.ProjectGraphInvalid,
+                        "The source manifest is stale because the "
+                            + "project graph requires synchronization.");
+                }
+                else if (!wasConnected
+                    || _sourceManifests.DiscoveryState
+                        != SourceDiscoveryState.Confirmed)
+                {
+                    RefreshSourceManifest(cancellationToken);
+                }
+
                 PublishConnected(snapshot);
             }
             catch (OperationCanceledException) when (
@@ -432,6 +453,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
             OperationKind.Build,
             "xae.build.settle",
             execution.AcceptedProjectChanges);
+        if (execution.AcceptedProjectChanges is not null
+            || execution.Synchronization.Scope
+                != SynchronizationScope.None)
+        {
+            RefreshSourceManifest(cancellationToken);
+        }
 
         BuildResult result = new()
         {
@@ -534,6 +561,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             PublishSynchronizationRequired();
             throw;
         }
+        RefreshSourceManifest(cancellationToken);
         return new SynchronizeResult
         {
             Ok = true,
@@ -595,6 +623,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
             DateTimeOffset.UtcNow - startedAtUtc)
             .TotalMilliseconds;
         PublishClosed(processId, parameters.SaveMode);
+        _sourceManifests.MarkStale(
+            ErrorCodes.XaeNotFound,
+            "The source manifest is stale because the XAE session was closed.");
         return result;
     }
 
@@ -1478,8 +1509,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
             snapshot,
             code,
             retainAttachment));
+        RefreshSourceManifest(CancellationToken.None);
         if (wasConnected && !retainAttachment)
         {
+            _sourceManifests.MarkStale(
+                code ?? ErrorCodes.XaeNotFound,
+                "The source manifest is stale because the configured "
+                    + "XAE session disconnected.");
             _events.Record(
                 new GatewayEvent
                 {
@@ -2041,10 +2077,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
     {
         try
         {
-            return await _session.AcceptProjectGraphChangesAsync(
-                scope,
-                timeout,
-                cancellationToken).ConfigureAwait(false);
+            XaeAcceptedProjectGraphChanges accepted =
+                await _session.AcceptProjectGraphChangesAsync(
+                    scope,
+                    timeout,
+                    cancellationToken).ConfigureAwait(false);
+            RefreshSourceManifest(cancellationToken);
+            return accepted;
         }
         catch
         {
@@ -2226,9 +2265,63 @@ internal sealed class XaeSessionCoordinator : IDisposable
             || code == ErrorCodes.ProjectGraphInvalid;
     }
 
+    private void RefreshSourceManifest(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            TwinCatProjectGraphSnapshot graph =
+                _session.ResolveProjectGraph(
+                    _profile.Xae.Solution,
+                    cancellationToken);
+            _sourceManifests.Refresh(graph);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            GatewayOperationException? operationException =
+                FindGatewayOperationException(exception);
+            string code = operationException?.Code
+                ?? ErrorCodes.ProjectGraphInvalid;
+            string message =
+                "The source manifest could not be refreshed: "
+                + exception.Message;
+            if (_sourceManifests.DiscoveryState
+                == SourceDiscoveryState.Unknown)
+            {
+                _sourceManifests.MarkUnavailable(
+                    code,
+                    message);
+            }
+            else
+            {
+                _sourceManifests.MarkStale(
+                    code,
+                    message);
+            }
+
+            _logger.Write(
+                LogLevel.Warning,
+                "xae.sourceManifest.refreshFailed",
+                message,
+                properties: new Dictionary<string, string>
+                {
+                    ["code"] = code,
+                },
+                exception: exception);
+        }
+    }
+
     private void PublishSynchronizationRequired()
     {
         _session.MarkSynchronizationRequired();
+        _sourceManifests.MarkStale(
+            ErrorCodes.ProjectGraphInvalid,
+            "The source manifest is stale because the project graph "
+                + "requires synchronization.");
         _status.Update(status =>
         {
             status.Xae.SynchronizationState =
