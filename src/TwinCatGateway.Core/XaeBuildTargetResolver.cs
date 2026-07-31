@@ -43,10 +43,11 @@ internal static class XaeBuildTargetResolver
             throw RequestInvalid("Build scope is not supported.");
         }
 
-        string? normalizedProject = string.IsNullOrWhiteSpace(
-            requestedProject)
-            ? null
-            : requestedProject.Trim();
+        string? normalizedProject = requestedProject?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedProject))
+        {
+            normalizedProject = null;
+        }
         if (scope == XaeBuildScope.Solution)
         {
             if (normalizedProject is not null)

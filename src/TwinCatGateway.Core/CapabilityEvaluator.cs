@@ -358,7 +358,7 @@ public sealed class CapabilitySnapshotStore
         }
     }
 
-    private static IReadOnlyList<CapabilityState> Clone(
+    private static CapabilityState[] Clone(
         IEnumerable<CapabilityState> source)
     {
         return source.Select(Clone).ToArray();
@@ -443,7 +443,7 @@ public sealed class OperationCapabilityPreflight
 
         if (requireTarget)
         {
-            _profiles.RequireTarget(requested);
+            ProfileResolver.RequireTarget(requested);
         }
 
         _capabilities.EnsureAllowed(

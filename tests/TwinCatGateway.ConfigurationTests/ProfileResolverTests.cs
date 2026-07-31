@@ -84,7 +84,7 @@ public sealed class ProfileResolverTests
 
         GatewayOperationException exception =
             Assert.Throws<GatewayOperationException>(
-                () => resolver.RequireTarget(profile));
+                () => ProfileResolver.RequireTarget(profile));
 
         Assert.Equal(ErrorCodes.TargetNotConfigured, exception.Code);
         Assert.Equal("bench", exception.Expected?.Profile);
@@ -98,7 +98,7 @@ public sealed class ProfileResolverTests
 
         GatewayOperationException exception =
             Assert.Throws<GatewayOperationException>(
-                () => resolver.EnsureSolutionIdentity(
+                () => ProfileResolver.EnsureSolutionIdentity(
                     profile,
                     @"C:\Other\Other.sln",
                     "xae.identity"));
@@ -116,7 +116,7 @@ public sealed class ProfileResolverTests
         ProfileResolver resolver = new(CreateConfiguration());
         ResolvedProfile profile = resolver.Resolve("bench");
 
-        resolver.EnsureSolutionIdentity(
+        ProfileResolver.EnsureSolutionIdentity(
             profile,
             Path.Combine(@"C:\Project", ".", "Machine.sln"),
             "xae.identity");
@@ -132,7 +132,7 @@ public sealed class ProfileResolverTests
 
         GatewayOperationException exception =
             Assert.Throws<GatewayOperationException>(
-                () => resolver.EnsureTargetIdentity(
+                () => ProfileResolver.EnsureTargetIdentity(
                     profile,
                     "1.2.3.4.5.6",
                     "xae.target.identity"));

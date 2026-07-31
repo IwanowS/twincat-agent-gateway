@@ -361,7 +361,7 @@ public sealed class GatewayApplicationService
             "activation.admission",
             requireTarget: true);
         OperationCapabilityGuard activationGuard = new(
-            _capabilityEvaluator!,
+            _capabilities!,
             profile,
             CapabilityKey.XaeActivate);
 
@@ -413,7 +413,7 @@ public sealed class GatewayApplicationService
                 "activation.tcunit.admission",
                 requireTarget: true);
             verificationGuard = new OperationCapabilityGuard(
-                _capabilityEvaluator!,
+                _capabilities!,
                 profile,
                 CapabilityKey.TargetTcUnitVerification);
         }
@@ -471,7 +471,7 @@ public sealed class GatewayApplicationService
             "recovery.admission",
             requireTarget: true);
         OperationCapabilityGuard recoveryGuard = new(
-            _capabilityEvaluator!,
+            _capabilities!,
             profile,
             CapabilityKey.TargetConfig);
 

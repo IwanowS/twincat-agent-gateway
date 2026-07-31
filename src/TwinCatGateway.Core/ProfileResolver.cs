@@ -110,7 +110,7 @@ public sealed class ResolvedTargetProfile
 
 public sealed class ResolvedProfile
 {
-    private readonly IReadOnlyDictionary<CapabilityKey, bool> _capabilities;
+    private readonly ReadOnlyDictionary<CapabilityKey, bool> _capabilities;
 
     internal ResolvedProfile(ProjectProfile source)
     {
@@ -213,7 +213,8 @@ public sealed class ProfileResolver
         return profile;
     }
 
-    public ResolvedTargetProfile RequireTarget(ResolvedProfile profile)
+    public static ResolvedTargetProfile RequireTarget(
+        ResolvedProfile profile)
     {
         if (profile is null)
         {
@@ -232,7 +233,7 @@ public sealed class ProfileResolver
                 });
     }
 
-    public void EnsureSolutionIdentity(
+    public static void EnsureSolutionIdentity(
         ResolvedProfile profile,
         string? observedSolution,
         string stage)
@@ -275,7 +276,7 @@ public sealed class ProfileResolver
             });
     }
 
-    public void EnsureTargetIdentity(
+    public static void EnsureTargetIdentity(
         ResolvedProfile profile,
         string? observedAmsNetId,
         string stage)

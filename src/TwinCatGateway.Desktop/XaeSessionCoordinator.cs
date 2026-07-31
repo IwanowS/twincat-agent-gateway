@@ -2429,7 +2429,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         XaeSessionSnapshot snapshot,
         string stage)
     {
-        _profiles.EnsureTargetIdentity(
+        ProfileResolver.EnsureTargetIdentity(
             _profile,
             snapshot.TargetAmsNetId,
             stage);
