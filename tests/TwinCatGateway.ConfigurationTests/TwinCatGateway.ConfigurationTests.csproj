@@ -15,24 +15,17 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\TwinCatGateway.Client\TwinCatGateway.Client.csproj" />
-    <ProjectReference Include="..\..\src\TwinCatGateway.Cli\TwinCatGateway.Cli.csproj" />
     <ProjectReference Include="..\..\src\TwinCatGateway.Core\TwinCatGateway.Core.csproj" />
-    <ProjectReference Include="..\..\src\TwinCatGateway.Mcp\TwinCatGateway.Mcp.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <None
-      Include="..\..\setup\SETUP_INSTRUCTIONS.txt"
-      Link="SETUP_INSTRUCTIONS.txt"
+      Include="..\..\examples\twincat-gateway.json"
+      Link="twincat-gateway.example.json"
       CopyToOutputDirectory="PreserveNewest" />
     <None
-      Include="..\fixtures\TC3_SimpleProject\TC3_SimpleProject\TC3_SimpleProject.tsproj"
-      Link="Fixtures\TC3_SimpleProject.tsproj"
-      CopyToOutputDirectory="PreserveNewest" />
-    <None
-      Include="..\fixtures\TC3_SimpleProject\TC3_SimpleProject\PlcProject1\POUs\MAIN.TcPOU"
-      Link="Fixtures\MAIN.TcPOU"
+      Include="..\..\docs\CONFIGURATION.md"
+      Link="CONFIGURATION.md"
       CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

@@ -389,25 +389,40 @@ public sealed class MvpContractSerializationTests
     }
 
     [Fact]
-    public void ActivationProfileRoundTripsExpectedTargetAndFixedTcUnitSymbols()
+    public void V2ProfileRoundTripsNestedTargetAndFixedTcUnitSymbols()
     {
         ProjectProfile profile = new()
         {
             Name = "bench-remote",
-            Solution = @"C:\Projects\Machine\Machine.sln",
-            XaeProgId = "VisualStudio.DTE.16.0",
-            AllowActivation = true,
-            AssumeAttachedXaeSynchronized = false,
-            AutoSynchronizeBeforeOperation = false,
-            ExpectedTarget = new TargetIdentity
+            Xae = new XaeProfileConfiguration
+            {
+                Solution = @"C:\Projects\Machine\Machine.sln",
+                ProgId = "VisualStudio.DTE.16.0",
+                Workspace = new XaeWorkspaceConfiguration
+                {
+                    AssumeAttachedSynchronized = false,
+                    AutoSynchronizeBeforeOperation = false,
+                },
+                Capabilities = new XaeCapabilitiesConfiguration
+                {
+                    Activate = true,
+                },
+            },
+            Target = new TargetProfileConfiguration
             {
                 Name = "WIN-T077ADA",
                 AmsNetId = "192.168.3.31.1.1",
-            },
-            AutoWaitForTcUnit = true,
-            TcUnit = new TcUnitProfile
-            {
-                ReportPath = @"C:\TwinCAT\3.1\Boot\tcunit_xunit_testresults.xml",
+                Capabilities = new TargetCapabilitiesConfiguration
+                {
+                    TcUnitVerification = true,
+                },
+                TcUnit = new TcUnitProfile
+                {
+                    RuntimeId = "plc-851",
+                    AdsPort = 851,
+                    ReportPath =
+                        @"C:\TwinCAT\3.1\Boot\tcunit_xunit_testresults.xml",
+                },
             },
         };
 
@@ -416,23 +431,25 @@ public sealed class MvpContractSerializationTests
             JsonSerializer.Deserialize<ProjectProfile>(json, ContractJson.SerializerOptions);
 
         Assert.NotNull(result);
-        Assert.Equal("VisualStudio.DTE.16.0", result.XaeProgId);
+        Assert.Equal("VisualStudio.DTE.16.0", result.Xae.ProgId);
         Assert.DoesNotContain("\"unsavedDocuments\"", json);
-        Assert.True(result.AllowActivation);
-        Assert.False(result.AssumeAttachedXaeSynchronized);
-        Assert.False(result.AutoSynchronizeBeforeOperation);
+        Assert.True(result.Xae.Capabilities.Activate);
+        Assert.False(result.Xae.Workspace.AssumeAttachedSynchronized);
+        Assert.False(result.Xae.Workspace.AutoSynchronizeBeforeOperation);
         Assert.Contains(
-            "\"assumeAttachedXaeSynchronized\":false",
+            "\"assumeAttachedSynchronized\":false",
             json);
         Assert.Contains(
             "\"autoSynchronizeBeforeOperation\":false",
             json);
-        Assert.Equal("WIN-T077ADA", result.ExpectedTarget?.Name);
-        Assert.Equal("192.168.3.31.1.1", result.ExpectedTarget?.AmsNetId);
+        Assert.Equal("WIN-T077ADA", result.Target?.Name);
+        Assert.Equal("192.168.3.31.1.1", result.Target?.AmsNetId);
         Assert.Equal(
             "GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished",
-            result.TcUnit?.FinishedSymbol);
-        Assert.Equal(ZeroTestsPolicy.Fail, result.TcUnit?.ZeroTests);
+            result.Target?.TcUnit?.FinishedSymbol);
+        Assert.Equal(
+            ZeroTestsPolicy.Fail,
+            result.Target?.TcUnit?.ZeroTests);
     }
 
     [Fact]

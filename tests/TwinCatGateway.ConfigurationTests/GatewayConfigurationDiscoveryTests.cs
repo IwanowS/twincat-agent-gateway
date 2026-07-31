@@ -4,7 +4,7 @@ using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using Xunit;
 
-namespace TwinCatGateway.UnitTests;
+namespace TwinCatGateway.ConfigurationTests;
 
 public sealed class GatewayConfigurationDiscoveryTests
 {
@@ -197,15 +197,25 @@ public sealed class GatewayConfigurationDiscoveryTests
             configurationPath,
             """
             {
-              "schemaVersion": 1,
-              "logDirectory": "logs",
+              "schemaVersion": 2,
+              "gateway": {
+                "logging": {
+                  "directory": "logs"
+                }
+              },
               "profiles": [
                 {
                   "name": "fixture",
-                  "solution": "project\\Machine.sln",
-                  "allowActivation": false,
-                  "tcUnit": {
-                    "reportPath": "reports\\tcunit.xml"
+                  "xae": {
+                    "solution": "project\\Machine.sln"
+                  },
+                  "target": {
+                    "amsNetId": "192.168.3.31.1.1",
+                    "tcUnit": {
+                      "runtimeId": "plc-851",
+                      "adsPort": 851,
+                      "reportPath": "reports\\tcunit.xml"
+                    }
                   }
                 }
               ]
@@ -220,21 +230,21 @@ public sealed class GatewayConfigurationDiscoveryTests
 
         Assert.Equal(
             Path.Combine(configurationDirectory, "logs"),
-            configuration.LogDirectory,
+            configuration.Gateway.Logging.Directory,
             ignoreCase: true);
         Assert.Equal(
             Path.Combine(
                 configurationDirectory,
                 "project",
                 "Machine.sln"),
-            profile.Solution,
+            profile.Xae.Solution,
             ignoreCase: true);
         Assert.Equal(
             Path.Combine(
                 configurationDirectory,
                 "reports",
                 "tcunit.xml"),
-            profile.TcUnit?.ReportPath,
+            profile.Target?.TcUnit?.ReportPath,
             ignoreCase: true);
     }
 

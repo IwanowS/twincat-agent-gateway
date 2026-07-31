@@ -59,43 +59,72 @@ public sealed class ProjectProfileCatalog
         return new ProjectProfile
         {
             Name = source.Name,
-            Solution = source.Solution,
-            AllowXaeLaunch = source.AllowXaeLaunch,
-            XaeProgId = source.XaeProgId,
-            AllowActivation = source.AllowActivation,
-            ExpectedTarget = source.ExpectedTarget is null
-                ? null
-                : new TargetIdentity
+            Xae = new XaeProfileConfiguration
+            {
+                Solution = source.Xae.Solution,
+                ProgId = source.Xae.ProgId,
+                Configuration = source.Xae.Configuration,
+                Platform = source.Xae.Platform,
+                Workspace = new XaeWorkspaceConfiguration
                 {
-                    Name = source.ExpectedTarget.Name,
-                    AmsNetId = source.ExpectedTarget.AmsNetId,
+                    AssumeAttachedSynchronized =
+                        source.Xae.Workspace.AssumeAttachedSynchronized,
+                    ExternalChangePolicy =
+                        source.Xae.Workspace.ExternalChangePolicy,
+                    AutoSynchronizeBeforeOperation =
+                        source.Xae.Workspace.AutoSynchronizeBeforeOperation,
                 },
-            Configuration = source.Configuration,
-            Platform = source.Platform,
-            AssumeAttachedXaeSynchronized =
-                source.AssumeAttachedXaeSynchronized,
-            ExternalChangePolicy = source.ExternalChangePolicy,
-            AllowForceSynchronization =
-                source.AllowForceSynchronization,
-            AllowCloseXae = source.AllowCloseXae,
-            AllowDirtyDocumentDiscard =
-                source.AllowDirtyDocumentDiscard,
-            AutoSynchronizeBeforeOperation =
-                source.AutoSynchronizeBeforeOperation,
-            RequireRecentSuccessfulBuild = source.RequireRecentSuccessfulBuild,
-            RecentBuildMaxAgeSeconds = source.RecentBuildMaxAgeSeconds,
-            AutoWaitForTcUnit = source.AutoWaitForTcUnit,
-            TcUnit = source.TcUnit is null
-                ? null
-                : new TcUnitProfile
+                Capabilities = new XaeCapabilitiesConfiguration
                 {
-                    AdsPort = source.TcUnit.AdsPort,
-                    FinishedSymbol = source.TcUnit.FinishedSymbol,
-                    SuiteCountSymbol = source.TcUnit.SuiteCountSymbol,
-                    ReportPath = source.TcUnit.ReportPath,
-                    AllowDeleteExistingReport = source.TcUnit.AllowDeleteExistingReport,
-                    CompletionTimeoutSeconds = source.TcUnit.CompletionTimeoutSeconds,
-                    ZeroTests = source.TcUnit.ZeroTests,
+                    Launch = source.Xae.Capabilities.Launch,
+                    Close = source.Xae.Capabilities.Close,
+                    Synchronize = source.Xae.Capabilities.Synchronize,
+                    DiscardDirtyDocuments =
+                        source.Xae.Capabilities.DiscardDirtyDocuments,
+                    Build = source.Xae.Capabilities.Build,
+                    Activate = source.Xae.Capabilities.Activate,
+                },
+            },
+            Target = source.Target is null
+                ? null
+                : new TargetProfileConfiguration
+                {
+                    Name = source.Target.Name,
+                    AmsNetId = source.Target.AmsNetId,
+                    Monitoring = new TargetMonitoringConfiguration
+                    {
+                        PollIntervalMilliseconds =
+                            source.Target.Monitoring.PollIntervalMilliseconds,
+                        ReadTimeoutMilliseconds =
+                            source.Target.Monitoring.ReadTimeoutMilliseconds,
+                    },
+                    Capabilities = new TargetCapabilitiesConfiguration
+                    {
+                        Config = source.Target.Capabilities.Config,
+                        StartRestart =
+                            source.Target.Capabilities.StartRestart,
+                        TcUnitVerification =
+                            source.Target.Capabilities.TcUnitVerification,
+                    },
+                    TcUnit = source.Target.TcUnit is null
+                        ? null
+                        : new TcUnitProfile
+                        {
+                            RuntimeId = source.Target.TcUnit.RuntimeId,
+                            AdsPort = source.Target.TcUnit.AdsPort,
+                            FinishedSymbol =
+                                source.Target.TcUnit.FinishedSymbol,
+                            SuiteCountSymbol =
+                                source.Target.TcUnit.SuiteCountSymbol,
+                            ReportPath = source.Target.TcUnit.ReportPath,
+                            AllowDeleteExistingReport =
+                                source.Target.TcUnit
+                                    .AllowDeleteExistingReport,
+                            CompletionTimeoutSeconds =
+                                source.Target.TcUnit
+                                    .CompletionTimeoutSeconds,
+                            ZeroTests = source.Target.TcUnit.ZeroTests,
+                        },
                 },
         };
     }

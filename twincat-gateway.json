@@ -1,48 +1,64 @@
 {
-  "schemaVersion": 1,
-  "pipeName": "TwinCatAgentGatewayMcpExceptionRepro",
+  "schemaVersion": 2,
   "defaultProfile": "fixture-activation",
-  "logDirectory": "tests/fixtures/TC3_SimpleProject/.local/mcp-exception-repro-logs",
-  "logRetentionDays": 14,
+  "gateway": {
+    "pipeName": "TwinCatAgentGatewayMcpExceptionRepro",
+    "processControl": {
+      "allowStart": true,
+      "allowShutdown": true
+    },
+    "logging": {
+      "directory": "tests/fixtures/TC3_SimpleProject/.local/mcp-exception-repro-logs",
+      "retentionDays": 14
+    }
+  },
   "ui": {
     "mode": "window"
-  },
-  "agentProcessControl": {
-    "allowStart": true,
-    "allowShutdown": true
-  },
-  "runtimeMonitoring": {
-    "pollIntervalMilliseconds": 1000,
-    "readTimeoutMilliseconds": 500
   },
   "profiles": [
     {
       "name": "fixture-activation",
-      "solution": "tests/fixtures/TC3_SimpleProject/TC3_SimpleProject.sln",
-      "allowXaeLaunch": true,
-      "xaeProgId": "TcXaeShell.DTE.15.0",
-      "assumeAttachedXaeSynchronized": true,
-      "externalChangePolicy": "reloadModified",
-      "allowForceSynchronization": true,
-      "allowCloseXae": true,
-      "allowDirtyDocumentDiscard": true,
-      "allowActivation": true,
-      "expectedTarget": {
-        "name": "WIN-T077ADA",
-        "amsNetId": "192.168.3.31.1.1"
+      "xae": {
+        "solution": "tests/fixtures/TC3_SimpleProject/TC3_SimpleProject.sln",
+        "progId": "TcXaeShell.DTE.15.0",
+        "configuration": "Debug",
+        "platform": "TwinCAT RT (x64)",
+        "workspace": {
+          "assumeAttachedSynchronized": true,
+          "externalChangePolicy": "reloadModified",
+          "autoSynchronizeBeforeOperation": true
+        },
+        "capabilities": {
+          "launch": true,
+          "close": true,
+          "synchronize": true,
+          "discardDirtyDocuments": true,
+          "build": true,
+          "activate": true
+        }
       },
-      "configuration": "Debug",
-      "platform": "TwinCAT RT (x64)",
-      "requireRecentSuccessfulBuild": false,
-      "recentBuildMaxAgeSeconds": 600,
-      "autoWaitForTcUnit": true,
-      "tcUnit": {
-        "adsPort": 851,
-        "finishedSymbol": "GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished",
-        "suiteCountSymbol": "GVL_TcUnit.NumberOfInitializedTestSuites",
-        "reportPath": "\\\\WIN-T077ADA\\c\\TwinCAT\\3.1\\Boot\\tcunit_xunit_testresults.xml",
-        "completionTimeoutSeconds": 120,
-        "zeroTests": "fail"
+      "target": {
+        "name": "WIN-T077ADA",
+        "amsNetId": "192.168.3.31.1.1",
+        "monitoring": {
+          "pollIntervalMilliseconds": 1000,
+          "readTimeoutMilliseconds": 500
+        },
+        "capabilities": {
+          "config": false,
+          "startRestart": false,
+          "tcUnitVerification": true
+        },
+        "tcUnit": {
+          "runtimeId": "plc-851",
+          "adsPort": 851,
+          "finishedSymbol": "GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished",
+          "suiteCountSymbol": "GVL_TcUnit.NumberOfInitializedTestSuites",
+          "reportPath": "\\\\WIN-T077ADA\\c\\TwinCAT\\3.1\\Boot\\tcunit_xunit_testresults.xml",
+          "allowDeleteExistingReport": false,
+          "completionTimeoutSeconds": 120,
+          "zeroTests": "fail"
+        }
       }
     }
   ]

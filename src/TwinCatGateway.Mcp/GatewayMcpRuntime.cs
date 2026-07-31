@@ -184,7 +184,7 @@ public sealed class GatewayMcpRuntime
         }
 
         if (!context.Configuration
-                .AgentProcessControl.AllowStart)
+                .Gateway.ProcessControl.AllowStart)
         {
             return Failure<GatewayStartResult>(
                 ErrorCodes.GatewayStartDisabled,
@@ -472,7 +472,7 @@ public sealed class GatewayMcpRuntime
                 context.Location.Path)
             || !PathsEqual(
                 record.SolutionPath,
-                context.Profile.Solution))
+                context.Profile.Xae.Solution))
         {
             return new GatewayOperationException(
                 ErrorCodes
@@ -524,7 +524,7 @@ public sealed class GatewayMcpRuntime
                     context.Location.Path)
                 || !PathsEqual(
                     status.Gateway.SolutionPath,
-                    context.Profile.Solution))
+                    context.Profile.Xae.Solution))
             {
                 return Failure<GatewayStartResult>(
                     ErrorCodes

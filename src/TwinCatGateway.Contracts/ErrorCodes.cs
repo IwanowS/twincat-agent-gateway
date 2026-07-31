@@ -10,6 +10,8 @@ public static class ErrorCodes
         "GATEWAY_CONFIG_NOT_FOUND";
     public const string GatewayConfigAmbiguous =
         "GATEWAY_CONFIG_AMBIGUOUS";
+    public const string ConfigVersionUnsupported =
+        "CONFIG_VERSION_UNSUPPORTED";
     public const string GatewayStartDisabled =
         "GATEWAY_START_DISABLED";
     public const string GatewayStartFailed =

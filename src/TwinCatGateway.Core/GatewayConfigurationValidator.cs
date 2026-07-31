@@ -9,7 +9,7 @@ namespace TwinCatGateway.Core;
 
 public static class GatewayConfigurationValidator
 {
-    private const int CurrentSchemaVersion = 1;
+    private const int CurrentSchemaVersion = 2;
     private static readonly char[] PathSeparators = { '\\', '/' };
 
     public static ConfigurationValidationResult Validate(
@@ -38,62 +38,13 @@ public static class GatewayConfigurationValidator
                 $"Only schema version {CurrentSchemaVersion} is supported.");
         }
 
-        if (string.IsNullOrWhiteSpace(configuration.PipeName))
+        if (configuration.Gateway is null)
         {
-            Add(issues, "pipeName", "Pipe name is required.");
+            Add(issues, "gateway", "Gateway settings are required.");
         }
-        else if (configuration.PipeName.IndexOfAny(PathSeparators) >= 0)
+        else
         {
-            Add(
-                issues,
-                "pipeName",
-                "Pipe name must not contain path separators.");
-        }
-
-        if (configuration.LogRetentionDays <= 0
-            || configuration.LogRetentionDays > 3650)
-        {
-            Add(
-                issues,
-                "logRetentionDays",
-                "Log retention must be between 1 and 3650 days.");
-        }
-
-        if (!Enum.IsDefined(
-                typeof(GatewayLogLevel),
-                configuration.LogMinimumLevel))
-        {
-            Add(
-                issues,
-                "logMinimumLevel",
-                "Log minimum level is invalid.");
-        }
-
-        if (configuration.LogFileSizeLimitBytes < 64 * 1024
-            || configuration.LogFileSizeLimitBytes > 1024L * 1024 * 1024)
-        {
-            Add(
-                issues,
-                "logFileSizeLimitBytes",
-                "Log file size limit must be between 65536 and 1073741824 bytes.");
-        }
-
-        if (configuration.LogRetainedFileCountLimit < 1
-            || configuration.LogRetainedFileCountLimit > 1000)
-        {
-            Add(
-                issues,
-                "logRetainedFileCountLimit",
-                "Retained log file count must be between 1 and 1000.");
-        }
-
-        if (!string.IsNullOrWhiteSpace(configuration.LogDirectory)
-            && !Path.IsPathRooted(configuration.LogDirectory))
-        {
-            Add(
-                issues,
-                "logDirectory",
-                "Log directory must be an absolute path.");
+            ValidateGatewayCore(configuration.Gateway, issues);
         }
 
         if (configuration.Ui is null)
@@ -106,45 +57,83 @@ public static class GatewayConfigurationValidator
         {
             Add(issues, "ui.mode", "UI mode is invalid.");
         }
+    }
 
-        if (configuration.AgentProcessControl is null)
+    private static void ValidateGatewayCore(
+        GatewaySettingsConfiguration gateway,
+        ICollection<ConfigurationIssue> issues)
+    {
+        if (string.IsNullOrWhiteSpace(gateway.PipeName))
+        {
+            Add(issues, "gateway.pipeName", "Pipe name is required.");
+        }
+        else if (gateway.PipeName.IndexOfAny(PathSeparators) >= 0)
         {
             Add(
                 issues,
-                "agentProcessControl",
-                "Agent process-control settings are required.");
+                "gateway.pipeName",
+                "Pipe name must not contain path separators.");
         }
 
-        if (configuration.RuntimeMonitoring is null)
+        if (gateway.ProcessControl is null)
         {
             Add(
                 issues,
-                "runtimeMonitoring",
-                "Runtime-monitoring settings are required.");
+                "gateway.processControl",
+                "Gateway process-control settings are required.");
         }
-        else
-        {
-            if (configuration.RuntimeMonitoring.PollIntervalMilliseconds
-                < 100
-                || configuration.RuntimeMonitoring.PollIntervalMilliseconds
-                > 60000)
-            {
-                Add(
-                    issues,
-                    "runtimeMonitoring.pollIntervalMilliseconds",
-                    "Runtime polling interval must be between 100 and 60000 milliseconds.");
-            }
 
-            if (configuration.RuntimeMonitoring.ReadTimeoutMilliseconds
-                < 100
-                || configuration.RuntimeMonitoring.ReadTimeoutMilliseconds
-                > 10000)
-            {
-                Add(
-                    issues,
-                    "runtimeMonitoring.readTimeoutMilliseconds",
-                    "Runtime read timeout must be between 100 and 10000 milliseconds.");
-            }
+        if (gateway.Logging is null)
+        {
+            Add(
+                issues,
+                "gateway.logging",
+                "Gateway logging settings are required.");
+            return;
+        }
+
+        GatewayLoggingConfiguration logging = gateway.Logging;
+        if (!Enum.IsDefined(typeof(GatewayLogLevel), logging.MinimumLevel))
+        {
+            Add(
+                issues,
+                "gateway.logging.minimumLevel",
+                "Log minimum level is invalid.");
+        }
+
+        if (logging.FileSizeLimitBytes < 64 * 1024
+            || logging.FileSizeLimitBytes > 1024L * 1024 * 1024)
+        {
+            Add(
+                issues,
+                "gateway.logging.fileSizeLimitBytes",
+                "Log file size limit must be between 65536 and 1073741824 bytes.");
+        }
+
+        if (logging.RetainedFileCountLimit < 1
+            || logging.RetainedFileCountLimit > 1000)
+        {
+            Add(
+                issues,
+                "gateway.logging.retainedFileCountLimit",
+                "Retained log file count must be between 1 and 1000.");
+        }
+
+        if (logging.RetentionDays <= 0 || logging.RetentionDays > 3650)
+        {
+            Add(
+                issues,
+                "gateway.logging.retentionDays",
+                "Log retention must be between 1 and 3650 days.");
+        }
+
+        if (!string.IsNullOrWhiteSpace(logging.Directory)
+            && !Path.IsPathRooted(logging.Directory))
+        {
+            Add(
+                issues,
+                "gateway.logging.directory",
+                "Log directory must be an absolute path.");
         }
     }
 
@@ -215,13 +204,40 @@ public static class GatewayConfigurationValidator
                 $"Profile name '{profile.Name}' is duplicated.");
         }
 
-        if (string.IsNullOrWhiteSpace(profile.Solution))
+        if (profile.Xae is null)
+        {
+            Add(issues, $"{path}.xae", "XAE settings are required.");
+            return;
+        }
+
+        ValidateXae(profile.Xae, $"{path}.xae", issues);
+        if (profile.Target is not null)
+        {
+            ValidateTarget(profile.Target, $"{path}.target", issues);
+        }
+
+        if (profile.Xae.Capabilities?.Activate == true
+            && profile.Target is null)
+        {
+            Add(
+                issues,
+                $"{path}.target",
+                "XAE activation requires a configured Target System.");
+        }
+    }
+
+    private static void ValidateXae(
+        XaeProfileConfiguration xae,
+        string path,
+        ICollection<ConfigurationIssue> issues)
+    {
+        if (string.IsNullOrWhiteSpace(xae.Solution))
         {
             Add(issues, $"{path}.solution", "Solution path is required.");
         }
         else
         {
-            if (!Path.IsPathRooted(profile.Solution))
+            if (!Path.IsPathRooted(xae.Solution))
             {
                 Add(
                     issues,
@@ -230,7 +246,7 @@ public static class GatewayConfigurationValidator
             }
 
             if (!string.Equals(
-                Path.GetExtension(profile.Solution),
+                Path.GetExtension(xae.Solution),
                 ".sln",
                 StringComparison.OrdinalIgnoreCase))
             {
@@ -242,75 +258,116 @@ public static class GatewayConfigurationValidator
         }
 
         ValidateOptionalNonWhitespace(
-            profile.Configuration,
+            xae.ProgId,
+            $"{path}.progId",
+            issues);
+        ValidateOptionalNonWhitespace(
+            xae.Configuration,
             $"{path}.configuration",
             issues);
         ValidateOptionalNonWhitespace(
-            profile.Platform,
+            xae.Platform,
             $"{path}.platform",
             issues);
-        ValidateOptionalNonWhitespace(
-            profile.XaeProgId,
-            $"{path}.xaeProgId",
-            issues);
-        if (!Enum.IsDefined(
-            typeof(ExternalChangePolicy),
-            profile.ExternalChangePolicy))
+
+        if (xae.Workspace is null)
         {
             Add(
                 issues,
-                $"{path}.externalChangePolicy",
+                $"{path}.workspace",
+                "XAE workspace settings are required.");
+        }
+        else if (!Enum.IsDefined(
+                     typeof(ExternalChangePolicy),
+                     xae.Workspace.ExternalChangePolicy))
+        {
+            Add(
+                issues,
+                $"{path}.workspace.externalChangePolicy",
                 "External change policy is invalid.");
         }
 
-        if (profile.RequireRecentSuccessfulBuild
-            && profile.RecentBuildMaxAgeSeconds <= 0)
+        if (xae.Capabilities is null)
         {
             Add(
                 issues,
-                $"{path}.recentBuildMaxAgeSeconds",
-                "Recent build maximum age must be positive.");
-        }
-
-        if (profile.AllowActivation)
-        {
-            ValidateActivationTarget(profile.ExpectedTarget, path, issues);
-        }
-
-        if (profile.AutoWaitForTcUnit && profile.TcUnit is null)
-        {
-            Add(
-                issues,
-                $"{path}.tcUnit",
-                "TcUnit settings are required when automatic waiting is enabled.");
-        }
-
-        if (profile.TcUnit is not null)
-        {
-            ValidateTcUnit(profile.TcUnit, $"{path}.tcUnit", issues);
+                $"{path}.capabilities",
+                "XAE capability settings are required.");
         }
     }
 
-    private static void ValidateActivationTarget(
-        TargetIdentity? target,
-        string profilePath,
+    private static void ValidateTarget(
+        TargetProfileConfiguration target,
+        string path,
         ICollection<ConfigurationIssue> issues)
     {
-        if (target is null)
-        {
-            Add(
-                issues,
-                $"{profilePath}.expectedTarget",
-                "Activation requires an expected target identity.");
-            return;
-        }
-
+        ValidateOptionalNonWhitespace(target.Name, $"{path}.name", issues);
         if (!IsValidAmsNetId(target.AmsNetId))
         {
             Add(
                 issues,
-                $"{profilePath}.expectedTarget.amsNetId",
-                "Activation requires a six-part AMS NetId with byte values.");
+                $"{path}.amsNetId",
+                "Target AMS NetId must contain six canonical byte values.");
+        }
+
+        if (target.Monitoring is null)
+        {
+            Add(
+                issues,
+                $"{path}.monitoring",
+                "Target monitoring settings are required.");
+        }
+        else
+        {
+            ValidateMonitoring(
+                target.Monitoring,
+                $"{path}.monitoring",
+                issues);
+        }
+
+        if (target.Capabilities is null)
+        {
+            Add(
+                issues,
+                $"{path}.capabilities",
+                "Target capability settings are required.");
+        }
+        else if (target.Capabilities.TcUnitVerification
+            && target.TcUnit is null)
+        {
+            Add(
+                issues,
+                $"{path}.tcUnit",
+                "TcUnit settings are required when verification is enabled.");
+        }
+
+        if (target.TcUnit is not null)
+        {
+            ValidateTcUnit(target.TcUnit, $"{path}.tcUnit", issues);
+        }
+    }
+
+    private static void ValidateMonitoring(
+        TargetMonitoringConfiguration monitoring,
+        string path,
+        ICollection<ConfigurationIssue> issues)
+    {
+        if (monitoring.PollIntervalMilliseconds < 100
+            || monitoring.PollIntervalMilliseconds > 60000)
+        {
+            Add(
+                issues,
+                $"{path}.pollIntervalMilliseconds",
+                "Runtime polling interval must be between 100 and 60000 milliseconds.");
+        }
+
+        if (monitoring.ReadTimeoutMilliseconds < 100
+            || monitoring.ReadTimeoutMilliseconds > 10000)
+        {
+            Add(
+                issues,
+                $"{path}.readTimeoutMilliseconds",
+                "Runtime read timeout must be between 100 and 10000 milliseconds.");
         }
     }
 
@@ -319,6 +376,11 @@ public static class GatewayConfigurationValidator
         string path,
         ICollection<ConfigurationIssue> issues)
     {
+        ValidateRequiredText(
+            tcUnit.RuntimeId,
+            $"{path}.runtimeId",
+            "TcUnit runtime id is required.",
+            issues);
         if (tcUnit.AdsPort <= 0 || tcUnit.AdsPort > ushort.MaxValue)
         {
             Add(
@@ -365,6 +427,11 @@ public static class GatewayConfigurationValidator
                 $"{path}.completionTimeoutSeconds",
                 "TcUnit completion timeout must be positive.");
         }
+
+        if (!Enum.IsDefined(typeof(ZeroTestsPolicy), tcUnit.ZeroTests))
+        {
+            Add(issues, $"{path}.zeroTests", "Zero-tests policy is invalid.");
+        }
     }
 
     private static bool IsValidAmsNetId(string? value)
@@ -393,8 +460,12 @@ public static class GatewayConfigurationValidator
         string fullPath = Path.GetFullPath(path);
         string? root = Path.GetPathRoot(fullPath);
         return string.Equals(
-            fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
-            root?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+            fullPath.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar),
+            root?.TrimEnd(
+                Path.DirectorySeparatorChar,
+                Path.AltDirectorySeparatorChar),
             StringComparison.OrdinalIgnoreCase);
     }
 

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Encodings.Web;
@@ -10,6 +11,39 @@ namespace TwinCatGateway.Core;
 
 public sealed class GatewayConfigurationLoader
 {
+    private const int CurrentSchemaVersion = 2;
+    private static readonly HashSet<string> V1RootProperties =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "pipeName",
+            "logDirectory",
+            "logMinimumLevel",
+            "logFileSizeLimitBytes",
+            "logRetainedFileCountLimit",
+            "logRetentionDays",
+            "agentProcessControl",
+            "runtimeMonitoring",
+        };
+    private static readonly HashSet<string> V1ProfileProperties =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "solution",
+            "xaeProgId",
+            "configuration",
+            "platform",
+            "assumeAttachedXaeSynchronized",
+            "externalChangePolicy",
+            "allowXaeLaunch",
+            "allowCloseXae",
+            "allowDirtyDocumentDiscard",
+            "allowForceSynchronization",
+            "allowActivation",
+            "expectedTarget",
+            "requireRecentSuccessfulBuild",
+            "recentBuildMaxAgeSeconds",
+            "autoWaitForTcUnit",
+            "tcUnit",
+        };
     private readonly JsonSerializerOptions _serializerOptions;
 
     public GatewayConfigurationLoader()
@@ -38,6 +72,7 @@ public sealed class GatewayConfigurationLoader
 
         string fullPath = Path.GetFullPath(path);
         string json = File.ReadAllText(fullPath);
+        ValidateSchemaVersion(json);
         GatewayConfiguration configuration =
             JsonSerializer.Deserialize<GatewayConfiguration>(
                 json,
@@ -124,9 +159,13 @@ public sealed class GatewayConfigurationLoader
         GatewayConfiguration configuration,
         string configurationDirectory)
     {
-        configuration.LogDirectory = ResolveOptionalPath(
-            configuration.LogDirectory,
-            configurationDirectory);
+        if (configuration.Gateway?.Logging is not null)
+        {
+            configuration.Gateway.Logging.Directory = ResolveOptionalPath(
+                configuration.Gateway.Logging.Directory,
+                configurationDirectory);
+        }
+
         if (configuration.Profiles is null)
         {
             return;
@@ -139,16 +178,117 @@ public sealed class GatewayConfigurationLoader
                 continue;
             }
 
-            profile.Solution = ResolveRequiredPath(
-                profile.Solution,
-                configurationDirectory);
-            if (profile.TcUnit is not null)
+            if (profile.Xae is not null)
             {
-                profile.TcUnit.ReportPath = ResolveRequiredPath(
-                    profile.TcUnit.ReportPath,
+                profile.Xae.Solution = ResolveRequiredPath(
+                    profile.Xae.Solution,
+                    configurationDirectory);
+            }
+
+            if (profile.Target?.TcUnit is not null)
+            {
+                profile.Target.TcUnit.ReportPath = ResolveRequiredPath(
+                    profile.Target.TcUnit.ReportPath,
                     configurationDirectory);
             }
         }
+    }
+
+    private static void ValidateSchemaVersion(string json)
+    {
+        using JsonDocument document = JsonDocument.Parse(
+            json,
+            new JsonDocumentOptions
+            {
+                AllowTrailingCommas = true,
+                CommentHandling = JsonCommentHandling.Skip,
+            });
+        JsonElement root = document.RootElement;
+        if (root.ValueKind != JsonValueKind.Object
+            || !TryGetProperty(
+                root,
+                "schemaVersion",
+                out JsonElement version)
+            || version.ValueKind != JsonValueKind.Number
+            || !version.TryGetInt32(out int parsed)
+            || parsed != CurrentSchemaVersion)
+        {
+            throw UnsupportedVersion(
+                "Gateway configuration must declare schemaVersion 2.");
+        }
+
+        string? rootV1Property = FindProperty(root, V1RootProperties);
+        if (rootV1Property is not null)
+        {
+            throw UnsupportedVersion(
+                $"Gateway configuration property '{rootV1Property}' belongs to schema v1.");
+        }
+
+        if (!TryGetProperty(root, "profiles", out JsonElement profiles)
+            || profiles.ValueKind != JsonValueKind.Array)
+        {
+            return;
+        }
+
+        foreach (JsonElement profile in profiles.EnumerateArray())
+        {
+            if (profile.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            string? profileV1Property =
+                FindProperty(profile, V1ProfileProperties);
+            if (profileV1Property is not null)
+            {
+                throw UnsupportedVersion(
+                    $"Profile property '{profileV1Property}' belongs to schema v1.");
+            }
+        }
+    }
+
+    private static bool TryGetProperty(
+        JsonElement element,
+        string name,
+        out JsonElement value)
+    {
+        foreach (JsonProperty property in element.EnumerateObject())
+        {
+            if (string.Equals(
+                property.Name,
+                name,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static string? FindProperty(
+        JsonElement element,
+        HashSet<string> names)
+    {
+        foreach (JsonProperty property in element.EnumerateObject())
+        {
+            if (names.Contains(property.Name))
+            {
+                return property.Name;
+            }
+        }
+
+        return null;
+    }
+
+    private static GatewayConfigurationException UnsupportedVersion(
+        string message)
+    {
+        return new GatewayConfigurationException(
+            ErrorCodes.ConfigVersionUnsupported,
+            message);
     }
 
     private static string ResolveRequiredPath(

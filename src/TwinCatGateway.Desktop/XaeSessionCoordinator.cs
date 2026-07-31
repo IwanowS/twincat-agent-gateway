@@ -13,6 +13,7 @@ using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using TwinCatGateway.Ipc;
 using TwinCatGateway.Xae;
+using XaeSessionSnapshot = TwinCatGateway.Xae.XaeSessionSnapshot;
 
 namespace TwinCatGateway.Desktop;
 

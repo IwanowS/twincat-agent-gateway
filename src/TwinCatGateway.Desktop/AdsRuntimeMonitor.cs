@@ -39,7 +39,7 @@ internal sealed class AdsRuntimeMonitor : IDisposable
         GatewayStatusSnapshotStore status,
         ILogger<AdsRuntimeMonitor> logger,
         IGatewayEventSink events,
-        RuntimeMonitoringConfiguration configuration,
+        TargetMonitoringConfiguration configuration,
         IAdsRuntimeStatusProbe? probe = null,
         XaeErrorListSnapshotStore? errorListSnapshots = null)
     {

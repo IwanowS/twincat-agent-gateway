@@ -1,31 +1,36 @@
 {
-  "schemaVersion": 1,
-  "pipeName": "TwinCatAgentGateway",
+  "schemaVersion": 2,
   "defaultProfile": "fixture",
-  "logRetentionDays": 14,
+  "gateway": {
+    "pipeName": "TwinCatAgentGateway",
+    "processControl": {
+      "allowStart": true,
+      "allowShutdown": false
+    },
+    "logging": {
+      "retentionDays": 14
+    }
+  },
   "ui": {
     "mode": "auto"
-  },
-  "agentProcessControl": {
-    "allowStart": true,
-    "allowShutdown": false
-  },
-  "runtimeMonitoring": {
-    "pollIntervalMilliseconds": 1000,
-    "readTimeoutMilliseconds": 500
   },
   "profiles": [
     {
       "name": "fixture",
-      "solution": "TC3_SimpleProject.sln",
-      "allowXaeLaunch": true,
-      "externalChangePolicy": "reloadModified",
-      "allowForceSynchronization": false,
-      "allowCloseXae": false,
-      "allowDirtyDocumentDiscard": false,
-      "allowActivation": false,
-      "requireRecentSuccessfulBuild": true,
-      "recentBuildMaxAgeSeconds": 600
+      "xae": {
+        "solution": "TC3_SimpleProject.sln",
+        "workspace": {
+          "externalChangePolicy": "reloadModified"
+        },
+        "capabilities": {
+          "launch": true,
+          "close": false,
+          "synchronize": false,
+          "discardDirtyDocuments": false,
+          "build": true,
+          "activate": false
+        }
+      }
     }
   ]
 }

@@ -1,35 +1,41 @@
 {
-  "schemaVersion": 1,
-  "pipeName": "TwinCatAgentGateway",
+  "schemaVersion": 2,
   "defaultProfile": "default",
-  "logMinimumLevel": "information",
-  "logFileSizeLimitBytes": 1048576,
-  "logRetainedFileCountLimit": 10,
-  "logRetentionDays": 14,
+  "gateway": {
+    "pipeName": "TwinCatAgentGateway",
+    "processControl": {
+      "allowStart": true,
+      "allowShutdown": false
+    },
+    "logging": {
+      "minimumLevel": "information",
+      "fileSizeLimitBytes": 1048576,
+      "retainedFileCountLimit": 10,
+      "retentionDays": 14
+    }
+  },
   "ui": {
     "mode": "auto"
-  },
-  "agentProcessControl": {
-    "allowStart": true,
-    "allowShutdown": false
-  },
-  "runtimeMonitoring": {
-    "pollIntervalMilliseconds": 1000,
-    "readTimeoutMilliseconds": 500
   },
   "profiles": [
     {
       "name": "default",
-      "solution": "Machine.sln",
-      "allowXaeLaunch": true,
-      "allowForceSynchronization": false,
-      "allowCloseXae": false,
-      "allowDirtyDocumentDiscard": false,
-      "allowActivation": false,
-      "autoSynchronizeBeforeOperation": true,
-      "requireRecentSuccessfulBuild": true,
-      "recentBuildMaxAgeSeconds": 600,
-      "autoWaitForTcUnit": false
+      "xae": {
+        "solution": "Machine.sln",
+        "workspace": {
+          "assumeAttachedSynchronized": true,
+          "externalChangePolicy": "reloadModified",
+          "autoSynchronizeBeforeOperation": true
+        },
+        "capabilities": {
+          "launch": true,
+          "close": false,
+          "synchronize": true,
+          "discardDirtyDocuments": false,
+          "build": true,
+          "activate": false
+        }
+      }
     }
   ]
 }

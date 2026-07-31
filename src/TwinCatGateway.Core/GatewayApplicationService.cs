@@ -324,7 +324,7 @@ public sealed class GatewayApplicationService
                 stage: "activation.validate");
         }
 
-        if (!_activeProfile.AllowActivation)
+        if (!_activeProfile.Xae.Capabilities.Activate)
         {
             throw new GatewayOperationException(
                 ErrorCodes.ActivationNotAllowed,
@@ -333,7 +333,7 @@ public sealed class GatewayApplicationService
         }
 
         if (string.IsNullOrWhiteSpace(
-            _activeProfile.ExpectedTarget?.AmsNetId))
+            _activeProfile.Target?.AmsNetId))
         {
             throw new GatewayOperationException(
                 ErrorCodes.ProfileInvalid,
@@ -350,8 +350,7 @@ public sealed class GatewayApplicationService
                 stage: "activation.validate");
         }
 
-        bool waitForTcUnit = parameters.WaitForTcUnit
-            ?? _activeProfile.AutoWaitForTcUnit;
+        bool waitForTcUnit = parameters.WaitForTcUnit ?? false;
         if (waitForTcUnit
             && !parameters.RunAfterActivation)
         {
@@ -362,7 +361,7 @@ public sealed class GatewayApplicationService
         }
 
         if (waitForTcUnit
-            && _activeProfile.TcUnit is null)
+            && _activeProfile.Target?.TcUnit is null)
         {
             throw new GatewayOperationException(
                 ErrorCodes.ProfileInvalid,
@@ -386,7 +385,6 @@ public sealed class GatewayApplicationService
         RuntimeOperationPolicy.EnsureActivationAllowed(
             runtimeStatus.Mode,
             details: runtimeStatus.Alert?.Details);
-        ValidateRecentBuild(_activeProfile);
         ActivateParameters captured =
             CloneActivateParameters(parameters);
         TimeSpan timeout = TimeSpan.FromSeconds(
@@ -438,7 +436,7 @@ public sealed class GatewayApplicationService
                 stage: "recovery.validate");
         }
 
-        if (!_activeProfile.AllowActivation)
+        if (!_activeProfile.Xae.Capabilities.Activate)
         {
             throw new GatewayOperationException(
                 ErrorCodes.ActivationNotAllowed,
@@ -448,7 +446,7 @@ public sealed class GatewayApplicationService
         }
 
         if (string.IsNullOrWhiteSpace(
-            _activeProfile.ExpectedTarget?.AmsNetId))
+            _activeProfile.Target?.AmsNetId))
         {
             throw new GatewayOperationException(
                 ErrorCodes.ProfileInvalid,
@@ -497,7 +495,7 @@ public sealed class GatewayApplicationService
         }
 
         if (agentRequest
-            && !_activeProfile.AllowForceSynchronization)
+            && !_activeProfile.Xae.Capabilities.Synchronize)
         {
             throw new GatewayOperationException(
                 ErrorCodes.ForceSynchronizationNotAllowed,
@@ -545,7 +543,7 @@ public sealed class GatewayApplicationService
                 stage: "xae.close.enqueue");
         }
 
-        if (!_activeProfile.AllowCloseXae)
+        if (!_activeProfile.Xae.Capabilities.Close)
         {
             throw new GatewayOperationException(
                 ErrorCodes.XaeCloseNotAllowed,
@@ -565,7 +563,7 @@ public sealed class GatewayApplicationService
         }
 
         if (parameters.SaveMode == XaeSaveMode.Discard
-            && !_activeProfile.AllowDirtyDocumentDiscard)
+            && !_activeProfile.Xae.Capabilities.DiscardDirtyDocuments)
         {
             throw new GatewayOperationException(
                 ErrorCodes.XaeCloseDiscardNotAllowed,
@@ -989,9 +987,7 @@ public sealed class GatewayApplicationService
         });
         try
         {
-            bool waitForTcUnit =
-                parameters.WaitForTcUnit
-                ?? _activeProfile!.AutoWaitForTcUnit;
+            bool waitForTcUnit = parameters.WaitForTcUnit ?? false;
             TcUnitRunPreparation? preparation =
                 waitForTcUnit
                     ? _tcUnitPreparationExecutor!(
@@ -1007,7 +1003,7 @@ public sealed class GatewayApplicationService
                 && preparation is not null)
             {
                 int timeoutSeconds =
-                    _activeProfile!.TcUnit!
+                    _activeProfile!.Target!.TcUnit!
                         .CompletionTimeoutSeconds;
                 OperationAccepted test =
                     _queue.Enqueue(
@@ -1203,41 +1199,6 @@ public sealed class GatewayApplicationService
                     : GatewayState.Disconnected;
                 return status;
             });
-        }
-    }
-
-    private void ValidateRecentBuild(ProjectProfile profile)
-    {
-        if (!profile.RequireRecentSuccessfulBuild)
-        {
-            return;
-        }
-
-        StoredOperation? latestBuild = _operations
-            .GetRecent(500)
-            .FirstOrDefault(operation =>
-                operation.Summary.Kind
-                    == OperationKind.Build
-                && operation.Summary.CompletedAtUtc.HasValue);
-        BuildResult? result =
-            latestBuild?.Result as BuildResult;
-        DateTimeOffset oldestAllowed =
-            _clock.UtcNow.AddSeconds(
-                -profile.RecentBuildMaxAgeSeconds);
-        bool acceptable = latestBuild is not null
-            && latestBuild.Summary.State
-                == OperationState.Succeeded
-            && latestBuild.Summary.CompletedAtUtc
-                >= oldestAllowed
-            && result?.Ok == true
-            && result.Action != BuildAction.Clean;
-        if (!acceptable)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.RecentBuildRequired,
-                "Activation requires the latest build operation to be "
-                    + "a recent successful Build or Rebuild.",
-                stage: "activation.validate");
         }
     }
 
