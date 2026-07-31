@@ -1337,6 +1337,72 @@ internal sealed class XaeSessionCoordinator : IDisposable
         };
     }
 
+    public XaeSessionSnapshotContract ReadXaeState()
+    {
+        lock (_sync)
+        {
+            XaeSessionSnapshot snapshot = CloneSnapshot(_lastSnapshot);
+            if (snapshot.Connected && snapshot.SelectedInstance is not null)
+            {
+                return CreateContractSnapshot(snapshot);
+            }
+
+            return new XaeSessionSnapshotContract
+            {
+                Profile = _profile.Name,
+                Ownership = snapshot.Ownership,
+                DteAvailable = false,
+                Solution = _profile.Xae.Solution,
+                SolutionLoaded = false,
+                SynchronizationState = snapshot.SynchronizationState,
+                Errors = MergeLastErrorMessages(),
+                ObservedAtUtc = DateTimeOffset.UtcNow,
+            };
+        }
+    }
+
+    public XaeDiagnosticsSnapshot ReadXaeDiagnostics()
+    {
+        lock (_sync)
+        {
+            return new XaeDiagnosticsSnapshot
+            {
+                Profile = _profile.Name,
+                State = ReadXaeState(),
+                DteInstances = _lastSnapshot.DiscoveredInstances
+                    .Select(CloneInfo)
+                    .ToList(),
+                Com = CloneCom(_lastComDiagnostics),
+            };
+        }
+    }
+
+    public XaeMessagesResult ReadXaeMessagesSnapshot()
+    {
+        IReadOnlyList<BuildDiagnostic> messages = _errorListSnapshots.Read();
+        string solution;
+        lock (_sync)
+        {
+            solution = _lastSnapshot.SelectedInstance?.Solution
+                ?? _profile.Xae.Solution;
+        }
+
+        return new XaeMessagesResult
+        {
+            Solution = solution,
+            ReadAtUtc = DateTimeOffset.UtcNow,
+            Counts = new DiagnosticCounts
+            {
+                Errors = messages.Count(message =>
+                    message.Severity == DiagnosticSeverity.Error),
+                Warnings = messages.Count(message =>
+                    message.Severity == DiagnosticSeverity.Warning),
+            },
+            Messages = messages.Take(200).Select(CloneBuildDiagnostic).ToList(),
+            MoreMessages = Math.Max(0, messages.Count - 200),
+        };
+    }
+
     public async Task<TestResult> ExecuteTcUnitAsync(
         string operationId,
         TcUnitRunPreparation preparation,

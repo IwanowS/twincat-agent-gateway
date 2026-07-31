@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Contracts;
@@ -79,6 +81,13 @@ public sealed class GatewayApplicationService
     private readonly Func<int?>? _xaeProcessIdProvider;
     private readonly OperationCancellationService
         _operationCancellation;
+    private readonly CapabilitySnapshotStore? _capabilitySnapshots;
+    private readonly ProfileObservationStore? _profileObservations;
+    private readonly Func<XaeSessionSnapshot>? _xaeStateProvider;
+    private readonly Func<XaeDiagnosticsSnapshot>? _xaeDiagnosticsProvider;
+    private readonly Func<XaeMessagesResult>? _xaeMessagesSnapshotProvider;
+    private static readonly JsonSerializerOptions ResourceJsonOptions =
+        CreateResourceJsonOptions();
 
     public GatewayApplicationService(
         string version,
@@ -106,7 +115,12 @@ public sealed class GatewayApplicationService
         SourceManifestStore? sourceManifests = null,
         Func<int?>? xaeProcessIdProvider = null,
         OperationCancellationService? operationCancellation = null,
-        XaeOpenOperationExecutor? xaeOpenExecutor = null)
+        XaeOpenOperationExecutor? xaeOpenExecutor = null,
+        CapabilitySnapshotStore? capabilitySnapshots = null,
+        ProfileObservationStore? profileObservations = null,
+        Func<XaeSessionSnapshot>? xaeStateProvider = null,
+        Func<XaeDiagnosticsSnapshot>? xaeDiagnosticsProvider = null,
+        Func<XaeMessagesResult>? xaeMessagesSnapshotProvider = null)
     {
         if (version is null)
         {
@@ -124,6 +138,11 @@ public sealed class GatewayApplicationService
             ?? throw new ArgumentNullException(nameof(logs));
         _xaeBuildExecutor = xaeBuildExecutor;
         _xaeOpenExecutor = xaeOpenExecutor;
+        _capabilitySnapshots = capabilitySnapshots;
+        _profileObservations = profileObservations;
+        _xaeStateProvider = xaeStateProvider;
+        _xaeDiagnosticsProvider = xaeDiagnosticsProvider;
+        _xaeMessagesSnapshotProvider = xaeMessagesSnapshotProvider;
         _activationExecutor = activationExecutor;
         _synchronizeExecutor = synchronizeExecutor;
         _closeXaeExecutor = closeXaeExecutor;
@@ -915,30 +934,20 @@ public sealed class GatewayApplicationService
     {
         try
         {
-            if (string.Equals(
-                    uri,
-                    GatewayResourceUris.CurrentGatewayLog,
-                    StringComparison.Ordinal))
+            GatewayResourceRoute route = GatewayResourceRouter.Parse(uri);
+            if (route.Kind == GatewayResourceRouteKind.CurrentGatewayLog)
             {
-                return ReadCurrentLogPath(
-                    maximumCharacters,
-                    offset);
+                return ReadCurrentLogPath(maximumCharacters, offset);
             }
 
-            if (GatewayResourceUris.TryParseProfileSources(
-                uri,
-                out string profile,
-                out bool files))
+            if (route.Profile is not null)
             {
-                EnsureSourceProfileIdentity(profile);
-                if (maximumCharacters <= 0
-                    || maximumCharacters
-                        > MaximumResourceCharacters)
-                {
-                    throw new ArgumentOutOfRangeException(
-                        nameof(maximumCharacters));
-                }
+                EnsureProfileIdentity(route.Profile, "resource.read");
+            }
 
+            if (route.Kind is GatewayResourceRouteKind.ProfileSources
+                or GatewayResourceRouteKind.ProfileSourceFiles)
+            {
                 SourceManifestResourceReader reader =
                     _sourceManifestReader
                     ?? throw new GatewayOperationException(
@@ -948,18 +957,31 @@ public sealed class GatewayApplicationService
                         retryable: true,
                         stage: "profile.sources.read",
                         component: GatewayComponent.Profile);
-                return files
+                return route.Kind == GatewayResourceRouteKind.ProfileSourceFiles
                     ? reader.ReadFiles(
-                        profile,
+                        route.Profile!,
                         maximumCharacters,
                         offset)
                     : reader.ReadManifest(
-                        profile,
+                        route.Profile!,
                         maximumCharacters,
                         offset);
             }
 
-            return _logs.Read(uri, maximumCharacters, offset);
+            if (route.Kind == GatewayResourceRouteKind.OperationArtifact)
+            {
+                return _logs.Read(
+                    route.CanonicalUri,
+                    maximumCharacters,
+                    offset);
+            }
+
+            object value = ReadStructuredResource(route);
+            return SerializeResource(
+                route.CanonicalUri,
+                value,
+                maximumCharacters,
+                offset);
         }
         catch (FileNotFoundException exception)
         {
@@ -977,7 +999,203 @@ public sealed class GatewayApplicationService
         }
     }
 
-    private void EnsureSourceProfileIdentity(string profile)
+    private object ReadStructuredResource(GatewayResourceRoute route)
+    {
+        switch (route.Kind)
+        {
+            case GatewayResourceRouteKind.GatewayState:
+                GatewayStateSnapshot state = _status.Read();
+                state.JournalId = _eventJournal.JournalId;
+                state.LatestEventCursor = _eventJournal.LatestCursor;
+                state.ObservedAtUtc = _clock.UtcNow;
+                return state;
+            case GatewayResourceRouteKind.GatewayDiagnostics:
+                return new GatewayDiagnosticsSnapshot
+                {
+                    Events = ReadEvents(GatewayComponent.Gateway),
+                };
+            case GatewayResourceRouteKind.ProfileCapabilities:
+                return new ProfileCapabilitiesSnapshot
+                {
+                    Profile = route.Profile!,
+                    Capabilities = (_capabilitySnapshots
+                            ?? throw ResourceUnavailable(
+                                "Profile capability snapshots are unavailable.",
+                                "profile.capabilities.read",
+                                GatewayComponent.Profile))
+                        .ReadProfile(route.Profile!)
+                        .ToList(),
+                    ObservedAtUtc = _clock.UtcNow,
+                };
+            case GatewayResourceRouteKind.XaeState:
+                return (_xaeStateProvider
+                        ?? throw ResourceUnavailable(
+                            "XAE state is unavailable.",
+                            "xae.state.read",
+                            GatewayComponent.Xae))();
+            case GatewayResourceRouteKind.XaeDiagnostics:
+                XaeDiagnosticsSnapshot xaeDiagnostics =
+                    (_xaeDiagnosticsProvider
+                        ?? throw ResourceUnavailable(
+                            "XAE diagnostics are unavailable.",
+                            "xae.diagnostics.read",
+                            GatewayComponent.Xae))();
+                xaeDiagnostics.Events = ReadEvents(
+                    GatewayComponent.Xae,
+                    route.Profile);
+                return xaeDiagnostics;
+            case GatewayResourceRouteKind.XaeMessages:
+                return (_xaeMessagesSnapshotProvider
+                        ?? throw ResourceUnavailable(
+                            "The current XAE Error List snapshot is unavailable.",
+                            "xae.messages.read",
+                            GatewayComponent.Xae))();
+            case GatewayResourceRouteKind.TargetState:
+                return RequireObservations().Target;
+            case GatewayResourceRouteKind.TargetDiagnostics:
+                ProfileObservationSnapshot target = RequireObservations();
+                return new TargetDiagnosticsSnapshot
+                {
+                    Profile = route.Profile!,
+                    Target = target.Target,
+                    XaeObserved = target.Xae,
+                    Divergence = target.Divergence,
+                    Events = ReadEvents(
+                        GatewayComponent.Target,
+                        route.Profile),
+                };
+            case GatewayResourceRouteKind.PlcState:
+                return FindRuntime(route.RuntimeId!);
+            case GatewayResourceRouteKind.PlcDiagnostics:
+                return new PlcDiagnosticsSnapshot
+                {
+                    Profile = route.Profile!,
+                    RuntimeId = route.RuntimeId!,
+                    Runtime = FindRuntime(route.RuntimeId!),
+                    Events = ReadEvents(
+                        GatewayComponent.Plc,
+                        route.Profile),
+                };
+            case GatewayResourceRouteKind.OperationSummary:
+                return RequireOperation(route.OperationId!).Summary;
+            case GatewayResourceRouteKind.OperationEvents:
+                RequireOperation(route.OperationId!);
+                return _eventJournal.ReadAfter(
+                    _eventJournal.JournalId,
+                    0,
+                    200,
+                    operationId: route.OperationId);
+            default:
+                throw new GatewayOperationException(
+                    ErrorCodes.ResourceNotFound,
+                    $"Resource '{route.CanonicalUri}' was not found.",
+                    stage: "resource.read",
+                    component: GatewayComponent.Gateway,
+                    sideEffectsStarted: false);
+        }
+    }
+
+    private OperationEventPage ReadEvents(
+        GatewayComponent component,
+        string? profile = null) =>
+        _eventJournal.ReadAfter(
+            _eventJournal.JournalId,
+            0,
+            200,
+            component: component,
+            profile: profile);
+
+    private ProfileObservationSnapshot RequireObservations() =>
+        (_profileObservations
+            ?? throw ResourceUnavailable(
+                "Profile observations are unavailable.",
+                "target.state.read",
+                GatewayComponent.Target)).Read();
+
+    private PlcRuntimeObservation FindRuntime(string runtimeId)
+    {
+        PlcRuntimeObservation? runtime = RequireObservations()
+            .PlcRuntimes
+            .FirstOrDefault(candidate => string.Equals(
+                candidate.RuntimeId,
+                runtimeId,
+                StringComparison.OrdinalIgnoreCase));
+        return runtime
+            ?? throw new GatewayOperationException(
+                ErrorCodes.ResourceNotFound,
+                $"PLC runtime '{runtimeId}' was not found.",
+                stage: "plc.state.read",
+                component: GatewayComponent.Plc,
+                sideEffectsStarted: false);
+    }
+
+    private StoredOperation RequireOperation(string operationId) =>
+        _operations.Get(operationId)
+        ?? throw new GatewayOperationException(
+            ErrorCodes.ResourceNotFound,
+            $"Operation '{operationId}' was not found.",
+            stage: "operation.resource.read",
+            component: GatewayComponent.Gateway,
+            sideEffectsStarted: false);
+
+    private static GatewayOperationException ResourceUnavailable(
+        string message,
+        string stage,
+        GatewayComponent component) =>
+        new(
+            ErrorCodes.GatewayNotReady,
+            message,
+            retryable: true,
+            stage: stage,
+            component: component,
+            sideEffectsStarted: false);
+
+    private static ResourceContent SerializeResource(
+        string uri,
+        object value,
+        int maximumCharacters,
+        long offset)
+    {
+        if (maximumCharacters <= 0
+            || maximumCharacters > MaximumResourceCharacters)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maximumCharacters));
+        }
+
+        if (offset < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(offset));
+        }
+
+        string json = JsonSerializer.Serialize(
+            value,
+            value.GetType(),
+            ResourceJsonOptions);
+        int start = offset >= json.Length ? json.Length : (int)offset;
+        int length = Math.Min(maximumCharacters, json.Length - start);
+        bool truncated = start + length < json.Length;
+        return new ResourceContent
+        {
+            Uri = uri,
+            ContentType = "application/json",
+            Content = json.Substring(start, length),
+            Offset = offset,
+            NextOffset = truncated ? offset + length : null,
+            Truncated = truncated,
+        };
+    }
+
+    private static JsonSerializerOptions CreateResourceJsonOptions()
+    {
+        JsonSerializerOptions options = new()
+        {
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        };
+        options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
+        return options;
+    }
+
+    private void EnsureProfileIdentity(string profile, string stage)
     {
         if (_activeProfile is not null
             && string.Equals(
@@ -995,7 +1213,7 @@ public sealed class GatewayApplicationService
             _activeProfile is null
                 ? $"Project profile '{profile}' was not found."
                 : $"Profile '{profile}' is not the active XAE context.",
-            stage: "profile.sources.read",
+            stage: stage,
             component: GatewayComponent.Profile,
             sideEffectsStarted: false,
             expected: new IdentityEvidence

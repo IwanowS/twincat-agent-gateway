@@ -217,7 +217,13 @@ public sealed class GatewayDesktopHost : IDisposable
                 : () => _xaeCloseConsent.ReadProcessId(
                     ActiveProfile!.Name),
             operationCancellation: _operationCancellation,
-            xaeOpenExecutor: xaeOpenExecutor);
+            xaeOpenExecutor: xaeOpenExecutor,
+            capabilitySnapshots: _capabilitySnapshots,
+            profileObservations: _observations,
+            xaeStateProvider: _xaeCoordinator?.ReadXaeState,
+            xaeDiagnosticsProvider: _xaeCoordinator?.ReadXaeDiagnostics,
+            xaeMessagesSnapshotProvider:
+                _xaeCoordinator?.ReadXaeMessagesSnapshot);
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
             _capabilities,

@@ -28,5 +28,9 @@
           Link="CONFIGURATION.md"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />
+    <None Include="..\..\docs\MCP_REFERENCE.md"
+          Link="MCP_REFERENCE.md"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>
