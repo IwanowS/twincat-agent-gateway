@@ -46,7 +46,7 @@
              Link="Production\TcUnitReportParser.cs" />
     <Compile Include="..\..\..\src\TwinCatGateway.Desktop\TcUnitRunExecutor.cs"
              Link="Production\TcUnitRunExecutor.cs" />
-    <Compile Include="..\..\TwinCatGateway.IntegrationTests\TcUnitRunExecutorTests.cs"
+    <Compile Include="TcUnitRunExecutorTests.cs"
              Link="Tests\TcUnitRunExecutorTests.cs" />
   </ItemGroup>
 </Project>

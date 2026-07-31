@@ -10,6 +10,9 @@ namespace TwinCatGateway.UnitTests;
 
 public sealed class SourceManifestStoreTests
 {
+    private static readonly string[] ExpectedExtensions =
+        { ".TcGVL", ".TcPOU" };
+
     [Fact]
     public void StartsUnknownAndReturnsDefensiveSnapshots()
     {
@@ -52,7 +55,7 @@ public sealed class SourceManifestStoreTests
             root.Path);
         Assert.Equal("Machine", root.Project);
         Assert.Equal(
-            new[] { ".TcGVL", ".TcPOU" },
+            ExpectedExtensions,
             root.Extensions);
         string[] editablePaths = store.ReadFiles()
             .Where(entry => entry.Kind == SourceEntryKind.Editable)

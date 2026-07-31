@@ -11,6 +11,9 @@ namespace TwinCatGateway.UnitTests;
 
 public sealed class TwinCatProjectGraphResolverTests
 {
+    private static readonly string[] ExpectedOrderedProjects =
+        { "First", "Second" };
+
     [Fact]
     public void ResolvePreservesProjectAssociationAndExternalPaths()
     {
@@ -191,7 +194,7 @@ public sealed class TwinCatProjectGraphResolverTests
 
         Assert.True(graph.IsComplete);
         Assert.Equal(
-            new[] { "First", "Second" },
+            ExpectedOrderedProjects,
             graph.Entries
                 .Where(entry => entry.Kind == SourceEntryKind.Editable)
                 .Select(entry => entry.Project)

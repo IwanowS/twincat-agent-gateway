@@ -365,8 +365,8 @@ internal sealed class XaeBuildEventLease : IDisposable
                     "Build.RebuildSolution");
                 break;
             default:
-                throw new ArgumentOutOfRangeException(
-                    nameof(_requestedAction));
+                throw new InvalidOperationException(
+                    "The requested build action is not supported.");
         }
     }
 

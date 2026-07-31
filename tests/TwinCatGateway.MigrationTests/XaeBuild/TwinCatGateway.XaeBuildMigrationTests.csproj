@@ -26,7 +26,7 @@
   <ItemGroup>
     <Compile Include="..\..\..\src\TwinCatGateway.Xae\XaeBuildEventMatcher.cs"
              Link="Production\XaeBuildEventMatcher.cs" />
-    <Compile Include="..\..\TwinCatGateway.IntegrationTests\XaeBuildEventLeaseTests.cs"
+    <Compile Include="XaeBuildEventLeaseTests.cs"
              Link="Tests\XaeBuildEventLeaseTests.cs" />
   </ItemGroup>
 </Project>

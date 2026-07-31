@@ -38,13 +38,13 @@
     <Compile Include="..\..\..\src\TwinCatGateway.Xae\XaeTwinCatSystemStateMapper.cs"
              Link="Production\XaeTwinCatSystemStateMapper.cs" />
 
-    <Compile Include="..\..\TwinCatGateway.IntegrationTests\AdsRuntimeMonitorTests.cs"
+    <Compile Include="AdsRuntimeMonitorTests.cs"
              Link="Tests\AdsRuntimeMonitorTests.cs" />
-    <Compile Include="..\..\TwinCatGateway.IntegrationTests\AdsRuntimeStatusReaderTests.cs"
+    <Compile Include="AdsRuntimeStatusReaderTests.cs"
              Link="Tests\AdsRuntimeStatusReaderTests.cs" />
-    <Compile Include="..\..\TwinCatGateway.IntegrationTests\XaeFactAttribute.cs"
+    <Compile Include="XaeFactAttribute.cs"
              Link="Tests\XaeFactAttribute.cs" />
-    <Compile Include="..\..\TwinCatGateway.IntegrationTests\XaeTwinCatSystemStateMapperTests.cs"
+    <Compile Include="XaeTwinCatSystemStateMapperTests.cs"
              Link="Tests\XaeTwinCatSystemStateMapperTests.cs" />
     <Compile Include="..\..\TwinCatGateway.UnitTests\ProfileObservationStoreTests.cs"
              Link="Tests\ProfileObservationStoreTests.cs" />
