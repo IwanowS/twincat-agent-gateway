@@ -45,8 +45,8 @@
           "readTimeoutMilliseconds": 500
         },
         "capabilities": {
-          "config": false,
-          "startRestart": false,
+          "config": true,
+          "startRestart": true,
           "tcUnitVerification": true
         },
         "tcUnit": {
@@ -54,8 +54,8 @@
           "adsPort": 851,
           "finishedSymbol": "GVL_TcUnit.TcUnitRunner.AllTestSuitesFinished",
           "suiteCountSymbol": "GVL_TcUnit.NumberOfInitializedTestSuites",
-          "reportPath": "\\\\WIN-T077ADA\\c\\TwinCAT\\3.1\\Boot\\tcunit_xunit_testresults.xml",
-          "allowDeleteExistingReport": false,
+          "reportPath": "\\\\WIN-T077ADA\\TwinCAT\\3.1\\Boot\\tcunit_xunit_testresults.xml",
+          "allowDeleteExistingReport": true,
           "completionTimeoutSeconds": 120,
           "zeroTests": "fail"
         }
