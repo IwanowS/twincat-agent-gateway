@@ -398,3 +398,38 @@ S6 remains pending only for an operator-created dirty XAE document, a real
 pending by operator direction. The user-owned `twincat-gateway.json` and
 `.session/` remain unstaged. XAE and checkout Gateway are intentionally left
 open and attached.
+
+## 2026-08-01 — S6 dirty-document gate through v2 state
+
+The operator created an unsaved edit in the exact fixture
+`PlcProject2/POUs/MAIN.TcPOU`; XAE visibly marked the editor `MAIN*`. Initial
+checkout Gateway observations incorrectly returned an empty `dirtyDocuments`
+array. Read-only same-user ROT/DTE evidence showed the exact path with
+`Document.Saved=false`, while the Target System Service and PLC ports 851/852
+remained fresh Run and no dialog was present.
+
+The corrective commits are:
+
+- `693b460` and `61f3dc8` — enumerate RDT document data and resolve TwinCAT
+  hierarchy monikers to exact project paths;
+- `dff31c3` — refresh and query the Visual Studio RDT v3 dirty-state service;
+- `be6db5a` — query the TwinCAT hierarchy item dirty flag and preserve exact
+  dirty paths through XAE snapshots, clones, and the v2 contract state.
+
+The checkout-built v2 state then exposed the exact
+`PlcProject2/POUs/MAIN.TcPOU` path. One compile-only PLC Build was issued and
+failed as required with exact operation ID
+`d969e92c019547978d8538df4a2c5e1b`, code `DIRTY_XAE_DOCUMENT`, component
+`xae`, stage `xae.workspace.dirty`, and `sideEffectsStarted=false`. Its exact
+operation event stream contains only queued, started, and failed events; no
+compile/deploy stage ran. A postcondition read confirmed the editor remained
+dirty and Target remained fresh Run.
+
+Validation after the correction: full solution build zero warnings/errors;
+Unit 176/176; XAE build migration 10/10; MCP v2 20/20; contract serialization
+29/29 on both net8.0 and net48. S6 now remains pending only for a real
+`.tsproj` noise occurrence and the guarded PLC Exception workflow. S8 remains
+deferred by operator direction. The operator must still undo/discard the
+deliberate unsaved `MAIN*` edit before further clean/synchronization gates.
+The user-owned `twincat-gateway.json` and `.session/` remain unstaged. XAE and
+checkout Gateway are intentionally left open and attached.
