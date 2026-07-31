@@ -89,6 +89,17 @@ public interface ITwinCatGatewayClient
                 "Target Config is not implemented by this client."));
     }
 
+    Task<GatewayResponse<OperationAccepted>>
+        StartTargetStartRestartAsync(
+            TargetStartRestartParameters parameters,
+            CancellationToken cancellationToken = default)
+    {
+        return Task.FromException<
+            GatewayResponse<OperationAccepted>>(
+            new NotSupportedException(
+                "Target start/restart is not implemented by this client."));
+    }
+
     Task<GatewayResponse<OperationDetails<TResult>>>
         GetOperationAsync<TResult>(
             string operationId,

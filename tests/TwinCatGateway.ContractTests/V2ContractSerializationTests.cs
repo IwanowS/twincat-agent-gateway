@@ -522,6 +522,50 @@ public sealed class V2ContractSerializationTests
         Assert.Contains("\"action\":\"config\"", json);
     }
 
+    [Fact]
+    public void TargetStartRestartContractPreservesNonIdempotentAction()
+    {
+        TargetStartRestartResult source = new()
+        {
+            Ok = true,
+            OperationId = "target-restart-1",
+            Profile = "bench",
+            Action = TargetTransitionAction.Restart,
+            Before = new TargetSystemObservation
+            {
+                Profile = "bench",
+                AmsNetId = "192.168.3.31.1.1",
+                Port = 10000,
+                State = TargetSystemState.Run,
+                ObservedAtUtc = ObservedAt,
+                Freshness = ObservationFreshness.Fresh,
+            },
+            After = new TargetSystemObservation
+            {
+                Profile = "bench",
+                AmsNetId = "192.168.3.31.1.1",
+                Port = 10000,
+                State = TargetSystemState.Run,
+                ObservedAtUtc = ObservedAt.AddSeconds(5),
+                Freshness = ObservationFreshness.Fresh,
+            },
+        };
+
+        string json = JsonSerializer.Serialize(
+            source,
+            ContractJson.SerializerOptions);
+        TargetStartRestartResult? result =
+            JsonSerializer.Deserialize<TargetStartRestartResult>(
+                json,
+                ContractJson.SerializerOptions);
+
+        Assert.NotNull(result);
+        Assert.Equal(TargetTransitionAction.Restart, result.Action);
+        Assert.Equal(TargetSystemState.Run, result.Before.State);
+        Assert.Equal(TargetSystemState.Run, result.After.State);
+        Assert.Contains("\"action\":\"restart\"", json);
+    }
+
     private sealed class StageEvidence
     {
         public bool ReportFound { get; set; }

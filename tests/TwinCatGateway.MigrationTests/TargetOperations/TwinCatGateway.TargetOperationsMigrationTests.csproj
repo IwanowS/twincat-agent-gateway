@@ -26,6 +26,8 @@
              Link="Production\GatewayConfigurationValidator.cs" />
     <Compile Include="..\..\..\src\TwinCatGateway.Core\GatewayOperationException.cs"
              Link="Production\GatewayOperationException.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\GatewayOperationCanceledException.cs"
+             Link="Production\GatewayOperationCanceledException.cs" />
     <Compile Include="..\..\..\src\TwinCatGateway.Core\OperationCapabilityGuard.cs"
              Link="Production\OperationCapabilityGuard.cs" />
     <Compile Include="..\..\..\src\TwinCatGateway.Core\OperatorLockStore.cs"

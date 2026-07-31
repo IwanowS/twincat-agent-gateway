@@ -192,6 +192,16 @@ public sealed class GatewayRequestDispatcher
                     return _service.StartTargetConfig(parameters);
                 }
 
+            case GatewayMethods.TargetStartRestart:
+                {
+                    TargetStartRestartParameters parameters =
+                        request.DeserializeParameters<
+                            TargetStartRestartParameters>(
+                            _serializerOptions);
+                    return _service.StartTargetStartRestart(
+                        parameters);
+                }
+
             case GatewayMethods.GetOperation:
                 {
                     GetOperationParameters parameters =

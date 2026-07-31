@@ -38,6 +38,10 @@ public static class ErrorCodes
         "TARGET_CONFIG_FAILED";
     public const string TargetConfigPostconditionMissing =
         "TARGET_CONFIG_POSTCONDITION_MISSING";
+    public const string TargetStartRestartFailed =
+        "TARGET_START_RESTART_FAILED";
+    public const string TargetRunPostconditionMissing =
+        "TARGET_RUN_POSTCONDITION_MISSING";
     public const string CapabilityDisabled = "CAPABILITY_DISABLED";
     public const string OperatorLocked = "OPERATOR_LOCKED";
     public const string XaeCloseConsentRequired =

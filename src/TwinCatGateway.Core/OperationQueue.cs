@@ -266,7 +266,7 @@ public sealed class OperationQueue : IDisposable
                     result.Resources);
             }
         }
-        catch (OperationCanceledException) when (
+        catch (OperationCanceledException exception) when (
             timeout is not null
             && timeout.IsCancellationRequested
             && !_shutdown.IsCancellationRequested)
@@ -276,7 +276,12 @@ public sealed class OperationQueue : IDisposable
                 ErrorCodes.OperationTimeout,
                 "The operation exceeded its deadline.",
                 item.OperationId,
-                retryable: true);
+                retryable: true,
+                component:
+                    (exception as GatewayOperationCanceledException)?.Component,
+                sideEffectsStarted:
+                    (exception as GatewayOperationCanceledException)?
+                        .SideEffectsStarted);
             bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.TimedOut,
@@ -292,37 +297,48 @@ public sealed class OperationQueue : IDisposable
                     error);
             }
         }
-        catch (OperationCanceledException) when (_shutdown.IsCancellationRequested)
+        catch (OperationCanceledException exception) when (
+            _shutdown.IsCancellationRequested)
         {
             DateTimeOffset completedAtUtc = _clock.UtcNow;
+            GatewayError? error = CreateCancellationError(
+                exception,
+                item.OperationId);
             bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.Cancelled,
-                completedAtUtc);
+                completedAtUtc,
+                error: error);
             if (completed)
             {
                 RecordOperationEvent(
                     item.OperationId,
                     item.Kind,
                     OperationState.Cancelled,
-                    completedAtUtc);
+                    completedAtUtc,
+                    error);
             }
         }
-        catch (OperationCanceledException) when (
+        catch (OperationCanceledException exception) when (
             item.IsCancellationRequested)
         {
             DateTimeOffset completedAtUtc = _clock.UtcNow;
+            GatewayError? error = CreateCancellationError(
+                exception,
+                item.OperationId);
             bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.Cancelled,
-                completedAtUtc);
+                completedAtUtc,
+                error: error);
             if (completed)
             {
                 RecordOperationEvent(
                     item.OperationId,
                     item.Kind,
                     OperationState.Cancelled,
-                    completedAtUtc);
+                    completedAtUtc,
+                    error);
             }
         }
         catch (GatewayOperationException exception)
@@ -336,7 +352,11 @@ public sealed class OperationQueue : IDisposable
                 exception.Retryable,
                 exception.Stage,
                 exception.RawLogRef,
-                exception.Details);
+                exception.Details,
+                exception.Component,
+                exception.SideEffectsStarted,
+                exception.Expected,
+                exception.Observed);
             bool completed = _store.TryComplete(
                 item.OperationId,
                 OperationState.Failed,
@@ -440,7 +460,11 @@ public sealed class OperationQueue : IDisposable
         bool retryable,
         string? stage = null,
         string? rawLogRef = null,
-        string? details = null)
+        string? details = null,
+        GatewayComponent? component = null,
+        bool? sideEffectsStarted = null,
+        IdentityEvidence? expected = null,
+        IdentityEvidence? observed = null)
     {
         return new GatewayError
         {
@@ -451,7 +475,30 @@ public sealed class OperationQueue : IDisposable
             Retryable = retryable,
             Stage = stage,
             RawLogRef = rawLogRef,
+            Component = component,
+            SideEffectsStarted = sideEffectsStarted,
+            Expected = expected,
+            Observed = observed,
         };
+    }
+
+    private static GatewayError? CreateCancellationError(
+        OperationCanceledException exception,
+        string operationId)
+    {
+        if (exception is not GatewayOperationCanceledException cancellation)
+        {
+            return null;
+        }
+
+        return CreateError(
+            cancellation.Code,
+            cancellation.Message,
+            operationId,
+            retryable: true,
+            stage: cancellation.Stage,
+            component: cancellation.Component,
+            sideEffectsStarted: cancellation.SideEffectsStarted);
     }
 
     private void RecordOperationEvent(

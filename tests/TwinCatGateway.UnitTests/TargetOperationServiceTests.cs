@@ -117,9 +117,213 @@ public sealed class TargetOperationServiceTests
         Assert.True(exception.SideEffectsStarted);
     }
 
+    [Theory]
+    [InlineData(TargetSystemState.Config, TargetTransitionAction.Start)]
+    [InlineData(TargetSystemState.Stop, TargetTransitionAction.Start)]
+    [InlineData(TargetSystemState.Run, TargetTransitionAction.Restart)]
+    public async Task StartRestartUsesExplicitInitialStateSemantics(
+        TargetSystemState initialState,
+        TargetTransitionAction expectedAction)
+    {
+        Fixture fixture = new();
+        fixture.Observations.Enqueue(fixture.Observation(initialState));
+        fixture.Observations.Enqueue(
+            fixture.Observation(TargetSystemState.Run, seconds: 2));
+
+        TargetStartRestartResult result =
+            await fixture.ExecuteStartRestartAsync();
+
+        Assert.Equal(expectedAction, result.Action);
+        Assert.Equal(initialState, result.Before.State);
+        Assert.Equal(TargetSystemState.Run, result.After.State);
+        Assert.Equal(1, fixture.CommandCalls);
+    }
+
+    [Theory]
+    [InlineData(TargetSystemState.Exception)]
+    [InlineData(TargetSystemState.Transitioning)]
+    [InlineData(TargetSystemState.Unknown)]
+    public async Task StartRestartRejectsUnsupportedInitialState(
+        TargetSystemState initialState)
+    {
+        Fixture fixture = new();
+        fixture.Observations.Enqueue(fixture.Observation(initialState));
+
+        GatewayOperationException exception = await Assert.ThrowsAsync<
+            GatewayOperationException>(
+                fixture.ExecuteStartRestartAsync);
+
+        Assert.Equal(ErrorCodes.TargetStartRestartFailed, exception.Code);
+        Assert.False(exception.SideEffectsStarted);
+        Assert.Equal(0, fixture.CommandCalls);
+    }
+
+    [Fact]
+    public async Task StartRestartRequiresAvailableDirectObservation()
+    {
+        Fixture fixture = new();
+        TargetSystemObservation unavailable =
+            fixture.Observation(TargetSystemState.Unknown);
+        unavailable.Freshness = ObservationFreshness.Unavailable;
+        unavailable.Error = new ObservationError
+        {
+            Code = ErrorCodes.AdsStateReadFailed,
+            Message = "route unavailable",
+            Retryable = true,
+        };
+        fixture.Observations.Enqueue(unavailable);
+
+        GatewayOperationException exception = await Assert.ThrowsAsync<
+            GatewayOperationException>(
+                fixture.ExecuteStartRestartAsync);
+
+        Assert.Equal(ErrorCodes.TargetAdsUnavailable, exception.Code);
+        Assert.Equal("route unavailable", exception.Details);
+        Assert.False(exception.SideEffectsStarted);
+    }
+
+    [Fact]
+    public async Task StartRestartMissingRunPreservesSideEffectEvidence()
+    {
+        Fixture fixture = new()
+        {
+            AdvanceClockAfterCommand = TimeSpan.FromSeconds(1),
+        };
+        fixture.Observations.Enqueue(
+            fixture.Observation(TargetSystemState.Config));
+        fixture.Observations.Enqueue(
+            fixture.Observation(TargetSystemState.Config, seconds: 2));
+
+        GatewayOperationException exception = await Assert.ThrowsAsync<
+            GatewayOperationException>(
+                fixture.ExecuteStartRestartAsync);
+
+        Assert.Equal(
+            ErrorCodes.TargetRunPostconditionMissing,
+            exception.Code);
+        Assert.True(exception.SideEffectsStarted);
+    }
+
+    [Fact]
+    public async Task ConfigStaticCapabilityDenialPrecedesNoOp()
+    {
+        Fixture fixture = new(configEnabled: false);
+        fixture.Observations.Enqueue(
+            fixture.Observation(TargetSystemState.Config));
+
+        GatewayOperationException exception = await Assert.ThrowsAsync<
+            GatewayOperationException>(fixture.ExecuteConfigAsync);
+
+        Assert.Equal(ErrorCodes.CapabilityDisabled, exception.Code);
+        Assert.False(exception.SideEffectsStarted);
+        Assert.Equal(0, fixture.CommandCalls);
+    }
+
+    [Fact]
+    public async Task StartRestartOperatorLockDeniesBeforeObservation()
+    {
+        Fixture fixture = new(lockTargetOperations: true);
+        fixture.Observations.Enqueue(
+            fixture.Observation(TargetSystemState.Run));
+
+        GatewayOperationException exception = await Assert.ThrowsAsync<
+            GatewayOperationException>(
+                fixture.ExecuteStartRestartAsync);
+
+        Assert.Equal(ErrorCodes.OperatorLocked, exception.Code);
+        Assert.False(exception.SideEffectsStarted);
+        Assert.Equal(0, fixture.CommandCalls);
+    }
+
+    [Fact]
+    public async Task StartRestartPreservesPreCommandTargetMismatch()
+    {
+        Fixture fixture = new()
+        {
+            CommandFailure = new GatewayOperationException(
+                ErrorCodes.XaeTargetMismatch,
+                "Selected target differs from the profile.",
+                stage: "target.startRestart.command",
+                component: GatewayComponent.Xae,
+                sideEffectsStarted: false),
+        };
+        fixture.Observations.Enqueue(
+            fixture.Observation(TargetSystemState.Run));
+
+        GatewayOperationException exception = await Assert.ThrowsAsync<
+            GatewayOperationException>(
+                fixture.ExecuteStartRestartAsync);
+
+        Assert.Equal(ErrorCodes.XaeTargetMismatch, exception.Code);
+        Assert.Equal(GatewayComponent.Xae, exception.Component);
+        Assert.False(exception.SideEffectsStarted);
+    }
+
+    [Fact]
+    public async Task CancellationBeforeCommandHasNoSideEffectEvidence()
+    {
+        Fixture fixture = new();
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => fixture.ExecuteStartRestartAsync(cancellation.Token));
+
+        Assert.Equal(0, fixture.CommandCalls);
+    }
+
+    [Fact]
+    public async Task CancellationDuringCommandPreservesSideEffectEvidence()
+    {
+        Fixture fixture = new()
+        {
+            CancelDuringCommand = true,
+        };
+        fixture.Observations.Enqueue(
+            fixture.Observation(TargetSystemState.Run));
+
+        GatewayOperationCanceledException exception =
+            await Assert.ThrowsAsync<GatewayOperationCanceledException>(
+                fixture.ExecuteStartRestartAsync);
+
+        Assert.Equal(
+            ErrorCodes.TargetStartRestartFailed,
+            exception.Code);
+        Assert.Equal("target.startRestart.command", exception.Stage);
+        Assert.Equal(GatewayComponent.Target, exception.Component);
+        Assert.True(exception.SideEffectsStarted);
+        Assert.Equal(1, fixture.CommandCalls);
+    }
+
+    [Fact]
+    public async Task CancellationAfterCommandPreservesPostconditionEvidence()
+    {
+        using CancellationTokenSource cancellation = new();
+        Fixture fixture = new()
+        {
+            CancelAfterCommand = cancellation,
+        };
+        fixture.Observations.Enqueue(
+            fixture.Observation(TargetSystemState.Config));
+
+        GatewayOperationCanceledException exception =
+            await Assert.ThrowsAsync<GatewayOperationCanceledException>(
+                () => fixture.ExecuteStartRestartAsync(cancellation.Token));
+
+        Assert.Equal(
+            ErrorCodes.TargetRunPostconditionMissing,
+            exception.Code);
+        Assert.Equal("target.startRestart.postcondition", exception.Stage);
+        Assert.True(exception.SideEffectsStarted);
+        Assert.Equal(1, fixture.CommandCalls);
+    }
+
     private sealed class Fixture
     {
-        public Fixture()
+        public Fixture(
+            bool configEnabled = true,
+            bool startRestartEnabled = true,
+            bool lockTargetOperations = false)
         {
             GatewayConfiguration configuration = new()
             {
@@ -138,7 +342,8 @@ public sealed class TargetOperationServiceTests
                             AmsNetId = "192.168.3.31.1.1",
                             Capabilities = new TargetCapabilitiesConfiguration
                             {
-                                Config = true,
+                                Config = configEnabled,
+                                StartRestart = startRestartEnabled,
                             },
                         },
                     },
@@ -146,11 +351,27 @@ public sealed class TargetOperationServiceTests
             };
             ProfileResolver profiles = new(configuration);
             Profile = profiles.Resolve("fixture");
-            CapabilityEvaluator evaluator = new(configuration);
+            OperatorLockStore locks = new();
+            if (lockTargetOperations)
+            {
+                locks.SetLocked(
+                    Profile.Name,
+                    OperatorLockKey.TargetConfigStartRestart,
+                    locked: true);
+            }
+
+            CapabilityEvaluator evaluator = new(
+                configuration,
+                sessionConsent: null,
+                operatorLocks: locks);
             Guard = new OperationCapabilityGuard(
                 evaluator,
                 Profile,
                 CapabilityKey.TargetConfig);
+            StartRestartGuard = new OperationCapabilityGuard(
+                evaluator,
+                Profile,
+                CapabilityKey.TargetStartRestart);
             Service = new TargetOperationService(Clock);
         }
 
@@ -162,9 +383,17 @@ public sealed class TargetOperationServiceTests
 
         public OperationCapabilityGuard Guard { get; }
 
+        public OperationCapabilityGuard StartRestartGuard { get; }
+
         public TargetOperationService Service { get; }
 
         public Exception? EvidenceFailure { get; set; }
+
+        public Exception? CommandFailure { get; set; }
+
+        public bool CancelDuringCommand { get; set; }
+
+        public CancellationTokenSource? CancelAfterCommand { get; set; }
 
         public int EvidenceCalls { get; private set; }
 
@@ -183,6 +412,25 @@ public sealed class TargetOperationServiceTests
                 ExecuteCommandAsync,
                 TimeSpan.FromSeconds(4),
                 CancellationToken.None);
+        }
+
+        public Task<TargetStartRestartResult>
+            ExecuteStartRestartAsync()
+        {
+            return ExecuteStartRestartAsync(CancellationToken.None);
+        }
+
+        public Task<TargetStartRestartResult>
+            ExecuteStartRestartAsync(CancellationToken cancellationToken)
+        {
+            return Service.ExecuteStartRestartAsync(
+                "op-s7-start-restart",
+                Profile,
+                StartRestartGuard,
+                ReadObservationAsync,
+                ExecuteCommandAsync,
+                TimeSpan.FromSeconds(4),
+                cancellationToken);
         }
 
         public TargetSystemObservation Observation(
@@ -244,6 +492,19 @@ public sealed class TargetOperationServiceTests
             _ = timeout;
             cancellationToken.ThrowIfCancellationRequested();
             CommandCalls++;
+            if (CancelDuringCommand)
+            {
+                using CancellationTokenSource cancellation = new();
+                cancellation.Cancel();
+                return Task.FromCanceled(cancellation.Token);
+            }
+
+            if (CommandFailure is not null)
+            {
+                return Task.FromException(CommandFailure);
+            }
+
+            CancelAfterCommand?.Cancel();
             Clock.AdvanceOnRead = AdvanceClockAfterCommand;
             return Task.CompletedTask;
         }

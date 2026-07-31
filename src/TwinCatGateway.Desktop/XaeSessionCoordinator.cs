@@ -1206,6 +1206,37 @@ internal sealed class XaeSessionCoordinator : IDisposable
             cancellationToken);
     }
 
+    public Task<TargetStartRestartResult>
+        ExecuteTargetStartRestartAsync(
+            string operationId,
+            TargetStartRestartParameters parameters,
+            CancellationToken cancellationToken)
+    {
+        EnsureProfileIdentity(
+            parameters.Profile,
+            "target.startRestart.preflight");
+        _capabilities.EnsureAllowed(
+            _profile,
+            CapabilityKey.TargetStartRestart,
+            "target.startRestart.preflight");
+        OperationCapabilityGuard capabilityGuard = new(
+            _capabilities,
+            _profile,
+            CapabilityKey.TargetStartRestart);
+        return _targetOperations.ExecuteStartRestartAsync(
+            operationId,
+            _profile,
+            capabilityGuard,
+            ReadDirectTargetObservationAsync,
+            (timeout, commandCancellation) =>
+                ExecuteTargetStartRestartCommandAsync(
+                    operationId,
+                    timeout,
+                    commandCancellation),
+            TimeSpan.FromSeconds(120),
+            cancellationToken);
+    }
+
     private Task<TargetSystemObservation>
         ReadDirectTargetObservationAsync(
             TimeSpan timeout,
@@ -1301,6 +1332,31 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 "target.config.command");
         await dialogScope.ObserveAsync(
             _session.RequestTargetConfigAsync(
+                _profile.Xae.Solution,
+                expectedAmsNetId,
+                timeout,
+                cancellationToken)).ConfigureAwait(false);
+    }
+
+    private async Task ExecuteTargetStartRestartCommandAsync(
+        string operationId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        string expectedAmsNetId = _profile.Target?.AmsNetId
+            ?? throw new GatewayOperationException(
+                ErrorCodes.TargetNotConfigured,
+                $"Profile '{_profile.Name}' has no configured Target System.",
+                stage: "target.startRestart.command",
+                component: GatewayComponent.Target,
+                sideEffectsStarted: false);
+        using XaeDialogOperationScope dialogScope =
+            _session.BeginDialogOperation(
+                operationId,
+                "targetStartRestart",
+                "target.startRestart.command");
+        await dialogScope.ObserveAsync(
+            _session.StartRestartTargetAsync(
                 _profile.Xae.Solution,
                 expectedAmsNetId,
                 timeout,

@@ -60,6 +60,9 @@ public sealed class TargetOperationService
                 stage: "target.config.preflight",
                 component: GatewayComponent.Target,
                 sideEffectsStarted: false);
+        capabilityGuard.EnsureAllowed(
+            "target.config.preflight",
+            sideEffectsStarted: false);
         DateTimeOffset startedAtUtc = _clock.UtcNow;
         DateTimeOffset deadlineUtc = startedAtUtc.Add(timeout);
         TargetSystemObservation before = await observationReader(
@@ -104,9 +107,13 @@ public sealed class TargetOperationService
                     sideEffectsStarted: false),
                 cancellationToken).ConfigureAwait(false);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException exception)
         {
-            throw;
+            throw CreateCancellation(
+                exception,
+                ErrorCodes.TargetConfigFailed,
+                "Target Config was cancelled after the command started.",
+                "target.config.command");
         }
         catch (GatewayOperationException exception)
         {
@@ -128,15 +135,27 @@ public sealed class TargetOperationService
                 sideEffectsStarted: true);
         }
 
-        TargetSystemObservation after = await WaitForStateAsync(
-            observationReader,
-            TargetSystemState.Config,
-            commandStartedAtUtc,
-            deadlineUtc,
-            ErrorCodes.TargetConfigPostconditionMissing,
-            "Target did not reach Config before the operation deadline.",
-            "target.config.postcondition",
-            cancellationToken).ConfigureAwait(false);
+        TargetSystemObservation after;
+        try
+        {
+            after = await WaitForStateAsync(
+                observationReader,
+                TargetSystemState.Config,
+                commandStartedAtUtc,
+                deadlineUtc,
+                ErrorCodes.TargetConfigPostconditionMissing,
+                "Target did not reach Config before the operation deadline.",
+                "target.config.postcondition",
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception)
+        {
+            throw CreateCancellation(
+                exception,
+                ErrorCodes.TargetConfigPostconditionMissing,
+                "Target Config was cancelled while awaiting its postcondition.",
+                "target.config.postcondition");
+        }
         return CreateConfigResult(
             operationId,
             profile,
@@ -146,6 +165,164 @@ public sealed class TargetOperationService
             before,
             after,
             faultSnapshot);
+    }
+
+    public async Task<TargetStartRestartResult>
+        ExecuteStartRestartAsync(
+            string operationId,
+            ResolvedProfile profile,
+            OperationCapabilityGuard capabilityGuard,
+            TargetSystemObservationReader observationReader,
+            TargetTransitionCommand transitionCommand,
+            TimeSpan timeout,
+            CancellationToken cancellationToken)
+    {
+        ValidateCommon(
+            operationId,
+            profile,
+            capabilityGuard,
+            observationReader,
+            transitionCommand,
+            timeout);
+
+        ResolvedTargetProfile target = profile.Target
+            ?? throw new GatewayOperationException(
+                ErrorCodes.TargetNotConfigured,
+                $"Profile '{profile.Name}' has no configured Target System.",
+                stage: "target.startRestart.preflight",
+                component: GatewayComponent.Target,
+                sideEffectsStarted: false);
+        capabilityGuard.EnsureAllowed(
+            "target.startRestart.preflight",
+            sideEffectsStarted: false);
+        DateTimeOffset startedAtUtc = _clock.UtcNow;
+        DateTimeOffset deadlineUtc = startedAtUtc.Add(timeout);
+        TargetSystemObservation before = await observationReader(
+            GetReadTimeout(
+                deadlineUtc,
+                "target.startRestart.preflight",
+                ErrorCodes.TargetAdsUnavailable,
+                sideEffectsStarted: false),
+            cancellationToken).ConfigureAwait(false);
+        if (before.Freshness != ObservationFreshness.Fresh
+            || before.Error is not null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.TargetAdsUnavailable,
+                "A fresh direct Target System observation is required "
+                    + "before start/restart.",
+                before.Error?.Message,
+                retryable: true,
+                stage: "target.startRestart.preflight",
+                component: GatewayComponent.Target,
+                sideEffectsStarted: false,
+                expected: CreateTargetEvidence(profile, target),
+                observed: CreateObservationEvidence(before));
+        }
+
+        TargetTransitionAction action;
+        switch (before.State)
+        {
+            case TargetSystemState.Config:
+            case TargetSystemState.Stop:
+                action = TargetTransitionAction.Start;
+                break;
+            case TargetSystemState.Run:
+                action = TargetTransitionAction.Restart;
+                break;
+            default:
+                throw new GatewayOperationException(
+                    ErrorCodes.TargetStartRestartFailed,
+                    "Target start/restart requires a fresh Config, Stop, "
+                        + "or Run observation.",
+                    retryable: false,
+                    stage: "target.startRestart.preflight",
+                    component: GatewayComponent.Target,
+                    sideEffectsStarted: false,
+                    expected: CreateTargetEvidence(profile, target),
+                    observed: CreateObservationEvidence(before));
+        }
+
+        capabilityGuard.EnsureAllowed(
+            "target.startRestart.preSideEffect",
+            sideEffectsStarted: false);
+        DateTimeOffset commandStartedAtUtc = _clock.UtcNow;
+        try
+        {
+            await transitionCommand(
+                GetRemaining(
+                    deadlineUtc,
+                    "target.startRestart.command",
+                    ErrorCodes.TargetStartRestartFailed,
+                    sideEffectsStarted: false),
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception)
+        {
+            throw CreateCancellation(
+                exception,
+                ErrorCodes.TargetStartRestartFailed,
+                "Target start/restart was cancelled after the command started.",
+                "target.startRestart.command");
+        }
+        catch (GatewayOperationException exception)
+        {
+            throw NormalizeCommandFailure(
+                exception,
+                ErrorCodes.TargetStartRestartFailed,
+                "Target start/restart command failed.",
+                "target.startRestart.command");
+        }
+        catch (Exception exception)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.TargetStartRestartFailed,
+                "Target start/restart command failed.",
+                retryable: true,
+                stage: "target.startRestart.command",
+                innerException: exception,
+                component: GatewayComponent.Target,
+                sideEffectsStarted: true);
+        }
+
+        TargetSystemObservation after;
+        try
+        {
+            after = await WaitForStateAsync(
+                observationReader,
+                TargetSystemState.Run,
+                commandStartedAtUtc,
+                deadlineUtc,
+                ErrorCodes.TargetRunPostconditionMissing,
+                "Target did not reach Run before the operation deadline.",
+                "target.startRestart.postcondition",
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception)
+        {
+            throw CreateCancellation(
+                exception,
+                ErrorCodes.TargetRunPostconditionMissing,
+                "Target start/restart was cancelled while awaiting its postcondition.",
+                "target.startRestart.postcondition");
+        }
+        return new TargetStartRestartResult
+        {
+            Ok = true,
+            OperationId = operationId,
+            DurationMs = Math.Max(
+                0,
+                (long)(_clock.UtcNow - startedAtUtc).TotalMilliseconds),
+            Profile = profile.Name,
+            Target = new TargetIdentity
+            {
+                Name = target.Name,
+                AmsNetId = target.AmsNetId,
+            },
+            Action = action,
+            Before = before,
+            After = after,
+        };
     }
 
     private async Task<TargetFaultSnapshot> CaptureFaultSnapshotAsync(
@@ -371,5 +548,45 @@ public sealed class TargetOperationService
             exception.SideEffectsStarted ?? true,
             exception.Expected,
             exception.Observed);
+    }
+
+    private static GatewayOperationCanceledException CreateCancellation(
+        OperationCanceledException exception,
+        string code,
+        string message,
+        string stage)
+    {
+        return exception as GatewayOperationCanceledException
+            ?? new GatewayOperationCanceledException(
+                code,
+                message,
+                stage,
+                GatewayComponent.Target,
+                sideEffectsStarted: true,
+                exception);
+    }
+
+    private static IdentityEvidence CreateTargetEvidence(
+        ResolvedProfile profile,
+        ResolvedTargetProfile target)
+    {
+        return new IdentityEvidence
+        {
+            Profile = profile.Name,
+            Solution = profile.Xae.Solution,
+            AmsNetId = target.AmsNetId,
+            Port = 10000,
+        };
+    }
+
+    private static IdentityEvidence CreateObservationEvidence(
+        TargetSystemObservation observation)
+    {
+        return new IdentityEvidence
+        {
+            Profile = observation.Profile,
+            AmsNetId = observation.AmsNetId,
+            Port = observation.Port,
+        };
     }
 }

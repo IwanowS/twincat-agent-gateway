@@ -8,6 +8,7 @@ public enum OperationKind
     CloseXae,
     Activate,
     TargetConfig,
+    TargetStartRestart,
     RecoverToConfig,
     Test,
 }

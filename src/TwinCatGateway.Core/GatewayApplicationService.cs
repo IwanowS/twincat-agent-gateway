@@ -28,6 +28,12 @@ public delegate Task<TargetConfigResult> TargetConfigOperationExecutor(
     TargetConfigParameters parameters,
     CancellationToken cancellationToken);
 
+public delegate Task<TargetStartRestartResult>
+    TargetStartRestartOperationExecutor(
+        string operationId,
+        TargetStartRestartParameters parameters,
+        CancellationToken cancellationToken);
+
 public delegate Task<SynchronizeResult> SynchronizeOperationExecutor(
     string operationId,
     SynchronizeParameters parameters,
@@ -57,6 +63,8 @@ public sealed class GatewayApplicationService
     private readonly CloseXaeOperationExecutor? _closeXaeExecutor;
     private readonly RecoveryOperationExecutor? _recoveryExecutor;
     private readonly TargetConfigOperationExecutor? _targetConfigExecutor;
+    private readonly TargetStartRestartOperationExecutor?
+        _targetStartRestartExecutor;
     private readonly XaeMessagesProvider? _xaeMessagesProvider;
     private readonly TcUnitPreparationExecutor?
         _tcUnitPreparationExecutor;
@@ -94,6 +102,8 @@ public sealed class GatewayApplicationService
         SynchronizeOperationExecutor? synchronizeExecutor = null,
         RecoveryOperationExecutor? recoveryExecutor = null,
         TargetConfigOperationExecutor? targetConfigExecutor = null,
+        TargetStartRestartOperationExecutor?
+            targetStartRestartExecutor = null,
         XaeMessagesProvider? xaeMessagesProvider = null,
         Func<string?>? currentLogPathProvider = null,
         CloseXaeOperationExecutor? closeXaeExecutor = null,
@@ -120,6 +130,7 @@ public sealed class GatewayApplicationService
         _closeXaeExecutor = closeXaeExecutor;
         _recoveryExecutor = recoveryExecutor;
         _targetConfigExecutor = targetConfigExecutor;
+        _targetStartRestartExecutor = targetStartRestartExecutor;
         _xaeMessagesProvider = xaeMessagesProvider;
         _tcUnitPreparationExecutor =
             tcUnitPreparationExecutor;
@@ -543,6 +554,50 @@ public sealed class GatewayApplicationService
             OperationKind.TargetConfig,
             (operationId, cancellationToken) =>
                 ExecuteTargetConfigAsync(
+                    operationId,
+                    captured,
+                    capabilityGuard,
+                    cancellationToken),
+            TimeSpan.FromSeconds(120));
+    }
+
+    public OperationAccepted StartTargetStartRestart(
+        TargetStartRestartParameters parameters)
+    {
+        if (parameters is null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (_targetStartRestartExecutor is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "The Target start/restart executor is unavailable.",
+                retryable: true,
+                stage: "target.startRestart.enqueue",
+                component: GatewayComponent.Target,
+                sideEffectsStarted: false);
+        }
+
+        ResolvedProfile profile = RequirePreflight(
+            "target.startRestart.admission").EnsureAllowed(
+                parameters.Profile,
+                CapabilityKey.TargetStartRestart,
+                "target.startRestart.admission",
+                requireTarget: true);
+        OperationCapabilityGuard capabilityGuard = new(
+            RequireCapabilities("target.startRestart.admission"),
+            profile,
+            CapabilityKey.TargetStartRestart);
+        TargetStartRestartParameters captured = new()
+        {
+            Profile = parameters.Profile,
+        };
+        return _queue.Enqueue(
+            OperationKind.TargetStartRestart,
+            (operationId, cancellationToken) =>
+                ExecuteTargetStartRestartAsync(
                     operationId,
                     captured,
                     capabilityGuard,
@@ -1269,6 +1324,25 @@ public sealed class GatewayApplicationService
             operationId,
             parameters,
             cancellationToken).ConfigureAwait(false);
+        result.OperationId = operationId;
+        return OperationExecutionResult.Success(result);
+    }
+
+    private async Task<OperationExecutionResult>
+        ExecuteTargetStartRestartAsync(
+            string operationId,
+            TargetStartRestartParameters parameters,
+            OperationCapabilityGuard capabilityGuard,
+            CancellationToken cancellationToken)
+    {
+        capabilityGuard.EnsureAllowed(
+            "target.startRestart.preSideEffect",
+            sideEffectsStarted: false);
+        TargetStartRestartResult result =
+            await _targetStartRestartExecutor!(
+                operationId,
+                parameters,
+                cancellationToken).ConfigureAwait(false);
         result.OperationId = operationId;
         return OperationExecutionResult.Success(result);
     }

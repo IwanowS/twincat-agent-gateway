@@ -682,6 +682,27 @@ public sealed class XaeSession : IDisposable
             cancellationToken).ConfigureAwait(false);
     }
 
+    public async Task StartRestartTargetAsync(
+        string solutionPath,
+        string expectedAmsNetId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        string normalizedSolution =
+            NormalizeSolutionPath(solutionPath);
+        await _dispatcher.InvokeAsync(
+            () =>
+            {
+                StartRestartTargetOnSta(
+                    normalizedSolution,
+                    expectedAmsNetId);
+                return true;
+            },
+            timeout,
+            cancellationToken).ConfigureAwait(false);
+    }
+
     internal Task<bool> ReadSilentModeAsync(
         TimeSpan timeout,
         CancellationToken cancellationToken)
@@ -1828,6 +1849,35 @@ public sealed class XaeSession : IDisposable
                 throw new GatewayOperationException(
                     ErrorCodes.TargetConfigFailed,
                     "The TwinCAT Target Config command failed.",
+                    retryable: true,
+                    stage: stage,
+                    innerException: exception,
+                    component: GatewayComponent.Target,
+                    sideEffectsStarted: true);
+            }
+        }
+    }
+
+    private void StartRestartTargetOnSta(
+        string normalizedSolution,
+        string expectedAmsNetId)
+    {
+        const string stage = "target.startRestart.command";
+        using (CreateUserSilentModeLease())
+        {
+            VerifyActivationBoundaryOnSta(
+                normalizedSolution,
+                expectedAmsNetId,
+                stage);
+            try
+            {
+                _sysManager!.StartRestartTwinCAT();
+            }
+            catch (Exception exception)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.TargetStartRestartFailed,
+                    "The TwinCAT Target start/restart command failed.",
                     retryable: true,
                     stage: stage,
                     innerException: exception,
