@@ -14,6 +14,7 @@ internal static class XaeRunningDocumentDirtyProbe
     public static IReadOnlyList<string> FindDirtyDocuments(DTE2 dte)
     {
         IVsRunningDocumentTable? table = null;
+        IVsRunningDocumentTable3? dirtyStateTable = null;
         IEnumRunningDocuments? documents = null;
         List<string> dirty = new();
         try
@@ -21,6 +22,10 @@ internal static class XaeRunningDocumentDirtyProbe
             table = XaeSession.QueryService<IVsRunningDocumentTable>(
                 dte,
                 typeof(SVsRunningDocumentTable).GUID);
+            dirtyStateTable =
+                XaeSession.QueryService<IVsRunningDocumentTable3>(
+                    dte,
+                    typeof(SVsRunningDocumentTable).GUID);
             Marshal.ThrowExceptionForHR(
                 table.GetRunningDocumentsEnum(out documents));
             uint[] cookies = new uint[1];
@@ -37,7 +42,10 @@ internal static class XaeRunningDocumentDirtyProbe
                     break;
                 }
 
-                string? path = ReadDirtyDocumentPath(table, cookies[0]);
+                string? path = ReadDirtyDocumentPath(
+                    table,
+                    dirtyStateTable,
+                    cookies[0]);
                 if (path is not null)
                 {
                     dirty.Add(path);
@@ -47,6 +55,7 @@ internal static class XaeRunningDocumentDirtyProbe
         finally
         {
             ComObject.Release(documents);
+            ComObject.Release(dirtyStateTable);
             ComObject.Release(table);
         }
 
@@ -79,6 +88,7 @@ internal static class XaeRunningDocumentDirtyProbe
 
     private static string? ReadDirtyDocumentPath(
         IVsRunningDocumentTable table,
+        IVsRunningDocumentTable3 dirtyStateTable,
         uint cookie)
     {
         IVsHierarchy? hierarchy = null;
@@ -95,7 +105,14 @@ internal static class XaeRunningDocumentDirtyProbe
                     out hierarchy,
                     out uint itemId,
                     out documentDataPointer));
-            if (documentDataPointer == IntPtr.Zero
+            dirtyStateTable.UpdateDirtyState(cookie);
+            bool isDirty = dirtyStateTable.IsDocumentDirty(cookie);
+            if (!isDirty && documentDataPointer != IntPtr.Zero)
+            {
+                isDirty = IsDirty(documentDataPointer);
+            }
+
+            if (!isDirty
                 || !TryResolvePath(
                     moniker,
                     hierarchy,
@@ -105,7 +122,7 @@ internal static class XaeRunningDocumentDirtyProbe
                 return null;
             }
 
-            return IsDirty(documentDataPointer) ? path : null;
+            return path;
         }
         finally
         {
