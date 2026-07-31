@@ -11,6 +11,11 @@ public sealed class GatewayEvent
 
     public string Type { get; set; } = string.Empty;
 
+    public string? Profile { get; set; }
+
+    public GatewayComponent Component { get; set; } =
+        GatewayComponent.Gateway;
+
     public DiagnosticSeverity Severity { get; set; }
 
     public string? OperationId { get; set; }
@@ -18,6 +23,8 @@ public sealed class GatewayEvent
     public OperationKind? OperationKind { get; set; }
 
     public string? Stage { get; set; }
+
+    public string? Code { get; set; }
 
     public string Message { get; set; } = string.Empty;
 

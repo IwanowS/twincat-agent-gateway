@@ -26,6 +26,7 @@ public sealed class OperationStore
     public void AddQueued(
         string operationId,
         OperationKind kind,
+        string? profile,
         DateTimeOffset queuedAtUtc)
     {
         if (string.IsNullOrWhiteSpace(operationId))
@@ -41,10 +42,11 @@ public sealed class OperationStore
                     $"Operation '{operationId}' already exists.");
             }
 
-            OperationSummary summary = new()
+            OperationRecord summary = new()
             {
                 OperationId = operationId,
                 Kind = kind,
+                Profile = profile,
                 State = OperationState.Queued,
                 QueuedAtUtc = queuedAtUtc,
             };
@@ -64,7 +66,7 @@ public sealed class OperationStore
                 return false;
             }
 
-            OperationSummary summary = CloneSummary(current.Summary);
+            OperationRecord summary = CloneSummary(current.Summary);
             summary.State = OperationState.Running;
             summary.StartedAtUtc = startedAtUtc;
             _operations[operationId] = new StoredOperation(summary, current.Result);
@@ -78,6 +80,7 @@ public sealed class OperationStore
         DateTimeOffset completedAtUtc,
         object? result = null,
         GatewayError? error = null,
+        IReadOnlyList<OperationDiagnostic>? diagnostics = null,
         IReadOnlyList<ResourceReference>? resources = null)
     {
         if (!IsFinal(finalState))
@@ -95,10 +98,13 @@ public sealed class OperationStore
                 return false;
             }
 
-            OperationSummary summary = CloneSummary(current.Summary);
+            OperationRecord summary = CloneSummary(current.Summary);
             summary.State = finalState;
             summary.CompletedAtUtc = completedAtUtc;
+            summary.DurationMs = CalculateDurationMs(summary);
             summary.Error = CloneError(error);
+            summary.Diagnostics = diagnostics?.Select(CloneDiagnostic).ToList()
+                ?? new();
             summary.Resources = resources?.Select(CloneResource).ToList() ?? new();
             _operations[operationId] = new StoredOperation(summary, result);
             TrimCompletedOperations();
@@ -163,17 +169,46 @@ public sealed class OperationStore
         return new StoredOperation(CloneSummary(operation.Summary), operation.Result);
     }
 
-    private static OperationSummary CloneSummary(OperationSummary source)
+    private static OperationRecord CloneSummary(OperationRecord source)
     {
-        return new OperationSummary
+        return new OperationRecord
         {
             OperationId = source.OperationId,
             Kind = source.Kind,
+            Profile = source.Profile,
             State = source.State,
             QueuedAtUtc = source.QueuedAtUtc,
             StartedAtUtc = source.StartedAtUtc,
             CompletedAtUtc = source.CompletedAtUtc,
+            DurationMs = source.DurationMs,
             Error = CloneError(source.Error),
+            Diagnostics = source.Diagnostics.Select(CloneDiagnostic).ToList(),
+            Resources = source.Resources.Select(CloneResource).ToList(),
+        };
+    }
+
+    private static long? CalculateDurationMs(OperationRecord summary)
+    {
+        DateTimeOffset? start = summary.StartedAtUtc ?? summary.QueuedAtUtc;
+        return summary.CompletedAtUtc.HasValue
+            ? Math.Max(
+                0,
+                (long)(summary.CompletedAtUtc.Value - start.Value)
+                    .TotalMilliseconds)
+            : null;
+    }
+
+    private static OperationDiagnostic CloneDiagnostic(
+        OperationDiagnostic source)
+    {
+        return new OperationDiagnostic
+        {
+            Code = source.Code,
+            Component = source.Component,
+            Stage = source.Stage,
+            Severity = source.Severity,
+            Message = source.Message,
+            OccurredAtUtc = source.OccurredAtUtc,
             Resources = source.Resources.Select(CloneResource).ToList(),
         };
     }
@@ -199,8 +234,7 @@ public sealed class OperationStore
         return new ResourceReference
         {
             Uri = source.Uri,
-            OperationId = source.OperationId,
-            Kind = source.Kind,
+            MimeType = source.MimeType,
         };
     }
 }

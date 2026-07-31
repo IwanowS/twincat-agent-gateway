@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFrameworks>netstandard2.0;net8.0</TargetFrameworks>
+    <IsPackable>false</IsPackable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <IsTestProject Condition="'$(TargetFramework)' == 'net8.0'">true</IsTestProject>
+    <IsTestProject Condition="'$(TargetFramework)' != 'net8.0'">false</IsTestProject>
+    <NoWarn Condition="'$(TargetFramework)' == 'net8.0'">$(NoWarn);CA1510;CA1512;CA1822;CA1859;CA1861</NoWarn>
+    <Description>Tracked architecture-v2 operation journal checkpoint.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\Clock.cs" Link="Production\Clock.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\GatewayEventJournal.cs" Link="Production\GatewayEventJournal.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\GatewayOperationCanceledException.cs" Link="Production\GatewayOperationCanceledException.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\GatewayOperationException.cs" Link="Production\GatewayOperationException.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\IGatewayEventSink.cs" Link="Production\IGatewayEventSink.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\OperationExceptionSink.cs" Link="Production\OperationExceptionSink.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\OperationExecutionResult.cs" Link="Production\OperationExecutionResult.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\OperationHandle.cs" Link="Production\OperationHandle.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\OperationIdGenerator.cs" Link="Production\OperationIdGenerator.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\OperationQueue.cs" Link="Production\OperationQueue.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\OperationStore.cs" Link="Production\OperationStore.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\StoredOperation.cs" Link="Production\StoredOperation.cs" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' == 'net8.0'">
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+    <Compile Include="OperationJournalTests.cs" />
+  </ItemGroup>
+</Project>

@@ -52,10 +52,11 @@ public sealed class OperationQueue : IDisposable
         _processor = Task.Run(ProcessQueueAsync);
     }
 
-    public OperationAccepted Enqueue(
+    public OperationHandle Enqueue(
         OperationKind kind,
         Func<CancellationToken, Task<OperationExecutionResult>> executeAsync,
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null,
+        string? profile = null)
     {
         if (executeAsync is null)
         {
@@ -66,16 +67,18 @@ public sealed class OperationQueue : IDisposable
             kind,
             (_, cancellationToken) =>
                 executeAsync(cancellationToken),
-            timeout);
+            timeout,
+            profile);
     }
 
-    public OperationAccepted Enqueue(
+    public OperationHandle Enqueue(
         OperationKind kind,
         Func<
             string,
             CancellationToken,
             Task<OperationExecutionResult>> executeAsync,
-        TimeSpan? timeout = null)
+        TimeSpan? timeout = null,
+        string? profile = null)
     {
         if (executeAsync is null)
         {
@@ -95,7 +98,12 @@ public sealed class OperationQueue : IDisposable
             }
 
             string operationId = _idGenerator.Create();
-            QueueItem item = new(operationId, kind, executeAsync, timeout);
+            QueueItem item = new(
+                operationId,
+                kind,
+                profile,
+                executeAsync,
+                timeout);
             if (!_items.TryAdd(operationId, item))
             {
                 throw new InvalidOperationException(
@@ -103,16 +111,17 @@ public sealed class OperationQueue : IDisposable
             }
 
             DateTimeOffset queuedAtUtc = _clock.UtcNow;
-            _store.AddQueued(operationId, kind, queuedAtUtc);
+            _store.AddQueued(operationId, kind, profile, queuedAtUtc);
             RecordOperationEvent(
                 operationId,
                 kind,
+                profile,
                 OperationState.Queued,
                 queuedAtUtc);
             _queue.Enqueue(item);
             _signal.Release();
 
-            return new OperationAccepted
+            return new OperationHandle
             {
                 OperationId = operationId,
                 State = OperationState.Queued,
@@ -146,6 +155,7 @@ public sealed class OperationQueue : IDisposable
             RecordOperationEvent(
                 operationId,
                 item.Kind,
+                item.Profile,
                 OperationState.Cancelled,
                 completedAtUtc);
         }
@@ -220,6 +230,7 @@ public sealed class OperationQueue : IDisposable
             RecordOperationEvent(
                 item.OperationId,
                 item.Kind,
+                item.Profile,
                 OperationState.Running,
                 startedAtUtc);
         }
@@ -254,12 +265,14 @@ public sealed class OperationQueue : IDisposable
                 completedAtUtc,
                 result.Result,
                 error,
+                result.Diagnostics,
                 result.Resources);
             if (completed)
             {
                 RecordOperationEvent(
                     item.OperationId,
                     item.Kind,
+                    item.Profile,
                     state,
                     completedAtUtc,
                     error,
@@ -292,6 +305,7 @@ public sealed class OperationQueue : IDisposable
                 RecordOperationEvent(
                     item.OperationId,
                     item.Kind,
+                    item.Profile,
                     OperationState.TimedOut,
                     completedAtUtc,
                     error);
@@ -314,6 +328,7 @@ public sealed class OperationQueue : IDisposable
                 RecordOperationEvent(
                     item.OperationId,
                     item.Kind,
+                    item.Profile,
                     OperationState.Cancelled,
                     completedAtUtc,
                     error);
@@ -336,6 +351,7 @@ public sealed class OperationQueue : IDisposable
                 RecordOperationEvent(
                     item.OperationId,
                     item.Kind,
+                    item.Profile,
                     OperationState.Cancelled,
                     completedAtUtc,
                     error);
@@ -367,6 +383,7 @@ public sealed class OperationQueue : IDisposable
                 RecordOperationEvent(
                     item.OperationId,
                     item.Kind,
+                    item.Profile,
                     OperationState.Failed,
                     completedAtUtc,
                     error,
@@ -402,6 +419,7 @@ public sealed class OperationQueue : IDisposable
                 RecordOperationEvent(
                     item.OperationId,
                     item.Kind,
+                    item.Profile,
                     OperationState.Failed,
                     completedAtUtc,
                     error,
@@ -444,6 +462,7 @@ public sealed class OperationQueue : IDisposable
                 RecordOperationEvent(
                     item.OperationId,
                     item.Kind,
+                    item.Profile,
                     OperationState.Cancelled,
                     completedAtUtc);
             }
@@ -504,6 +523,7 @@ public sealed class OperationQueue : IDisposable
     private void RecordOperationEvent(
         string operationId,
         OperationKind kind,
+        string? profile,
         OperationState state,
         DateTimeOffset occurredAtUtc,
         GatewayError? error = null,
@@ -514,11 +534,16 @@ public sealed class OperationQueue : IDisposable
             new GatewayEvent
             {
                 Type = GetOperationEventType(kind, state),
+                Profile = profile,
+                Component = error?.Component
+                    ?? GetOperationComponent(kind),
                 Severity = GetOperationEventSeverity(state),
                 OperationId = operationId,
                 OperationKind = kind,
                 Stage = error?.Stage
                     ?? GetOperationEventStage(state),
+                Code = error?.Code
+                    ?? GetOperationEventType(kind, state),
                 Message = GetOperationEventMessage(kind, state),
                 Error = error,
                 Resources = resources?.ToList()
@@ -527,6 +552,18 @@ public sealed class OperationQueue : IDisposable
                     ?? new Dictionary<string, string>(),
             },
             occurredAtUtc);
+    }
+
+    private static GatewayComponent GetOperationComponent(OperationKind kind)
+    {
+        switch (kind)
+        {
+            case OperationKind.TargetConfig:
+            case OperationKind.TargetStartRestart:
+                return GatewayComponent.Target;
+            default:
+                return GatewayComponent.Xae;
+        }
     }
 
     private static string GetOperationEventType(
@@ -739,6 +776,17 @@ public sealed class OperationQueue : IDisposable
                     : source.OperationId,
                 Stage = source.Stage,
                 RawLogRef = source.RawLogRef,
+                Component = source.Component,
+                SideEffectsStarted = source.SideEffectsStarted,
+                Expected = source.Expected,
+                Observed = source.Observed,
+                Resources = source.Resources
+                    .Select(resource => new ResourceReference
+                    {
+                        Uri = resource.Uri,
+                        MimeType = resource.MimeType,
+                    })
+                    .ToList(),
             };
     }
 
@@ -755,6 +803,7 @@ public sealed class OperationQueue : IDisposable
         public QueueItem(
             string operationId,
             OperationKind kind,
+            string? profile,
             Func<
                 string,
                 CancellationToken,
@@ -763,6 +812,7 @@ public sealed class OperationQueue : IDisposable
         {
             OperationId = operationId;
             Kind = kind;
+            Profile = profile;
             ExecuteAsync = executeAsync;
             Timeout = timeout;
         }
@@ -770,6 +820,8 @@ public sealed class OperationQueue : IDisposable
         public string OperationId { get; }
 
         public OperationKind Kind { get; }
+
+        public string? Profile { get; }
 
         public Func<
             string,

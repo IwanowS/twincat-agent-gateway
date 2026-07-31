@@ -11,23 +11,18 @@ public sealed class LocalLogStore
 {
     private const int MaximumPageCharacters = 1024 * 1024;
 
-    private static readonly Dictionary<ResourceKind, ResourceDescriptor>
+    private static readonly Dictionary<OperationArtifactKind, ResourceDescriptor>
         ResourceDescriptors =
-            new Dictionary<ResourceKind, ResourceDescriptor>
+            new Dictionary<OperationArtifactKind, ResourceDescriptor>
             {
-                [ResourceKind.BuildLog] =
-                    new("twincat-log", "build", "build.log", "text/plain"),
-                [ResourceKind.XaeLog] =
-                    new("twincat-log", "xae", "xae.log", "text/plain"),
-                [ResourceKind.ErrorList] =
-                    new("twincat-log", "error-list", "error-list.json", "application/json"),
-                [ResourceKind.ActivationLog] =
-                    new("twincat-log", "activation", "activation.json", "application/json"),
-                [ResourceKind.TestReport] =
-                    new("twincat-test", "xunit", "xunit.xml", "application/xml"),
-                [ResourceKind.ProjectNoise] =
+                [OperationArtifactKind.Build] =
+                    new("build", "build.log", "text/plain"),
+                [OperationArtifactKind.XaeMessages] =
+                    new("xae-messages", "xae-messages.json", "application/json"),
+                [OperationArtifactKind.TestXunit] =
+                    new("test/xunit", "xunit.xml", "application/xml"),
+                [OperationArtifactKind.ProjectNoise] =
                     new(
-                        "twincat-diff",
                         "project-noise",
                         "project-noise.json",
                         "application/json"),
@@ -53,7 +48,7 @@ public sealed class LocalLogStore
 
     public ResourceReference WriteText(
         string operationId,
-        ResourceKind kind,
+        OperationArtifactKind kind,
         string content)
     {
         return Write(operationId, kind, content, append: false);
@@ -61,7 +56,7 @@ public sealed class LocalLogStore
 
     public ResourceReference AppendText(
         string operationId,
-        ResourceKind kind,
+        OperationArtifactKind kind,
         string content)
     {
         return Write(operationId, kind, content, append: true);
@@ -150,7 +145,7 @@ public sealed class LocalLogStore
 
     private ResourceReference Write(
         string operationId,
-        ResourceKind kind,
+        OperationArtifactKind kind,
         string content,
         bool append)
     {
@@ -176,13 +171,12 @@ public sealed class LocalLogStore
         ResourceDescriptor descriptor = GetDescriptor(kind);
         return new ResourceReference
         {
-            Uri = $"{descriptor.Scheme}://{operationId}/{descriptor.ResourceName}",
-            OperationId = operationId,
-            Kind = kind,
+            Uri = $"twincat-operation://{operationId}/{descriptor.ResourceName}",
+            MimeType = descriptor.ContentType,
         };
     }
 
-    private string GetResourcePath(string operationId, ResourceKind kind)
+    private string GetResourcePath(string operationId, OperationArtifactKind kind)
     {
         if (!IsValidOperationId(operationId))
         {
@@ -240,9 +234,9 @@ public sealed class LocalLogStore
         }
 
         string resourceName = uri.AbsolutePath.Trim('/');
-        foreach (KeyValuePair<ResourceKind, ResourceDescriptor> pair in ResourceDescriptors)
+        foreach (KeyValuePair<OperationArtifactKind, ResourceDescriptor> pair in ResourceDescriptors)
         {
-            if (string.Equals(uri.Scheme, pair.Value.Scheme, StringComparison.Ordinal)
+            if (string.Equals(uri.Scheme, "twincat-operation", StringComparison.Ordinal)
                 && string.Equals(
                     resourceName,
                     pair.Value.ResourceName,
@@ -262,7 +256,7 @@ public sealed class LocalLogStore
             nameof(value));
     }
 
-    private static ResourceDescriptor GetDescriptor(ResourceKind kind)
+    private static ResourceDescriptor GetDescriptor(OperationArtifactKind kind)
     {
         return ResourceDescriptors.TryGetValue(kind, out ResourceDescriptor? descriptor)
             ? descriptor
@@ -296,18 +290,14 @@ public sealed class LocalLogStore
     private sealed class ResourceDescriptor
     {
         public ResourceDescriptor(
-            string scheme,
             string resourceName,
             string fileName,
             string contentType)
         {
-            Scheme = scheme;
             ResourceName = resourceName;
             FileName = fileName;
             ContentType = contentType;
         }
-
-        public string Scheme { get; }
 
         public string ResourceName { get; }
 
@@ -318,7 +308,7 @@ public sealed class LocalLogStore
 
     private sealed class ParsedResource
     {
-        public ParsedResource(string operationId, ResourceKind kind)
+        public ParsedResource(string operationId, OperationArtifactKind kind)
         {
             OperationId = operationId;
             Kind = kind;
@@ -326,6 +316,6 @@ public sealed class LocalLogStore
 
         public string OperationId { get; }
 
-        public ResourceKind Kind { get; }
+        public OperationArtifactKind Kind { get; }
     }
 }

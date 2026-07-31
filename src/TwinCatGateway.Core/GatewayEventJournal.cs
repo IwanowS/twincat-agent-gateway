@@ -5,37 +5,17 @@ using TwinCatGateway.Contracts;
 
 namespace TwinCatGateway.Core;
 
-public sealed class GatewayEventPage
-{
-    public IReadOnlyList<GatewayEvent> Events { get; set; } =
-        Array.Empty<GatewayEvent>();
-
-    public string EventStreamId { get; set; } = string.Empty;
-
-    public long NextScanCursor { get; set; }
-
-    public long LatestCursor { get; set; }
-
-    public bool MoreMatchingEventsAvailable { get; set; }
-
-    public bool HistoryTruncated { get; set; }
-}
-
 public sealed class GatewayEventJournal : IGatewayEventSink
 {
     private readonly object _sync = new();
     private readonly LinkedList<GatewayEvent> _events = new();
-    private readonly GatewayStatusSnapshotStore _status;
     private readonly int _capacity;
     private readonly string _eventStreamId;
     private long _latestCursor;
 
     public GatewayEventJournal(
-        GatewayStatusSnapshotStore status,
         int capacity = 1000)
     {
-        _status = status
-            ?? throw new ArgumentNullException(nameof(status));
         if (capacity <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(capacity));
@@ -43,12 +23,19 @@ public sealed class GatewayEventJournal : IGatewayEventSink
 
         _capacity = capacity;
         _eventStreamId = Guid.NewGuid().ToString("N");
-        _status.Update(snapshot =>
+    }
+
+    public string JournalId => _eventStreamId;
+
+    public long LatestCursor
+    {
+        get
         {
-            snapshot.EventStreamId = _eventStreamId;
-            snapshot.LatestEventCursor = 0;
-            return snapshot;
-        });
+            lock (_sync)
+            {
+                return _latestCursor;
+            }
+        }
     }
 
     public long Record(
@@ -89,21 +76,17 @@ public sealed class GatewayEventJournal : IGatewayEventSink
             }
         }
 
-        _status.Update(status =>
-        {
-            status.LatestEventCursor = Math.Max(
-                status.LatestEventCursor,
-                cursor);
-            return status;
-        });
         return cursor;
     }
 
-    public GatewayEventPage ReadAfter(
+    public OperationEventPage ReadAfter(
         string? eventStreamId,
         long afterCursor,
         int maximumCount,
-        DiagnosticSeverity? minimumSeverity = null)
+        DiagnosticSeverity? minimumSeverity = null,
+        GatewayComponent? component = null,
+        string? profile = null,
+        string? operationId = null)
     {
         if (afterCursor < 0)
         {
@@ -145,7 +128,19 @@ public sealed class GatewayEventJournal : IGatewayEventSink
                     gatewayEvent.Cursor > effectiveCursor
                     && (!minimumSeverity.HasValue
                         || gatewayEvent.Severity
-                            >= minimumSeverity.Value))
+                            >= minimumSeverity.Value)
+                    && (!component.HasValue
+                        || gatewayEvent.Component == component.Value)
+                    && (profile is null
+                        || string.Equals(
+                            gatewayEvent.Profile,
+                            profile,
+                            StringComparison.Ordinal))
+                    && (operationId is null
+                        || string.Equals(
+                            gatewayEvent.OperationId,
+                            operationId,
+                            StringComparison.Ordinal)))
                 .Select(CloneEvent)
                 .ToArray();
             bool moreAvailable =
@@ -156,14 +151,13 @@ public sealed class GatewayEventJournal : IGatewayEventSink
             long nextScanCursor = moreAvailable
                 ? page[page.Length - 1].Cursor
                 : _latestCursor;
-            return new GatewayEventPage
+            return new OperationEventPage
             {
-                Events = page,
-                EventStreamId = _eventStreamId,
-                NextScanCursor = nextScanCursor,
+                Events = page.ToList(),
+                JournalId = _eventStreamId,
+                NextCursor = nextScanCursor,
                 LatestCursor = _latestCursor,
-                MoreMatchingEventsAvailable =
-                    moreAvailable,
+                HasMore = moreAvailable,
                 HistoryTruncated = reset || retentionGap,
             };
         }
@@ -177,10 +171,13 @@ public sealed class GatewayEventJournal : IGatewayEventSink
             Cursor = source.Cursor,
             OccurredAtUtc = source.OccurredAtUtc,
             Type = source.Type,
+            Profile = source.Profile,
+            Component = source.Component,
             Severity = source.Severity,
             OperationId = source.OperationId,
             OperationKind = source.OperationKind,
             Stage = source.Stage,
+            Code = source.Code,
             Message = source.Message,
             Error = CloneError(source.Error),
             Resources = source.Resources
@@ -216,8 +213,7 @@ public sealed class GatewayEventJournal : IGatewayEventSink
         return new ResourceReference
         {
             Uri = source.Uri,
-            OperationId = source.OperationId,
-            Kind = source.Kind,
+            MimeType = source.MimeType,
         };
     }
 }
