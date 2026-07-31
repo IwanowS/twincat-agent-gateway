@@ -97,14 +97,6 @@ public sealed class ProjectFileChange
 public static class ProjectFileFingerprintScanner
 {
     private const int BufferSize = 64 * 1024;
-    private static readonly HashSet<string> SupportedExtensions =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            ".TcDUT",
-            ".TcGVL",
-            ".TcPOU",
-        };
-
     public static ProjectFileFingerprintSnapshot Capture(
         string solutionPath,
         CancellationToken cancellationToken)
@@ -166,146 +158,56 @@ public static class ProjectFileFingerprintScanner
         string twinCatProjectPath,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(solutionPath))
-        {
-            throw new ArgumentException(
-                "Solution path is required.",
-                nameof(solutionPath));
-        }
-
-        string fullSolutionPath = Path.GetFullPath(solutionPath);
-        if (!File.Exists(fullSolutionPath))
-        {
-            throw new FileNotFoundException(
-                "Solution file was not found.",
-                fullSolutionPath);
-        }
-
-        string fullTwinCatProjectPath =
-            Path.GetFullPath(twinCatProjectPath);
-        Dictionary<string, ProjectGraphFileRole> graph =
-            new(StringComparer.OrdinalIgnoreCase)
-            {
-                [fullTwinCatProjectPath] =
-                    ProjectGraphFileRole.TwinCatProject,
-            };
-        XDocument twinCatProject = LoadXml(
-            fullTwinCatProjectPath,
-            cancellationToken);
-        foreach (XElement project in twinCatProject
-            .Descendants()
-            .Where(element =>
-                string.Equals(
-                    element.Name.LocalName,
-                    "Project",
-                    StringComparison.Ordinal)))
-        {
-            string? reference =
-                (string?)project.Attribute("PrjFilePath");
-            if (string.IsNullOrWhiteSpace(reference))
-            {
-                continue;
-            }
-
-            string plcProjectPath = ResolveReference(
-                fullTwinCatProjectPath,
-                reference!);
-            graph[plcProjectPath] =
-                ProjectGraphFileRole.PlcProject;
-            foreach (XAttribute tmcReference in project
-                .DescendantsAndSelf()
-                .Attributes()
-                .Where(attribute =>
-                    string.Equals(
-                        attribute.Name.LocalName,
-                        "TmcFilePath",
-                        StringComparison.Ordinal)
-                    || string.Equals(
-                        attribute.Name.LocalName,
-                        "TmcPath",
-                        StringComparison.Ordinal)))
-            {
-                if (!string.IsNullOrWhiteSpace(
-                    tmcReference.Value))
-                {
-                    graph[ResolveReference(
-                        fullTwinCatProjectPath,
-                        tmcReference.Value)] =
-                            ProjectGraphFileRole.GeneratedArtifact;
-                }
-            }
-
-            XDocument plcProject = LoadXml(
-                plcProjectPath,
+        TwinCatProjectGraphSnapshot graph =
+            TwinCatProjectGraphResolver.Resolve(
+                solutionPath,
+                twinCatProjectPath,
                 cancellationToken);
-            foreach (XElement compile in plcProject
-                .Descendants()
-                .Where(element =>
-                    string.Equals(
-                        element.Name.LocalName,
-                        "Compile",
-                        StringComparison.Ordinal)))
-            {
-                string? include =
-                    (string?)compile.Attribute("Include");
-                if (string.IsNullOrWhiteSpace(include))
-                {
-                    continue;
-                }
-
-                string sourcePath = ResolveReference(
-                    plcProjectPath,
-                    include!);
-                if (IsSupportedPath(sourcePath))
-                {
-                    graph[sourcePath] =
-                        ProjectGraphFileRole.PlcSource;
-                }
-            }
-
-            foreach (XElement item in plcProject
-                .Descendants()
-                .Where(element =>
-                    string.Equals(
-                        element.Name.LocalName,
-                        "None",
-                        StringComparison.Ordinal)))
-            {
-                string? include =
-                    (string?)item.Attribute("Include");
-                if (string.IsNullOrWhiteSpace(include))
-                {
-                    continue;
-                }
-
-                string artifactPath = ResolveReference(
-                    plcProjectPath,
-                    include!);
-                if (string.Equals(
-                    Path.GetExtension(artifactPath),
-                    ".tmc",
-                    StringComparison.OrdinalIgnoreCase))
-                {
-                    graph[artifactPath] =
-                        ProjectGraphFileRole.GeneratedArtifact;
-                }
-            }
+        TwinCatProjectGraphEntry? missingRequired =
+            graph.Entries.FirstOrDefault(entry =>
+                !entry.Exists
+                && (entry.Role
+                        == ProjectGraphFileRole.TwinCatProject
+                    || entry.Role
+                        == ProjectGraphFileRole.PlcProject
+                    || entry.Kind
+                        == TwinCatGateway.Contracts
+                            .SourceEntryKind.Editable));
+        if (!graph.IsComplete || missingRequired is not null)
+        {
+            string missingPath = missingRequired?.Path
+                ?? twinCatProjectPath;
+            throw new FileNotFoundException(
+                "A required project graph file was not found.",
+                missingPath);
         }
 
         Dictionary<string, ProjectFileFingerprint> files =
             new(StringComparer.OrdinalIgnoreCase);
-        foreach (KeyValuePair<string, ProjectGraphFileRole> entry in graph)
+        foreach (TwinCatProjectGraphEntry entry in graph.Entries
+            .Where(entry =>
+                entry.Kind
+                    != TwinCatGateway.Contracts
+                        .SourceEntryKind.Unsupported
+                || entry.Role
+                    == ProjectGraphFileRole.TwinCatProject
+                || entry.Role
+                    == ProjectGraphFileRole.PlcProject)
+            .GroupBy(
+                entry => entry.Path,
+                StringComparer.OrdinalIgnoreCase)
+            .Select(group => group.First()))
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (entry.Value == ProjectGraphFileRole.GeneratedArtifact
-                && !File.Exists(entry.Key))
+            if (entry.Role == ProjectGraphFileRole.GeneratedArtifact
+                && !entry.Exists)
             {
                 continue;
             }
 
             ProjectFileFingerprint fingerprint = CaptureFile(
-                entry.Key,
-                entry.Value,
+                entry.Path,
+                entry.Role,
                 cancellationToken);
             files.Add(fingerprint.Path, fingerprint);
         }
@@ -372,12 +274,7 @@ public static class ProjectFileFingerprintScanner
 
     public static bool IsSupportedPath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return false;
-        }
-
-        return SupportedExtensions.Contains(Path.GetExtension(path));
+        return TwinCatProjectGraphResolver.IsSupportedSourcePath(path);
     }
 
     private static IEnumerable<string> EnumerateSupportedFiles(
