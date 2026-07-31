@@ -46,12 +46,10 @@ public delegate Task<XaeMessagesResult> XaeMessagesProvider(
 public sealed class GatewayApplicationService
 {
     private const int MaximumResourceCharacters = 1024 * 1024;
-    private readonly string _version;
     private readonly GatewayStatusSnapshotStore _status;
     private readonly OperationStore _operations;
     private readonly OperationQueue _queue;
     private readonly LocalLogStore _logs;
-    private readonly Func<GatewayDiagnosticsResult>? _diagnosticsProvider;
     private readonly XaeBuildOperationExecutor? _xaeBuildExecutor;
     private readonly ActivationOperationExecutor? _activationExecutor;
     private readonly SynchronizeOperationExecutor? _synchronizeExecutor;
@@ -83,7 +81,6 @@ public sealed class GatewayApplicationService
         OperationQueue queue,
         LocalLogStore logs,
         GatewayEventJournal eventJournal,
-        Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
         XaeBuildOperationExecutor? xaeBuildExecutor = null,
         ActivationOperationExecutor? activationExecutor = null,
         ResolvedProfile? activeProfile = null,
@@ -104,8 +101,10 @@ public sealed class GatewayApplicationService
         Func<int?>? xaeProcessIdProvider = null,
         OperationCancellationService? operationCancellation = null)
     {
-        _version = version
-            ?? throw new ArgumentNullException(nameof(version));
+        if (version is null)
+        {
+            throw new ArgumentNullException(nameof(version));
+        }
         _status = status
             ?? throw new ArgumentNullException(nameof(status));
         _operations = operations
@@ -116,7 +115,6 @@ public sealed class GatewayApplicationService
             ?? new OperationCancellationService(_queue);
         _logs = logs
             ?? throw new ArgumentNullException(nameof(logs));
-        _diagnosticsProvider = diagnosticsProvider;
         _xaeBuildExecutor = xaeBuildExecutor;
         _activationExecutor = activationExecutor;
         _synchronizeExecutor = synchronizeExecutor;
@@ -141,26 +139,12 @@ public sealed class GatewayApplicationService
             : new SourceManifestResourceReader(sourceManifests);
     }
 
-    public HealthResult GetHealth()
-    {
-        GatewayStatusResult status = _status.Read();
-        GatewayState state = status.Gateway.State;
-        return new HealthResult
-        {
-            Version = _version,
-            State = state,
-            Ready = state != GatewayState.Starting
-                && state != GatewayState.Stopping
-                && state != GatewayState.Faulted,
-        };
-    }
-
-    public GatewayStatusResult GetStatus()
+    public GatewayStateSnapshot GetGatewayState()
     {
         return _status.Read();
     }
 
-    public GatewayDiagnosticsResult GetDiagnostics(
+    public OperationEventPage GetOperationEvents(
         GetDiagnosticsParameters? parameters = null)
     {
         parameters ??= new GetDiagnosticsParameters();
@@ -212,33 +196,11 @@ public sealed class GatewayApplicationService
                 stage: "diagnostics.validate");
         }
 
-        GatewayEventPage events = _eventJournal.ReadAfter(
+        return _eventJournal.ReadAfter(
             parameters.EventStreamId,
             parameters.AfterEventCursor,
             parameters.MaximumEvents,
             parameters.MinimumSeverity);
-        GatewayDiagnosticsResult result =
-            _diagnosticsProvider?.Invoke()
-            ?? new GatewayDiagnosticsResult();
-        result.Status = _status.Read();
-        result.Ipc = new ComponentHealth
-        {
-            Healthy = true,
-        };
-        result.LogStore = new ComponentHealth
-        {
-            Healthy = true,
-            Message = _logs.RootDirectory,
-        };
-        result.Events = events.Events.ToList();
-        result.EventStreamId = events.EventStreamId;
-        result.NextScanCursor = events.NextScanCursor;
-        result.LatestEventCursor = events.LatestCursor;
-        result.MoreMatchingEventsAvailable =
-            events.MoreMatchingEventsAvailable;
-        result.EventHistoryTruncated =
-            events.HistoryTruncated;
-        return result;
     }
 
     public Task<XaeMessagesResult> GetXaeMessagesAsync(
@@ -270,7 +232,7 @@ public sealed class GatewayApplicationService
         return provider(parameters, cancellationToken);
     }
 
-    public OperationAccepted StartXaeBuild(XaeBuildParameters parameters)
+    public OperationHandle StartXaeBuild(XaeBuildParameters parameters)
     {
         if (parameters is null)
         {
@@ -336,10 +298,11 @@ public sealed class GatewayApplicationService
                     captured,
                     buildGuard,
                     cancellationToken),
-            timeout);
+            timeout,
+            profile.Name);
     }
 
-    public OperationAccepted StartActivation(
+    public OperationHandle StartActivation(
         ActivateParameters parameters)
     {
         if (parameters is null)
@@ -449,10 +412,11 @@ public sealed class GatewayApplicationService
                     activationGuard,
                     verificationGuard,
                     cancellationToken),
-            timeout);
+            timeout,
+            profile.Name);
     }
 
-    public OperationAccepted StartTargetConfig(
+    public OperationHandle StartTargetConfig(
         TargetConfigParameters parameters)
     {
         if (parameters is null)
@@ -493,10 +457,11 @@ public sealed class GatewayApplicationService
                     captured,
                     capabilityGuard,
                     cancellationToken),
-            TimeSpan.FromSeconds(120));
+            TimeSpan.FromSeconds(120),
+            profile.Name);
     }
 
-    public OperationAccepted StartTargetStartRestart(
+    public OperationHandle StartTargetStartRestart(
         TargetStartRestartParameters parameters)
     {
         if (parameters is null)
@@ -575,10 +540,11 @@ public sealed class GatewayApplicationService
             TimeSpan.FromSeconds(
                 120 + (verifyWithTcUnit
                     ? profile.Target!.TcUnit!.CompletionTimeoutSeconds + 5
-                    : 0)));
+                    : 0)),
+            profile.Name);
     }
 
-    public OperationAccepted StartSynchronization(
+    public OperationHandle StartSynchronization(
         SynchronizeParameters parameters,
         bool agentRequest)
     {
@@ -634,10 +600,11 @@ public sealed class GatewayApplicationService
                     synchronizeGuard,
                     cancellationToken),
             TimeSpan.FromSeconds(
-                captured.TimeoutSeconds ?? 120));
+                captured.TimeoutSeconds ?? 120),
+            profile.Name);
     }
 
-    public OperationAccepted StartCloseXae(
+    public OperationHandle StartCloseXae(
         CloseXaeParameters parameters)
     {
         if (parameters is null)
@@ -654,6 +621,19 @@ public sealed class GatewayApplicationService
                 stage: "xae.close.enqueue");
         }
 
+        if (!string.Equals(
+                parameters.Profile,
+                _activeProfile.Name,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileNotFound,
+                $"Project profile '{parameters.Profile}' was not found.",
+                stage: "xae.close.admission",
+                component: GatewayComponent.Profile,
+                sideEffectsStarted: false);
+        }
+
         CapabilityEvaluator capabilities =
             RequireCapabilities("xae.close.admission");
         OperationCapabilityGuard closeGuard = new(
@@ -661,8 +641,7 @@ public sealed class GatewayApplicationService
             _activeProfile,
             CapabilityKey.XaeClose,
             () => new CapabilityEvaluationContext(
-                _xaeProcessIdProvider?.Invoke()
-                    ?? _status.Read().Xae.ProcessId));
+                _xaeProcessIdProvider?.Invoke()));
         closeGuard.EnsureAllowed("xae.close.admission");
 
         if (!Enum.IsDefined(
@@ -682,8 +661,7 @@ public sealed class GatewayApplicationService
                 CapabilityKey.XaeDiscardDirtyDocuments,
                 "xae.close.discard.admission",
                 new CapabilityEvaluationContext(
-                    _xaeProcessIdProvider?.Invoke()
-                        ?? _status.Read().Xae.ProcessId));
+                    _xaeProcessIdProvider?.Invoke()));
         }
 
         if (parameters.TimeoutSeconds.HasValue
@@ -706,10 +684,11 @@ public sealed class GatewayApplicationService
                     closeGuard,
                     cancellationToken),
             TimeSpan.FromSeconds(
-                (captured.TimeoutSeconds ?? 120) + 5d));
+                (captured.TimeoutSeconds ?? 120) + 5d),
+            _activeProfile.Name);
     }
 
-    public OperationDetails<object> GetOperation(string operationId)
+    public OperationSnapshot<object> GetOperation(string operationId)
     {
         if (string.IsNullOrWhiteSpace(operationId))
         {
@@ -726,14 +705,46 @@ public sealed class GatewayApplicationService
                 $"Operation '{operationId}' was not found.");
         }
 
-        return new OperationDetails<object>
+        return new OperationSnapshot<object>
         {
             Operation = operation.Summary,
             Result = operation.Result,
         };
     }
 
-    public CancelOperationResult CancelOperation(string operationId)
+    public async Task<OperationResult<TResult>> WaitForOperationAsync<TResult>(
+        string operationId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (true)
+            {
+                StoredOperation? operation = _operations.Get(operationId);
+                if (operation is null)
+                {
+                    throw new GatewayOperationException(
+                        ErrorCodes.OperationNotFound,
+                        $"Operation '{operationId}' was not found.");
+                }
+
+                if (operation.Summary.State is not OperationState.Queued
+                    and not OperationState.Running)
+                {
+                    return CreateOperationResult<TResult>(operation);
+                }
+
+                await Task.Delay(25, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _operationCancellation.Cancel(operationId);
+            throw;
+        }
+    }
+
+    public OperationCancellationReceipt CancelOperation(string operationId)
     {
         if (string.IsNullOrWhiteSpace(operationId))
         {
@@ -758,16 +769,58 @@ public sealed class GatewayApplicationService
                 $"Operation '{operationId}' has already completed.");
         }
 
-        return new CancelOperationResult
+        return new OperationCancellationReceipt
         {
             OperationId = operationId,
-            Cancelled = true,
+            CancellationRequested = true,
             State = cancellation
                 == OperationCancellationResult.CancelledBeforeStart
                     ? OperationState.Cancelled
                     : OperationState.Running,
         };
     }
+
+    private static OperationResult<TResult> CreateOperationResult<TResult>(
+        StoredOperation operation)
+    {
+        OperationRecord record = operation.Summary;
+        return new OperationResult<TResult>
+        {
+            Ok = record.State == OperationState.Succeeded,
+            OperationId = record.OperationId,
+            Component = record.Error?.Component
+                ?? GetOperationComponent(record.Kind),
+            Stage = record.Error?.Stage ?? GetOperationStage(record.Kind),
+            Completion = record.State switch
+            {
+                OperationState.Succeeded => OperationCompletion.Succeeded,
+                OperationState.TimedOut => OperationCompletion.TimedOut,
+                OperationState.Cancelled => OperationCompletion.Cancelled,
+                _ => OperationCompletion.Failed,
+            },
+            SideEffectsStarted = record.Error?.SideEffectsStarted ?? false,
+            Result = operation.Result is TResult result ? result : default,
+            Error = record.Error,
+            Diagnostics = record.Diagnostics.ToList(),
+            Resources = record.Resources.ToList(),
+        };
+    }
+
+    private static GatewayComponent GetOperationComponent(OperationKind kind) =>
+        kind is OperationKind.TargetConfig or OperationKind.TargetStartRestart
+            ? GatewayComponent.Target
+            : GatewayComponent.Xae;
+
+    private static string GetOperationStage(OperationKind kind) => kind switch
+    {
+        OperationKind.XaeBuild => "xae.build",
+        OperationKind.Activate => "xae.activate",
+        OperationKind.Synchronize => "xae.synchronize",
+        OperationKind.CloseXae => "xae.close",
+        OperationKind.TargetConfig => "target.config",
+        OperationKind.TargetStartRestart => "target.startRestart",
+        _ => "operation",
+    };
 
     public ResourceContent GetResource(
         string uri,
@@ -980,19 +1033,11 @@ public sealed class GatewayApplicationService
             OperationCapabilityGuard synchronizeGuard,
             CancellationToken cancellationToken)
     {
-        DateTimeOffset startedAtUtc = _clock.UtcNow;
         _status.Update(status =>
         {
-            status.CurrentOperation = new OperationSummary
-            {
-                OperationId = operationId,
-                Kind = OperationKind.Synchronize,
-                State = OperationState.Running,
-                QueuedAtUtc = startedAtUtc,
-                StartedAtUtc = startedAtUtc,
-            };
-            status.Xae.SynchronizationState =
-                SynchronizationState.Synchronizing;
+            status.State = GatewayProcessState.Busy;
+            status.CurrentOperationId = operationId;
+            status.ObservedAtUtc = _clock.UtcNow;
             return status;
         });
         try
@@ -1005,28 +1050,15 @@ public sealed class GatewayApplicationService
                     parameters,
                     cancellationToken).ConfigureAwait(false);
             result.OperationId = operationId;
-            _status.Update(status =>
-            {
-                status.Xae.SynchronizationState =
-                    SynchronizationState.Confirmed;
-                status.Xae.DiscardedDocumentCount =
-                    result.DiscardedDocumentCount;
-                return status;
-            });
             return OperationExecutionResult.Success(result);
         }
         finally
         {
             _status.Update(status =>
             {
-                status.CurrentOperation = null;
-                if (status.Xae.SynchronizationState
-                    == SynchronizationState.Synchronizing)
-                {
-                    status.Xae.SynchronizationState =
-                        SynchronizationState.SyncRequired;
-                }
-
+                status.CurrentOperationId = null;
+                status.State = GatewayProcessState.Ready;
+                status.ObservedAtUtc = _clock.UtcNow;
                 return status;
             });
         }
@@ -1038,18 +1070,11 @@ public sealed class GatewayApplicationService
         OperationCapabilityGuard closeGuard,
         CancellationToken cancellationToken)
     {
-        DateTimeOffset startedAtUtc = _clock.UtcNow;
         _status.Update(status =>
         {
-            status.Gateway.State = GatewayState.ClosingXae;
-            status.CurrentOperation = new OperationSummary
-            {
-                OperationId = operationId,
-                Kind = OperationKind.CloseXae,
-                State = OperationState.Running,
-                QueuedAtUtc = startedAtUtc,
-                StartedAtUtc = startedAtUtc,
-            };
+            status.State = GatewayProcessState.Busy;
+            status.CurrentOperationId = operationId;
+            status.ObservedAtUtc = _clock.UtcNow;
             return status;
         });
         try
@@ -1078,10 +1103,9 @@ public sealed class GatewayApplicationService
         {
             _status.Update(status =>
             {
-                status.CurrentOperation = null;
-                status.Gateway.State = status.Xae.Connected
-                    ? GatewayState.Ready
-                    : GatewayState.Disconnected;
+                status.CurrentOperationId = null;
+                status.State = GatewayProcessState.Ready;
+                status.ObservedAtUtc = _clock.UtcNow;
                 return status;
             });
         }
@@ -1095,18 +1119,11 @@ public sealed class GatewayApplicationService
             OperationCapabilityGuard? verificationGuard,
             CancellationToken cancellationToken)
     {
-        DateTimeOffset startedAtUtc = _clock.UtcNow;
         _status.Update(status =>
         {
-            status.Gateway.State = GatewayState.Activating;
-            status.CurrentOperation = new OperationSummary
-            {
-                OperationId = operationId,
-                Kind = OperationKind.Activate,
-                State = OperationState.Running,
-                QueuedAtUtc = startedAtUtc,
-                StartedAtUtc = startedAtUtc,
-            };
+            status.State = GatewayProcessState.Busy;
+            status.CurrentOperationId = operationId;
+            status.ObservedAtUtc = _clock.UtcNow;
             return status;
         });
         try
@@ -1140,17 +1157,6 @@ public sealed class GatewayApplicationService
                     == OperationCompletion.Succeeded;
             }
 
-            _status.Update(status =>
-            {
-                status.LastActivation = new ActivationSummary
-                {
-                    Ok = result.Ok,
-                    OperationId = operationId,
-                    Profile = result.Profile,
-                    Target = CloneTarget(result.Target),
-                };
-                return status;
-            });
             if (result.Ok)
             {
                 return OperationExecutionResult.Success(
@@ -1167,10 +1173,9 @@ public sealed class GatewayApplicationService
         {
             _status.Update(status =>
             {
-                status.CurrentOperation = null;
-                status.Gateway.State = status.Xae.Connected
-                    ? GatewayState.Ready
-                    : GatewayState.Disconnected;
+                status.CurrentOperationId = null;
+                status.State = GatewayProcessState.Ready;
+                status.ObservedAtUtc = _clock.UtcNow;
                 return status;
             });
         }
@@ -1270,18 +1275,6 @@ public sealed class GatewayApplicationService
                 preparation,
                 cancellationToken).ConfigureAwait(false);
             result.OperationId = operationId;
-            _status.Update(status =>
-            {
-                status.LastTest = new TestSummary
-                {
-                    Ok = result.Ok,
-                    OperationId = operationId,
-                    Tests = result.Counts.Tests,
-                    Failed = result.Counts.Failed,
-                };
-                return status;
-            });
-
             ResourceReference[] resources =
                 result.Report is null
                     ? Array.Empty<ResourceReference>()
@@ -1479,6 +1472,7 @@ public sealed class GatewayApplicationService
     {
         return new CloseXaeParameters
         {
+            Profile = source.Profile,
             SaveMode = source.SaveMode,
             TimeoutSeconds = source.TimeoutSeconds,
         };

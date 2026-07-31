@@ -49,8 +49,7 @@ public sealed class GatewayOperationPoller
             ?? throw new ArgumentNullException(nameof(delay));
     }
 
-    public async Task<
-        GatewayResponse<OperationDetails<TResult>>> WaitAsync<TResult>(
+    public async Task<OperationSnapshot<TResult>> WaitAsync<TResult>(
             string operationId,
             TimeSpan timeout,
             CancellationToken cancellationToken = default)
@@ -71,27 +70,17 @@ public sealed class GatewayOperationPoller
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            GatewayResponse<OperationDetails<TResult>> response =
+            OperationSnapshot<TResult> snapshot =
                 await _client.GetOperationAsync<TResult>(
                     operationId,
                     cancellationToken).ConfigureAwait(false);
-            if (!response.Ok)
-            {
-                return response;
-            }
-
-            OperationDetails<TResult> details =
-                response.Result
-                ?? throw new InvalidOperationException(
-                    "Gateway returned a successful operation "
-                    + "response without a result.");
-            switch (details.Operation.State)
+            switch (snapshot.Operation.State)
             {
                 case OperationState.Queued:
                 case OperationState.Running:
                     break;
                 default:
-                    return response;
+                    return snapshot;
             }
 
             TimeSpan remaining = deadline - _utcNow();

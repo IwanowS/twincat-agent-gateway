@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using System.Threading;
 using TwinCatGateway.Contracts;
 
@@ -8,21 +7,21 @@ namespace TwinCatGateway.Core;
 public sealed class GatewayStatusSnapshotStore
 {
     private readonly object _writeSync = new();
-    private GatewayStatusResult _snapshot;
+    private GatewayStateSnapshot _snapshot;
 
-    public GatewayStatusSnapshotStore(GatewayStatusResult initialSnapshot)
+    public GatewayStatusSnapshotStore(GatewayStateSnapshot initialSnapshot)
     {
         _snapshot = Clone(initialSnapshot
             ?? throw new ArgumentNullException(nameof(initialSnapshot)));
     }
 
-    public GatewayStatusResult Read()
+    public GatewayStateSnapshot Read()
     {
-        GatewayStatusResult current = Volatile.Read(ref _snapshot);
+        GatewayStateSnapshot current = Volatile.Read(ref _snapshot);
         return Clone(current);
     }
 
-    public void Replace(GatewayStatusResult snapshot)
+    public void Replace(GatewayStateSnapshot snapshot)
     {
         if (snapshot is null)
         {
@@ -33,7 +32,7 @@ public sealed class GatewayStatusSnapshotStore
     }
 
     public void Update(
-        Func<GatewayStatusResult, GatewayStatusResult> update)
+        Func<GatewayStateSnapshot, GatewayStateSnapshot> update)
     {
         if (update is null)
         {
@@ -42,191 +41,51 @@ public sealed class GatewayStatusSnapshotStore
 
         lock (_writeSync)
         {
-            GatewayStatusResult current = Clone(_snapshot);
-            GatewayStatusResult updated = update(current)
+            GatewayStateSnapshot current = Clone(_snapshot);
+            GatewayStateSnapshot updated = update(current)
                 ?? throw new InvalidOperationException(
                     "Status snapshot update returned null.");
             Interlocked.Exchange(ref _snapshot, Clone(updated));
         }
     }
 
-    public static GatewayStatusResult CreateInitial(string version)
+    public static GatewayStateSnapshot CreateInitial(string version)
     {
-        return new GatewayStatusResult
+        return new GatewayStateSnapshot
         {
-            Gateway = new GatewayStatus
-            {
-                State = GatewayState.Starting,
-                Version = version ?? throw new ArgumentNullException(nameof(version)),
-            },
-            Xae = new XaeStatus(),
-            TwinCat = new TwinCatStatus
-            {
-                Started = null,
-                Mode = RuntimeMode.Unknown,
-                SystemMode = RuntimeMode.Unknown,
-            },
+            State = GatewayProcessState.Starting,
+            Version = version ?? throw new ArgumentNullException(nameof(version)),
+            ObservedAtUtc = DateTimeOffset.UtcNow,
         };
     }
 
-    private static GatewayStatusResult Clone(GatewayStatusResult source)
+    private static GatewayStateSnapshot Clone(GatewayStateSnapshot source)
     {
-        return new GatewayStatusResult
+        return new GatewayStateSnapshot
         {
-            Gateway = new GatewayStatus
-            {
-                State = source.Gateway.State,
-                Version = source.Gateway.Version,
-                Ready = source.Gateway.Ready,
-                ConfigurationPath =
-                    source.Gateway.ConfigurationPath,
-                ActiveProfile =
-                    source.Gateway.ActiveProfile,
-                SolutionPath =
-                    source.Gateway.SolutionPath,
-                LaunchSource =
-                    source.Gateway.LaunchSource,
-                UiMode = source.Gateway.UiMode,
-            },
-            Xae = new XaeStatus
-            {
-                Connected = source.Xae.Connected,
-                Version = source.Xae.Version,
-                Solution = source.Xae.Solution,
-                AgentWorkspaceOwned =
-                    source.Xae.AgentWorkspaceOwned,
-                DiscardedDocumentCount =
-                    source.Xae.DiscardedDocumentCount,
-                SynchronizationState =
-                    source.Xae.SynchronizationState,
-                DirtyDocumentCount =
-                    source.Xae.DirtyDocumentCount,
-            },
-            TwinCat = new TwinCatStatus
-            {
-                Started = source.TwinCat.Started,
-                Mode = source.TwinCat.Mode,
-                SystemMode = source.TwinCat.SystemMode,
-                ObservedAtUtc = source.TwinCat.ObservedAtUtc,
-                Alert = CloneRuntimeAlert(
-                    source.TwinCat.Alert),
-            },
-            CurrentOperation = CloneOperation(source.CurrentOperation),
-            LastBuild = CloneBuild(source.LastBuild),
-            LastActivation = CloneActivation(source.LastActivation),
-            LastTest = CloneTest(source.LastTest),
-            EventStreamId = source.EventStreamId,
+            State = source.State,
+            Version = source.Version,
+            ConfigurationPath = source.ConfigurationPath,
+            ActiveProfile = source.ActiveProfile,
+            CurrentOperationId = source.CurrentOperationId,
+            JournalId = source.JournalId,
             LatestEventCursor = source.LatestEventCursor,
+            ObservedAtUtc = source.ObservedAtUtc,
+            Error = CloneObservationError(source.Error),
         };
     }
 
-    private static OperationSummary? CloneOperation(OperationSummary? source)
+    private static ObservationError? CloneObservationError(
+        ObservationError? source)
     {
         return source is null
             ? null
-            : new OperationSummary
-            {
-                OperationId = source.OperationId,
-                Kind = source.Kind,
-                State = source.State,
-                QueuedAtUtc = source.QueuedAtUtc,
-                StartedAtUtc = source.StartedAtUtc,
-                CompletedAtUtc = source.CompletedAtUtc,
-                Error = CloneError(source.Error),
-                Resources = source.Resources.Select(CloneResource).ToList(),
-            };
-    }
-
-    private static BuildSummary? CloneBuild(BuildSummary? source)
-    {
-        return source is null
-            ? null
-            : new BuildSummary
-            {
-                Ok = source.Ok,
-                OperationId = source.OperationId,
-                Action = source.Action,
-                Errors = source.Errors,
-                Warnings = source.Warnings,
-            };
-    }
-
-    private static ActivationSummary? CloneActivation(ActivationSummary? source)
-    {
-        return source is null
-            ? null
-            : new ActivationSummary
-            {
-                Ok = source.Ok,
-                OperationId = source.OperationId,
-                Profile = source.Profile,
-                Target = CloneTarget(source.Target),
-            };
-    }
-
-    private static TestSummary? CloneTest(TestSummary? source)
-    {
-        return source is null
-            ? null
-            : new TestSummary
-            {
-                Ok = source.Ok,
-                OperationId = source.OperationId,
-                Tests = source.Tests,
-                Failed = source.Failed,
-            };
-    }
-
-    private static TargetIdentity CloneTarget(TargetIdentity source)
-    {
-        return new TargetIdentity
-        {
-            Name = source.Name,
-            AmsNetId = source.AmsNetId,
-        };
-    }
-
-    private static GatewayError? CloneError(GatewayError? source)
-    {
-        return source is null
-            ? null
-            : new GatewayError
+            : new ObservationError
             {
                 Code = source.Code,
                 Message = source.Message,
-                Details = source.Details,
                 Retryable = source.Retryable,
-                OperationId = source.OperationId,
-                Stage = source.Stage,
-                RawLogRef = source.RawLogRef,
             };
     }
 
-    public static RuntimeAlert? CloneRuntimeAlert(
-        RuntimeAlert? source)
-    {
-        return source is null
-            ? null
-            : new RuntimeAlert
-            {
-                Code = source.Code,
-                Severity = source.Severity,
-                Message = source.Message,
-                Details = source.Details,
-                OccurredAtUtc = source.OccurredAtUtc,
-                EventCursor = source.EventCursor,
-                RuntimeName = source.RuntimeName,
-                AdsPort = source.AdsPort,
-            };
-    }
-
-    private static ResourceReference CloneResource(ResourceReference source)
-    {
-        return new ResourceReference
-        {
-            Uri = source.Uri,
-            OperationId = source.OperationId,
-            Kind = source.Kind,
-        };
-    }
 }

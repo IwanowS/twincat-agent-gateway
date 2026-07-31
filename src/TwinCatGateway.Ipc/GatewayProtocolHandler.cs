@@ -69,7 +69,6 @@ public sealed class GatewayProtocolHandler
                 Ok = dispatch.Ok,
                 Result = dispatch.Result,
                 Error = dispatch.Error,
-                RuntimeAlert = dispatch.RuntimeAlert,
             };
             return new GatewayProtocolResponse(
                 JsonSerializer.Serialize(
@@ -207,7 +206,6 @@ public sealed class GatewayProtocolHandler
 
         public GatewayError? Error { get; set; }
 
-        public RuntimeAlert? RuntimeAlert { get; set; }
     }
 
     internal sealed class GatewayProtocolResponse

@@ -17,27 +17,17 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
         _client = new NamedPipeGatewayClient(pipeName, connectTimeout);
     }
 
-    public Task<GatewayResponse<HealthResult>> GetHealthAsync(
+    public Task<GatewayStateSnapshot> GetGatewayStateAsync(
         CancellationToken cancellationToken = default)
     {
-        return _client.SendAsync<EmptyParameters, HealthResult>(
-            GatewayMethods.Health,
+        return _client.SendAsync<EmptyParameters, GatewayStateSnapshot>(
+            GatewayMethods.GatewayState,
             new EmptyParameters(),
             wait: true,
             cancellationToken);
     }
 
-    public Task<GatewayResponse<GatewayStatusResult>> GetStatusAsync(
-        CancellationToken cancellationToken = default)
-    {
-        return _client.SendAsync<EmptyParameters, GatewayStatusResult>(
-            GatewayMethods.Status,
-            new EmptyParameters(),
-            wait: true,
-            cancellationToken);
-    }
-
-    public Task<GatewayResponse<GatewayShutdownResult>> ShutdownAsync(
+    public Task<GatewayShutdownResult> ShutdownAsync(
         CancellationToken cancellationToken = default)
     {
         return _client.SendAsync<
@@ -49,46 +39,21 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
             cancellationToken);
     }
 
-    public Task<GatewayResponse<GatewayDiagnosticsResult>> GetDiagnosticsAsync(
-        CancellationToken cancellationToken = default)
-    {
-        return GetDiagnosticsAsync(
-            new GetDiagnosticsParameters(),
-            cancellationToken);
-    }
-
-    public Task<GatewayResponse<GatewayDiagnosticsResult>> GetDiagnosticsAsync(
-        GetDiagnosticsParameters parameters,
+    public Task<OperationResult<XaeOpenResult>> OpenXaeAsync(
+        XaeOpenParameters parameters,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(parameters);
-
         return _client.SendAsync<
-            GetDiagnosticsParameters,
-            GatewayDiagnosticsResult>(
-            GatewayMethods.GetDiagnostics,
+            XaeOpenParameters,
+            OperationResult<XaeOpenResult>>(
+            GatewayMethods.XaeOpen,
             parameters,
             wait: true,
             cancellationToken);
     }
 
-    public Task<GatewayResponse<XaeMessagesResult>>
-        GetXaeMessagesAsync(
-            GetXaeMessagesParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        ArgumentNullException.ThrowIfNull(parameters);
-
-        return _client.SendAsync<
-            GetXaeMessagesParameters,
-            XaeMessagesResult>(
-            GatewayMethods.GetXaeMessages,
-            parameters,
-            wait: true,
-            cancellationToken);
-    }
-
-    public Task<GatewayResponse<OperationAccepted>> StartXaeBuildAsync(
+    public Task<OperationResult<XaeBuildResult>> BuildXaeAsync(
         XaeBuildParameters parameters,
         CancellationToken cancellationToken = default)
     {
@@ -96,30 +61,30 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
 
         return _client.SendAsync<
             XaeBuildParameters,
-            OperationAccepted>(
+            OperationResult<XaeBuildResult>>(
             GatewayMethods.XaeBuild,
             parameters,
-            wait: false,
+            wait: true,
             cancellationToken);
     }
 
-    public Task<GatewayResponse<OperationAccepted>>
-        StartSynchronizationAsync(
+    public Task<OperationResult<SynchronizeResult>>
+        SynchronizeXaeAsync(
             SynchronizeParameters parameters,
             CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(parameters);
         return _client.SendAsync<
             SynchronizeParameters,
-            OperationAccepted>(
-            GatewayMethods.Synchronize,
+            OperationResult<SynchronizeResult>>(
+            GatewayMethods.XaeSynchronize,
             parameters,
-            wait: false,
+            wait: true,
             cancellationToken);
     }
 
-    public Task<GatewayResponse<OperationAccepted>>
-        StartActivationAsync(
+    public Task<OperationResult<ActivationResult>>
+        ActivateXaeAsync(
             ActivateParameters parameters,
             CancellationToken cancellationToken = default)
     {
@@ -127,15 +92,15 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
 
         return _client.SendAsync<
             ActivateParameters,
-            OperationAccepted>(
-            GatewayMethods.Activate,
+            OperationResult<ActivationResult>>(
+            GatewayMethods.XaeActivate,
             parameters,
-            wait: false,
+            wait: true,
             cancellationToken);
     }
 
-    public Task<GatewayResponse<OperationAccepted>>
-        StartCloseXaeAsync(
+    public Task<OperationResult<CloseXaeResult>>
+        CloseXaeAsync(
             CloseXaeParameters parameters,
             CancellationToken cancellationToken = default)
     {
@@ -143,15 +108,15 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
 
         return _client.SendAsync<
             CloseXaeParameters,
-            OperationAccepted>(
-            GatewayMethods.CloseXae,
+            OperationResult<CloseXaeResult>>(
+            GatewayMethods.XaeClose,
             parameters,
-            wait: false,
+            wait: true,
             cancellationToken);
     }
 
-    public Task<GatewayResponse<OperationAccepted>>
-        StartTargetConfigAsync(
+    public Task<OperationResult<TargetConfigResult>>
+        ConfigureTargetAsync(
             TargetConfigParameters parameters,
             CancellationToken cancellationToken = default)
     {
@@ -159,15 +124,15 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
 
         return _client.SendAsync<
             TargetConfigParameters,
-            OperationAccepted>(
+            OperationResult<TargetConfigResult>>(
             GatewayMethods.TargetConfig,
             parameters,
-            wait: false,
+            wait: true,
             cancellationToken);
     }
 
-    public Task<GatewayResponse<OperationAccepted>>
-        StartTargetStartRestartAsync(
+    public Task<OperationResult<TargetStartRestartResult>>
+        StartRestartTargetAsync(
             TargetStartRestartParameters parameters,
             CancellationToken cancellationToken = default)
     {
@@ -175,20 +140,20 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
 
         return _client.SendAsync<
             TargetStartRestartParameters,
-            OperationAccepted>(
+            OperationResult<TargetStartRestartResult>>(
             GatewayMethods.TargetStartRestart,
             parameters,
-            wait: false,
+            wait: true,
             cancellationToken);
     }
 
-    public Task<GatewayResponse<OperationDetails<TResult>>> GetOperationAsync<TResult>(
+    public Task<OperationSnapshot<TResult>> GetOperationAsync<TResult>(
         string operationId,
         CancellationToken cancellationToken = default)
     {
         return _client.SendAsync<
             GetOperationParameters,
-            OperationDetails<TResult>>(
+            OperationSnapshot<TResult>>(
             GatewayMethods.GetOperation,
             new GetOperationParameters
             {
@@ -198,13 +163,13 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
             cancellationToken);
     }
 
-    public Task<GatewayResponse<CancelOperationResult>> CancelOperationAsync(
+    public Task<OperationCancellationReceipt> CancelOperationAsync(
         string operationId,
         CancellationToken cancellationToken = default)
     {
         return _client.SendAsync<
             CancelOperationParameters,
-            CancelOperationResult>(
+            OperationCancellationReceipt>(
             GatewayMethods.CancelOperation,
             new CancelOperationParameters
             {
@@ -214,7 +179,7 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
             cancellationToken);
     }
 
-    public Task<GatewayResponse<ResourceContent>> GetResourceAsync(
+    public Task<ResourceContent> GetResourceAsync(
         string uri,
         int maximumCharacters = 64 * 1024,
         long offset = 0,

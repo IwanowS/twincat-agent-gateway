@@ -2,15 +2,13 @@ namespace TwinCatGateway.Contracts;
 
 public static class GatewayMethods
 {
-    public const string Health = "health";
+    public const string GatewayState = "gatewayState";
     public const string Shutdown = "shutdown";
-    public const string Status = "status";
-    public const string GetDiagnostics = "getDiagnostics";
-    public const string GetXaeMessages = "getXaeMessages";
+    public const string XaeOpen = "xaeOpen";
     public const string XaeBuild = "xaeBuild";
-    public const string Synchronize = "synchronize";
-    public const string CloseXae = "closeXae";
-    public const string Activate = "activate";
+    public const string XaeSynchronize = "xaeSynchronize";
+    public const string XaeClose = "xaeClose";
+    public const string XaeActivate = "xaeActivate";
     public const string TargetConfig = "targetConfig";
     public const string TargetStartRestart = "targetStartRestart";
     public const string GetOperation = "getOperation";

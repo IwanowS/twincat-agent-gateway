@@ -9,6 +9,8 @@ public enum XaeSaveMode
 
 public sealed class CloseXaeParameters
 {
+    public string Profile { get; set; } = string.Empty;
+
     public XaeSaveMode SaveMode { get; set; } = XaeSaveMode.Prompt;
 
     public int? TimeoutSeconds { get; set; }

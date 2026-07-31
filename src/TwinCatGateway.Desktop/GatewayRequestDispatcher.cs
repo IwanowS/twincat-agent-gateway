@@ -46,17 +46,11 @@ public sealed class GatewayRequestDispatcher
                 return DispatchShutdown();
             }
 
-            object? result =
-                request.Method
-                    == GatewayMethods.GetXaeMessages
-                ? await DispatchXaeMessagesAsync(
-                        request,
-                        cancellationToken)
-                    .ConfigureAwait(false)
-                : Dispatch(request);
-            return GatewayDispatchResult.Success(
-                result,
-                GetRuntimeAlert());
+            object? result = await DispatchCoreAsync(
+                    request,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return GatewayDispatchResult.Success(result);
         }
         catch (GatewayOperationException exception)
         {
@@ -74,23 +68,8 @@ public sealed class GatewayRequestDispatcher
                         exception.SideEffectsStarted,
                     Expected = exception.Expected,
                     Observed = exception.Observed,
-                },
-                GetRuntimeAlert());
+                });
         }
-    }
-
-    private Task<XaeMessagesResult>
-        DispatchXaeMessagesAsync(
-            GatewayRequestContext request,
-            CancellationToken cancellationToken)
-    {
-        GetXaeMessagesParameters parameters =
-            request.DeserializeParameters<
-                GetXaeMessagesParameters>(
-                _serializerOptions);
-        return _service.GetXaeMessagesAsync(
-            parameters,
-            cancellationToken);
     }
 
     private GatewayDispatchResult DispatchShutdown()
@@ -109,68 +88,69 @@ public sealed class GatewayRequestDispatcher
             {
                 ShutdownRequested = true,
             },
-            GetRuntimeAlert(),
-            callback);
+            afterResponseWritten: callback);
     }
 
-    private RuntimeAlert? GetRuntimeAlert()
-    {
-        return GatewayStatusSnapshotStore.CloneRuntimeAlert(
-            _service.GetStatus().TwinCat.Alert);
-    }
-
-    private object? Dispatch(GatewayRequestContext request)
+    private async Task<object?> DispatchCoreAsync(
+        GatewayRequestContext request,
+        CancellationToken cancellationToken)
     {
         switch (request.Method)
         {
-            case GatewayMethods.Health:
-                return _service.GetHealth();
-            case GatewayMethods.Status:
-                return _service.GetStatus();
-            case GatewayMethods.GetDiagnostics:
-                {
-                    GetDiagnosticsParameters parameters =
-                        request.DeserializeParameters<
-                            GetDiagnosticsParameters>(
-                            _serializerOptions);
-                    return _service.GetDiagnostics(parameters);
-                }
+            case GatewayMethods.GatewayState:
+                return _service.GetGatewayState();
 
             case GatewayMethods.XaeBuild:
                 {
                     XaeBuildParameters parameters =
                         request.DeserializeParameters<XaeBuildParameters>(
                             _serializerOptions);
-                    return _service.StartXaeBuild(parameters);
+                    OperationHandle handle = _service.StartXaeBuild(parameters);
+                    return await _service.WaitForOperationAsync<XaeBuildResult>(
+                            handle.OperationId,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
-            case GatewayMethods.Synchronize:
+            case GatewayMethods.XaeSynchronize:
                 {
                     SynchronizeParameters parameters =
                         request.DeserializeParameters<
                             SynchronizeParameters>(
                             _serializerOptions);
-                    return _service.StartSynchronization(
+                    OperationHandle handle = _service.StartSynchronization(
                         parameters,
                         agentRequest: true);
+                    return await _service.WaitForOperationAsync<SynchronizeResult>(
+                            handle.OperationId,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
-            case GatewayMethods.CloseXae:
+            case GatewayMethods.XaeClose:
                 {
                     CloseXaeParameters parameters =
                         request.DeserializeParameters<
                             CloseXaeParameters>(
                             _serializerOptions);
-                    return _service.StartCloseXae(parameters);
+                    OperationHandle handle = _service.StartCloseXae(parameters);
+                    return await _service.WaitForOperationAsync<CloseXaeResult>(
+                            handle.OperationId,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
-            case GatewayMethods.Activate:
+            case GatewayMethods.XaeActivate:
                 {
                     ActivateParameters parameters =
                         request.DeserializeParameters<
                             ActivateParameters>(
                             _serializerOptions);
-                    return _service.StartActivation(parameters);
+                    OperationHandle handle = _service.StartActivation(parameters);
+                    return await _service.WaitForOperationAsync<ActivationResult>(
+                            handle.OperationId,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
             case GatewayMethods.TargetConfig:
@@ -179,7 +159,11 @@ public sealed class GatewayRequestDispatcher
                         request.DeserializeParameters<
                             TargetConfigParameters>(
                             _serializerOptions);
-                    return _service.StartTargetConfig(parameters);
+                    OperationHandle handle = _service.StartTargetConfig(parameters);
+                    return await _service.WaitForOperationAsync<TargetConfigResult>(
+                            handle.OperationId,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
             case GatewayMethods.TargetStartRestart:
@@ -188,8 +172,13 @@ public sealed class GatewayRequestDispatcher
                         request.DeserializeParameters<
                             TargetStartRestartParameters>(
                             _serializerOptions);
-                    return _service.StartTargetStartRestart(
-                        parameters);
+                    OperationHandle handle =
+                        _service.StartTargetStartRestart(parameters);
+                    return await _service
+                        .WaitForOperationAsync<TargetStartRestartResult>(
+                            handle.OperationId,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
             case GatewayMethods.GetOperation:

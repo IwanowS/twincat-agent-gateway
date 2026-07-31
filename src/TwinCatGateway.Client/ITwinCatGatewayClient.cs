@@ -1,4 +1,3 @@
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Contracts;
@@ -7,99 +6,49 @@ namespace TwinCatGateway.Client;
 
 public interface ITwinCatGatewayClient
 {
-    Task<GatewayResponse<HealthResult>> GetHealthAsync(
+    Task<GatewayStateSnapshot> GetGatewayStateAsync(
         CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<GatewayStatusResult>> GetStatusAsync(
+    Task<GatewayShutdownResult> ShutdownAsync(
         CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<GatewayShutdownResult>> ShutdownAsync(
+    Task<OperationResult<XaeOpenResult>> OpenXaeAsync(
+        XaeOpenParameters parameters,
         CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<GatewayDiagnosticsResult>>
-        GetDiagnosticsAsync(
-            CancellationToken cancellationToken = default);
+    Task<OperationResult<CloseXaeResult>> CloseXaeAsync(
+        CloseXaeParameters parameters,
+        CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<GatewayDiagnosticsResult>>
-        GetDiagnosticsAsync(
-            GetDiagnosticsParameters parameters,
-            CancellationToken cancellationToken = default);
+    Task<OperationResult<SynchronizeResult>> SynchronizeXaeAsync(
+        SynchronizeParameters parameters,
+        CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<XaeMessagesResult>>
-        GetXaeMessagesAsync(
-            GetXaeMessagesParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Task.FromException<
-            GatewayResponse<XaeMessagesResult>>(
-            new NotSupportedException(
-                "XAE Error List reading is not implemented by this client."));
-    }
-
-    Task<GatewayResponse<OperationAccepted>> StartXaeBuildAsync(
+    Task<OperationResult<XaeBuildResult>> BuildXaeAsync(
         XaeBuildParameters parameters,
         CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<OperationAccepted>>
-        StartSynchronizationAsync(
-            SynchronizeParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Task.FromException<
-            GatewayResponse<OperationAccepted>>(
-            new NotSupportedException(
-                "Synchronization is not implemented by this client."));
-    }
+    Task<OperationResult<ActivationResult>> ActivateXaeAsync(
+        ActivateParameters parameters,
+        CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<OperationAccepted>>
-        StartCloseXaeAsync(
-            CloseXaeParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Task.FromException<
-            GatewayResponse<OperationAccepted>>(
-            new NotSupportedException(
-                "XAE close is not implemented by this client."));
-    }
+    Task<OperationResult<TargetConfigResult>> ConfigureTargetAsync(
+        TargetConfigParameters parameters,
+        CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<OperationAccepted>>
-        StartActivationAsync(
-            ActivateParameters parameters,
-            CancellationToken cancellationToken = default);
+    Task<OperationResult<TargetStartRestartResult>> StartRestartTargetAsync(
+        TargetStartRestartParameters parameters,
+        CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<OperationAccepted>>
-        StartTargetConfigAsync(
-            TargetConfigParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Task.FromException<
-            GatewayResponse<OperationAccepted>>(
-            new NotSupportedException(
-                "Target Config is not implemented by this client."));
-    }
+    Task<OperationSnapshot<TResult>> GetOperationAsync<TResult>(
+        string operationId,
+        CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<OperationAccepted>>
-        StartTargetStartRestartAsync(
-            TargetStartRestartParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Task.FromException<
-            GatewayResponse<OperationAccepted>>(
-            new NotSupportedException(
-                "Target start/restart is not implemented by this client."));
-    }
+    Task<OperationCancellationReceipt> CancelOperationAsync(
+        string operationId,
+        CancellationToken cancellationToken = default);
 
-    Task<GatewayResponse<OperationDetails<TResult>>>
-        GetOperationAsync<TResult>(
-            string operationId,
-            CancellationToken cancellationToken = default);
-
-    Task<GatewayResponse<CancelOperationResult>>
-        CancelOperationAsync(
-            string operationId,
-            CancellationToken cancellationToken = default);
-
-    Task<GatewayResponse<ResourceContent>> GetResourceAsync(
+    Task<ResourceContent> GetResourceAsync(
         string uri,
         int maximumCharacters = 64 * 1024,
         long offset = 0,

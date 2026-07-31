@@ -57,3 +57,12 @@ public sealed class OperationEventPage
 
     public bool HistoryTruncated { get; set; }
 }
+
+public sealed class OperationCancellationReceipt
+{
+    public string OperationId { get; set; } = string.Empty;
+
+    public OperationState State { get; set; }
+
+    public bool CancellationRequested { get; set; }
+}
