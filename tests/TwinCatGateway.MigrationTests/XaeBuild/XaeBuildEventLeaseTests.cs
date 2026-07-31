@@ -1,4 +1,5 @@
 using EnvDTE;
+using Microsoft.VisualStudio.Shell.Interop;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Xae;
 using Xunit;
@@ -7,6 +8,21 @@ namespace TwinCatGateway.IntegrationTests;
 
 public sealed class XaeBuildEventLeaseTests
 {
+    [Theory]
+    [InlineData(BuildAction.Clean, VSSOLNBUILDUPDATEFLAGS.SBF_OPERATION_CLEAN)]
+    [InlineData(
+        BuildAction.Rebuild,
+        VSSOLNBUILDUPDATEFLAGS.SBF_OPERATION_CLEAN
+            | VSSOLNBUILDUPDATEFLAGS.SBF_OPERATION_BUILD)]
+    public void ProjectUpdateUsesExplicitSingleProjectFlags(
+        BuildAction action,
+        VSSOLNBUILDUPDATEFLAGS expected)
+    {
+        Assert.Equal(
+            unchecked((uint)expected),
+            XaeProjectBuildRequest.SelectFlags(action));
+    }
+
     [Fact]
     public void ActivationObserverAcceptsFinalProjectScopeBuild()
     {

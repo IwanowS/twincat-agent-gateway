@@ -340,11 +340,10 @@ internal sealed class XaeBuildEventLease : IDisposable
             }
             else
             {
-                StartSpecificProjectUpdate(
+                StartProjectUpdate(
                     _dte,
                     exactProjectFile,
-                    clean: true,
-                    build: _requestedAction == BuildAction.Rebuild);
+                    _requestedAction);
             }
 
             return;
@@ -416,16 +415,14 @@ internal sealed class XaeBuildEventLease : IDisposable
         }
     }
 
-    private static void StartSpecificProjectUpdate(
+    private static void StartProjectUpdate(
         DTE2 dte,
         string projectFile,
-        bool clean,
-        bool build)
+        BuildAction action)
     {
         IVsSolution? solution = null;
         IVsSolutionBuildManager2? buildManager = null;
         IVsHierarchy? hierarchy = null;
-        IVsProjectCfg? projectConfiguration = null;
         try
         {
             solution = XaeSession.QueryService<IVsSolution>(
@@ -439,35 +436,17 @@ internal sealed class XaeBuildEventLease : IDisposable
                 XaeSession.QueryService<IVsSolutionBuildManager2>(
                     dte,
                     typeof(SVsSolutionBuildManager).GUID);
-            IVsProjectCfg[] active = new IVsProjectCfg[1];
             Marshal.ThrowExceptionForHR(
-                buildManager.FindActiveProjectCfg(
-                    IntPtr.Zero,
-                    IntPtr.Zero,
+                buildManager.StartSimpleUpdateProjectConfiguration(
                     hierarchy,
-                    active));
-            projectConfiguration = active[0]
-                ?? throw new GatewayOperationException(
-                    ErrorCodes.BuildConfigurationNotFound,
-                    "The active PLC project configuration is unavailable.",
-                    stage: "xae.build.start",
-                    component: GatewayComponent.Xae);
-            uint[]? cleanFlags = clean ? new uint[1] : null;
-            uint[]? buildFlags = build ? new uint[1] : null;
-            Marshal.ThrowExceptionForHR(
-                buildManager.StartUpdateSpecificProjectConfigurations(
-                    1,
-                    new[] { hierarchy },
-                    new IVsCfg[] { projectConfiguration },
-                    cleanFlags,
-                    buildFlags,
-                    rgdwDeployFlags: null,
-                    dwFlags: 0,
-                    fSuppressUI: 0));
+                    pIVsHierarchyDependent: null,
+                    pszDependentConfigurationCanonicalName: null,
+                    dwFlags: XaeProjectBuildRequest.SelectFlags(action),
+                    dwDefQueryResults: 0,
+                    fSuppressUI: 1));
         }
         finally
         {
-            ComObject.Release(projectConfiguration);
             ComObject.Release(hierarchy);
             ComObject.Release(buildManager);
             ComObject.Release(solution);

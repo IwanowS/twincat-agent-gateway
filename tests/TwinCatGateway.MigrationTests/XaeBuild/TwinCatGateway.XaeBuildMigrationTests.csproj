@@ -11,6 +11,7 @@
 
   <ItemGroup>
     <PackageReference Include="EnvDTE" Version="17.14.40260" />
+    <PackageReference Include="Microsoft.VisualStudio.Interop" Version="17.14.40260" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
@@ -26,6 +27,8 @@
   <ItemGroup>
     <Compile Include="..\..\..\src\TwinCatGateway.Xae\XaeBuildEventMatcher.cs"
              Link="Production\XaeBuildEventMatcher.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Xae\XaeProjectBuildRequest.cs"
+             Link="Production\XaeProjectBuildRequest.cs" />
     <Compile Include="XaeBuildEventLeaseTests.cs"
              Link="Tests\XaeBuildEventLeaseTests.cs" />
   </ItemGroup>
