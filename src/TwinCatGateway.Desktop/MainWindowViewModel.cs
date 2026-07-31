@@ -291,9 +291,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         get
         {
-            ProjectProfile? profile = _host.ActiveProfile;
+            ResolvedProfile? profile = _host.ActiveProfile;
             string target = FormatTarget(
-                profile?.ExpectedTarget);
+                profile?.Target);
             return "Activate the TwinCAT configuration and "
                 + "restart the configured remote runtime?\n\n"
                 + $"Profile: {profile?.Name ?? "unknown"}\n"
@@ -306,9 +306,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     {
         get
         {
-            ProjectProfile? profile = _host.ActiveProfile;
+            ResolvedProfile? profile = _host.ActiveProfile;
             string target = FormatTarget(
-                profile?.ExpectedTarget);
+                profile?.Target);
             return "Restart the configured remote TwinCAT runtime "
                 + "in Config Mode?\n\n"
                 + $"Profile: {profile?.Name ?? "unknown"}\n"
@@ -356,7 +356,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public OperationAccepted StartBuild()
     {
-        ProjectProfile profile =
+        ResolvedProfile profile =
             RequireActiveProfile();
         EnsureNoActiveOperation();
         OperationAccepted accepted =
@@ -374,13 +374,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public OperationAccepted StartActivation()
     {
-        ProjectProfile profile =
+        ResolvedProfile profile =
             RequireActiveProfile();
-        if (!profile.AllowActivation)
-        {
-            throw new InvalidOperationException(
-                "Activation is disabled for the active profile.");
-        }
+        _host.Capabilities.EnsureAllowed(
+            profile,
+            CapabilityKey.XaeActivate,
+            "ui.activation.admission");
 
         EnsureNoActiveOperation();
         OperationAccepted accepted =
@@ -397,7 +396,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public OperationAccepted StartSynchronization()
     {
-        ProjectProfile profile = RequireActiveProfile();
+        ResolvedProfile profile = RequireActiveProfile();
         EnsureNoActiveOperation();
         OperationAccepted accepted =
             _host.ApplicationService.StartSynchronization(
@@ -414,13 +413,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     public OperationAccepted StartRecoverToConfig()
     {
-        ProjectProfile profile =
+        ResolvedProfile profile =
             RequireActiveProfile();
-        if (!profile.AllowActivation)
-        {
-            throw new InvalidOperationException(
-                "Runtime recovery is disabled for the active profile.");
-        }
+        _host.Capabilities.EnsureAllowed(
+            profile,
+            CapabilityKey.TargetConfig,
+            "ui.recovery.admission");
 
         EnsureNoActiveOperation();
         OperationAccepted accepted =
@@ -466,10 +464,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             + status.Xae.DirtyDocumentCount
                 .ToString(CultureInfo.CurrentCulture)
             + ". Automatic saving is disabled.";
-        ProjectProfile? profile = _host.ActiveProfile;
+        ResolvedProfile? profile = _host.ActiveProfile;
         Profile = profile?.Name ?? "No valid profile";
-        Target = FormatTarget(profile?.ExpectedTarget);
-        ActivationPolicy = profile?.AllowActivation == true
+        Target = FormatTarget(profile?.Target);
+        bool activationAllowed = profile is not null
+            && _host.Capabilities.Evaluate(
+                profile,
+                CapabilityKey.XaeActivate).Effective;
+        bool recoveryAllowed = profile is not null
+            && _host.Capabilities.Evaluate(
+                profile,
+                CapabilityKey.TargetConfig).Effective;
+        ActivationPolicy = activationAllowed
             ? "Activation allowed for the exact configured target"
             : "Activation disabled";
         CurrentOperation = status.CurrentOperation is null
@@ -508,12 +514,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             && profile is not null;
         CanActivate =
             CanStartOperation
-            && profile?.AllowActivation == true;
+            && activationAllowed;
         CanRecoverToConfig =
             IsRecoveryAvailable(
                 operationActive,
                 status.Xae.Connected,
-                profile?.AllowActivation == true,
+                recoveryAllowed,
                 status.TwinCat.Mode);
         CanReconnect =
             !operationActive
@@ -717,6 +723,18 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             : $"{amsNetId} · {target.Name}";
     }
 
+    private static string FormatTarget(ResolvedTargetProfile? target)
+    {
+        if (target is null)
+        {
+            return "No activation target";
+        }
+
+        return string.IsNullOrWhiteSpace(target.Name)
+            ? target.AmsNetId
+            : $"{target.AmsNetId} · {target.Name}";
+    }
+
     private static string FormatCurrentStage(
         OperationSummary? operation,
         IReadOnlyList<GatewayEvent> events)
@@ -888,7 +906,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             && runtimeMode != RuntimeMode.Config;
     }
 
-    private ProjectProfile RequireActiveProfile()
+    private ResolvedProfile RequireActiveProfile()
     {
         return _host.ActiveProfile
             ?? throw new InvalidOperationException(

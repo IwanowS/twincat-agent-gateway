@@ -183,15 +183,16 @@ public sealed class GatewayMcpRuntime
                 stage: "gateway.start.config");
         }
 
-        if (!context.Configuration
-                .Gateway.ProcessControl.AllowStart)
+        try
         {
-            return Failure<GatewayStartResult>(
-                ErrorCodes.GatewayStartDisabled,
-                "Project policy disables agent-started gateway "
-                + "processes.",
-                retryable: false,
-                stage: "gateway.start.policy");
+            new CapabilityEvaluator(context.Configuration)
+                .EnsureGatewayAllowed(
+                    CapabilityKey.GatewayStart,
+                    "gateway.start.admission");
+        }
+        catch (GatewayOperationException exception)
+        {
+            return Failure<GatewayStartResult>(exception);
         }
 
         GatewayInstanceRecord? existing;
@@ -377,9 +378,9 @@ public sealed class GatewayMcpRuntime
                 stage: "gateway.config.validate");
         }
 
-        ProjectProfile profile =
-            new ProjectProfileCatalog(configuration)
-                .GetRequired(null);
+        ResolvedProfile profile =
+            new ProfileResolver(configuration)
+                .Resolve(null);
         return new GatewayProjectContext(
             location,
             configuration,
@@ -642,7 +643,7 @@ public sealed class GatewayMcpRuntime
         public GatewayProjectContext(
             GatewayConfigurationLocation location,
             GatewayConfiguration configuration,
-            ProjectProfile profile)
+            ResolvedProfile profile)
         {
             Location = location;
             Configuration = configuration;
@@ -656,6 +657,6 @@ public sealed class GatewayMcpRuntime
 
         public GatewayConfiguration Configuration { get; }
 
-        public ProjectProfile Profile { get; }
+        public ResolvedProfile Profile { get; }
     }
 }

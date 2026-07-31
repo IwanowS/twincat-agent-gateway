@@ -30,7 +30,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private static readonly TimeSpan ReconnectInterval =
         TimeSpan.FromSeconds(5);
     private readonly object _sync = new();
-    private readonly ProjectProfile _profile;
+    private readonly ResolvedProfile _profile;
+    private readonly ProfileResolver _profiles;
+    private readonly CapabilityEvaluator _capabilities;
     private readonly GatewayStatusSnapshotStore _status;
     private readonly ILogger<XaeSessionCoordinator> _logger;
     private readonly LocalLogStore _logs;
@@ -52,7 +54,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private int _disposed;
 
     public XaeSessionCoordinator(
-        ProjectProfile profile,
+        ResolvedProfile profile,
+        ProfileResolver profiles,
+        CapabilityEvaluator capabilities,
         GatewayStatusSnapshotStore status,
         ILogger<XaeSessionCoordinator> logger,
         ILogger<TcUnitRunExecutor> tcUnitLogger,
@@ -63,6 +67,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
     {
         _profile = profile
             ?? throw new ArgumentNullException(nameof(profile));
+        _profiles = profiles
+            ?? throw new ArgumentNullException(nameof(profiles));
+        _capabilities = capabilities
+            ?? throw new ArgumentNullException(
+                nameof(capabilities));
         _status = status
             ?? throw new ArgumentNullException(nameof(status));
         _logger = logger
@@ -119,16 +128,17 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
                 XaeSessionSnapshot snapshot = connected
                     ? await _session.VerifyAttachedAsync(
-                        _profile.Solution,
+                        _profile.Xae.Solution,
                         HealthTimeout,
                         cancellationToken).ConfigureAwait(false)
                     : await _session.EnsureAttachedAsync(
-                        _profile.Solution,
-                        _profile.AllowXaeLaunch
+                        _profile.Xae.Solution,
+                        IsEffective(CapabilityKey.XaeLaunch)
                             && Volatile.Read(
                                 ref _autoLaunchSuppressed) == 0,
-                        _profile.XaeProgId,
-                        _profile.AssumeAttachedXaeSynchronized,
+                        _profile.Xae.ProgId,
+                        _profile.Xae.Workspace
+                            .AssumeAttachedSynchronized,
                         AttachTimeout,
                         cancellationToken).ConfigureAwait(false);
                 snapshot = _session.RefreshSynchronizationStatus(
@@ -215,7 +225,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
         XaeSessionSnapshot snapshot =
             await _session.VerifyAttachedAsync(
-                _profile.Solution,
+                        _profile.Xae.Solution,
                 HealthTimeout,
                 cancellationToken).ConfigureAwait(false);
         IReadOnlyList<BuildDiagnostic> messages =
@@ -235,7 +245,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         return new XaeMessagesResult
         {
             Solution = snapshot.SelectedInstance?.Solution
-                ?? _profile.Solution,
+                ?? _profile.Xae.Solution,
             ReadAtUtc = DateTimeOffset.UtcNow,
             Counts = new DiagnosticCounts
             {
@@ -262,25 +272,34 @@ internal sealed class XaeSessionCoordinator : IDisposable
         BuildParameters parameters,
         CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(parameters.Profile)
-            && !string.Equals(
-                parameters.Profile,
-                _profile.Name,
-                StringComparison.OrdinalIgnoreCase))
+        EnsureProfileIdentity(parameters.Profile, "build.preflight");
+        _capabilities.EnsureAllowed(
+            _profile,
+            CapabilityKey.XaeBuild,
+            "build.preflight");
+        if (_profile.Xae.Workspace.AutoSynchronizeBeforeOperation)
         {
-            throw new GatewayOperationException(
-                ErrorCodes.ProfileNotFound,
-                $"Project profile '{parameters.Profile}' is not active.",
-                stage: "build.validate");
+            _capabilities.EnsureAllowed(
+                _profile,
+                CapabilityKey.XaeSynchronize,
+                "build.synchronize");
+        }
+
+        if (parameters.DiscardDirtyDocuments)
+        {
+            _capabilities.EnsureAllowed(
+                _profile,
+                CapabilityKey.XaeDiscardDirtyDocuments,
+                "build.discard.preflight");
         }
 
         string? configuration = ResolveBuildSetting(
             parameters.Configuration,
-            _profile.Configuration,
+            _profile.Xae.Configuration,
             "configuration");
         string? platform = ResolveBuildSetting(
             parameters.Platform,
-            _profile.Platform,
+            _profile.Xae.Platform,
             "platform");
 
         DateTimeOffset deadlineUtc = DateTimeOffset.UtcNow.AddSeconds(
@@ -296,7 +315,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             XaeSessionSnapshot snapshot =
                 await dialogScope.ObserveAsync(
                     _session.VerifyAttachedAsync(
-                        _profile.Solution,
+                        _profile.Xae.Solution,
                         GetRemaining(
                             deadlineUtc,
                             "build.runtimePreflight"),
@@ -330,10 +349,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     parameters.ChangedPaths,
                     configuration,
                     platform,
-                    _profile.ExternalChangePolicy,
+                    _profile.Xae.Workspace.ExternalChangePolicy,
                     parameters.DiscardDirtyDocuments,
-                    _profile.AllowDirtyDocumentDiscard,
-                    _profile.AutoSynchronizeBeforeOperation,
+                    IsEffective(
+                        CapabilityKey.XaeDiscardDirtyDocuments),
+                    _profile.Xae.Workspace
+                        .AutoSynchronizeBeforeOperation,
                     GetRemaining(deadlineUtc, "xae.build"),
                     cancellationToken))
                 .ConfigureAwait(false);
@@ -471,16 +492,19 @@ internal sealed class XaeSessionCoordinator : IDisposable
         SynchronizeParameters parameters,
         CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(parameters.Profile)
-            && !string.Equals(
-                parameters.Profile,
-                _profile.Name,
-                StringComparison.OrdinalIgnoreCase))
+        EnsureProfileIdentity(
+            parameters.Profile,
+            "synchronize.preflight");
+        _capabilities.EnsureAllowed(
+            _profile,
+            CapabilityKey.XaeSynchronize,
+            "synchronize.preflight");
+        if (parameters.DiscardDirtyDocuments)
         {
-            throw new GatewayOperationException(
-                ErrorCodes.ProfileNotFound,
-                $"Project profile '{parameters.Profile}' is not active.",
-                stage: "synchronize.validate");
+            _capabilities.EnsureAllowed(
+                _profile,
+                CapabilityKey.XaeDiscardDirtyDocuments,
+                "synchronize.discard.preflight");
         }
 
         DateTimeOffset startedAtUtc = DateTimeOffset.UtcNow;
@@ -496,9 +520,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 await dialogScope.ObserveAsync(
                     _session.SynchronizeExternalChangesAsync(
                     parameters.ChangedPaths,
-                    _profile.ExternalChangePolicy,
+                    _profile.Xae.Workspace.ExternalChangePolicy,
                     parameters.DiscardDirtyDocuments,
-                    _profile.AllowDirtyDocumentDiscard,
+                    IsEffective(
+                        CapabilityKey.XaeDiscardDirtyDocuments),
                     force: true,
                     TimeSpan.FromSeconds(
                         parameters.TimeoutSeconds ?? 120),
@@ -536,7 +561,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             parameters.TimeoutSeconds ?? 120);
         XaeSessionSnapshot snapshot =
             await _session.VerifyAttachedAsync(
-                _profile.Solution,
+                _profile.Xae.Solution,
                 GetRemaining(
                     deadlineUtc,
                     "xae.close.verify"),
@@ -557,7 +582,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         Interlocked.Exchange(ref _autoLaunchSuppressed, 1);
         CloseXaeResult result =
             await _session.CloseAttachedAsync(
-                _profile.Solution,
+                _profile.Xae.Solution,
                 processId,
                 parameters.SaveMode,
                 GetRemaining(
@@ -578,27 +603,17 @@ internal sealed class XaeSessionCoordinator : IDisposable
         ActivateParameters parameters,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(
+        EnsureProfileIdentity(
             parameters.Profile,
-            _profile.Name,
-            StringComparison.OrdinalIgnoreCase))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ProfileNotFound,
-                $"Project profile '{parameters.Profile}' is not active.",
-                stage: "activation.validate");
-        }
+            "activation.preflight");
 
-        if (!_profile.AllowActivation)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ActivationNotAllowed,
-                $"Activation is disabled for profile '{_profile.Name}'.",
-                stage: "activation.validate");
-        }
+        _capabilities.EnsureAllowed(
+            _profile,
+            CapabilityKey.XaeActivate,
+            "activation.preflight");
 
         string expectedAmsNetId =
-            _profile.ExpectedTarget?.AmsNetId
+            _profile.Target?.AmsNetId
             ?? throw new GatewayOperationException(
                 ErrorCodes.ProfileInvalid,
                 "The activation profile has no expected AMS NetId.",
@@ -615,14 +630,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
         XaeSessionSnapshot snapshot =
             await dialogScope.ObserveAsync(
                 _session.VerifyAttachedAsync(
-                _profile.Solution,
+                        _profile.Xae.Solution,
                 GetRemaining(
                     deadlineUtc,
                     "activation.preflight"),
                 cancellationToken)).ConfigureAwait(false);
         VerifyTarget(
             snapshot,
-            expectedAmsNetId,
             "activation.preflight");
         AdsRuntimeStatusReadResult runtime =
             ReadRuntimeStatus(snapshot);
@@ -657,17 +671,22 @@ internal sealed class XaeSessionCoordinator : IDisposable
             details: runtimeExceptionDetails);
         const bool recoveryAttempted = false;
 
-        if (_profile.AutoSynchronizeBeforeOperation)
+        if (_profile.Xae.Workspace.AutoSynchronizeBeforeOperation)
         {
+            _capabilities.EnsureAllowed(
+                _profile,
+                CapabilityKey.XaeSynchronize,
+                "activation.synchronize");
             dialogScope.SetStage("activation.synchronize");
             try
             {
                 await dialogScope.ObserveAsync(
                     _session.SynchronizeExternalChangesAsync(
                         changedPaths: null,
-                        _profile.ExternalChangePolicy,
+                        _profile.Xae.Workspace.ExternalChangePolicy,
                         discardDirtyDocuments: false,
-                        _profile.AllowDirtyDocumentDiscard,
+                        IsEffective(
+                            CapabilityKey.XaeDiscardDirtyDocuments),
                         force: false,
                         GetRemaining(
                             deadlineUtc,
@@ -701,7 +720,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             {
                 command =
                     await _session.ActivateConfigurationAsync(
-                        _profile.Solution,
+                        _profile.Xae.Solution,
                         expectedAmsNetId,
                         parameters.RunAfterActivation,
                         dialogScope,
@@ -788,10 +807,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 OperationId = operationId,
                 DurationMs = failedDurationMs,
                 Profile = _profile.Name,
-                Solution = _profile.Solution,
+                Solution = _profile.Xae.Solution,
                 Target = new TargetIdentity
                 {
-                    Name = _profile.ExpectedTarget?.Name,
+                    Name = _profile.Target?.Name,
                     AmsNetId = expectedAmsNetId,
                 },
                 RecoveryAttempted = recoveryAttempted,
@@ -818,7 +837,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 properties: new Dictionary<string, string>
                 {
                     ["profile"] = _profile.Name,
-                    ["solution"] = _profile.Solution,
+                    ["solution"] = _profile.Xae.Solution,
                     ["amsNetId"] = expectedAmsNetId,
                     ["errors"] = compile.Counts.Errors.ToString(
                         CultureInfo.InvariantCulture),
@@ -852,14 +871,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
         snapshot = await dialogScope.ObserveAsync(
             _session.VerifyAttachedAsync(
-            _profile.Solution,
+                        _profile.Xae.Solution,
             GetRemaining(
                 deadlineUtc,
                 "activation.verify"),
             cancellationToken)).ConfigureAwait(false);
         VerifyTarget(
             snapshot,
-            expectedAmsNetId,
             "activation.verify");
         PublishConnected(snapshot);
         ActivationCompletion completion;
@@ -924,10 +942,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
             OperationId = operationId,
             DurationMs = durationMs,
             Profile = _profile.Name,
-            Solution = _profile.Solution,
+            Solution = _profile.Xae.Solution,
             Target = new TargetIdentity
             {
-                Name = _profile.ExpectedTarget?.Name,
+                Name = _profile.Target?.Name,
                 AmsNetId = expectedAmsNetId,
             },
             RecoveryAttempted = recoveryAttempted,
@@ -954,7 +972,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             properties: new Dictionary<string, string>
             {
                 ["profile"] = _profile.Name,
-                ["solution"] = _profile.Solution,
+                ["solution"] = _profile.Xae.Solution,
                 ["amsNetId"] = expectedAmsNetId,
                 ["recoveryAttempted"] =
                     recoveryAttempted.ToString(),
@@ -974,28 +992,17 @@ internal sealed class XaeSessionCoordinator : IDisposable
             RecoverToConfigParameters parameters,
             CancellationToken cancellationToken)
     {
-        if (!string.Equals(
+        EnsureProfileIdentity(
             parameters.Profile,
-            _profile.Name,
-            StringComparison.OrdinalIgnoreCase))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ProfileNotFound,
-                $"Project profile '{parameters.Profile}' is not active.",
-                stage: "recovery.validate");
-        }
+            "recovery.preflight");
 
-        if (!_profile.AllowActivation)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ActivationNotAllowed,
-                $"Runtime recovery is disabled for profile "
-                    + $"'{_profile.Name}'.",
-                stage: "recovery.validate");
-        }
+        _capabilities.EnsureAllowed(
+            _profile,
+            CapabilityKey.TargetConfig,
+            "recovery.preflight");
 
         string expectedAmsNetId =
-            _profile.ExpectedTarget?.AmsNetId
+            _profile.Target?.AmsNetId
             ?? throw new GatewayOperationException(
                 ErrorCodes.ProfileInvalid,
                 "The recovery profile has no expected AMS NetId.",
@@ -1011,14 +1018,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
         XaeSessionSnapshot snapshot =
             await dialogScope.ObserveAsync(
                 _session.VerifyAttachedAsync(
-                    _profile.Solution,
+                        _profile.Xae.Solution,
                     GetRemaining(
                         deadlineUtc,
                         "recovery.preflight"),
                     cancellationToken)).ConfigureAwait(false);
         VerifyTarget(
             snapshot,
-            expectedAmsNetId,
             "recovery.preflight");
         AdsRuntimeStatusReadResult runtime =
             ReadRuntimeStatus(snapshot);
@@ -1040,7 +1046,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             dialogScope.SetStage("recovery.command");
             await dialogScope.ObserveAsync(
                 _session.RestartTwinCatConfigModeAsync(
-                    _profile.Solution,
+                        _profile.Xae.Solution,
                     expectedAmsNetId,
                     GetRemaining(
                         deadlineUtc,
@@ -1075,7 +1081,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             properties: new Dictionary<string, string>
             {
                 ["profile"] = _profile.Name,
-                ["solution"] = _profile.Solution,
+                ["solution"] = _profile.Xae.Solution,
                 ["amsNetId"] = expectedAmsNetId,
                 ["initialRuntimeMode"] =
                     initialRuntimeMode.ToString(),
@@ -1090,10 +1096,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
             OperationId = operationId,
             DurationMs = durationMs,
             Profile = _profile.Name,
-            Solution = _profile.Solution,
+            Solution = _profile.Xae.Solution,
             Target = new TargetIdentity
             {
-                Name = _profile.ExpectedTarget?.Name,
+                Name = _profile.Target?.Name,
                 AmsNetId = expectedAmsNetId,
             },
             InitialRuntimeMode = initialRuntimeMode,
@@ -1151,12 +1157,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
     {
         XaeSessionSnapshot snapshot =
             await _session.VerifyAttachedAsync(
-                _profile.Solution,
+                        _profile.Xae.Solution,
                 HealthTimeout,
                 cancellationToken).ConfigureAwait(false);
         VerifyTarget(
             snapshot,
-            preparation.ExpectedAmsNetId,
             "tcunit.preflight");
         return await _tcUnit.ExecuteAsync(
             operationId,
@@ -1858,10 +1863,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
         Dictionary<string, string> properties = new()
         {
             ["profile"] = _profile.Name,
-            ["solution"] = _profile.Solution,
+            ["solution"] = _profile.Xae.Solution,
             ["amsNetId"] = amsNetId,
         };
-        string? targetName = _profile.ExpectedTarget?.Name;
+        string? targetName = _profile.Target?.Name;
         if (!string.IsNullOrWhiteSpace(targetName))
         {
             properties["targetName"] = targetName!;
@@ -2185,22 +2190,14 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
     }
 
-    private static void VerifyTarget(
+    private void VerifyTarget(
         XaeSessionSnapshot snapshot,
-        string expectedAmsNetId,
         string stage)
     {
-        if (!string.Equals(
+        _profiles.EnsureTargetIdentity(
+            _profile,
             snapshot.TargetAmsNetId,
-            expectedAmsNetId,
-            StringComparison.OrdinalIgnoreCase))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ActivationTargetMismatch,
-                "The selected XAE target AMS NetId does not match "
-                    + "the activation profile.",
-                stage: stage);
-        }
+            stage);
     }
 
     private static TimeSpan GetRemaining(
@@ -2312,9 +2309,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
         StringBuilder builder = new();
         builder.AppendLine($"OperationId: {operationId}");
         builder.AppendLine($"Profile: {_profile.Name}");
-        builder.AppendLine($"Solution: {_profile.Solution}");
+        builder.AppendLine($"Solution: {_profile.Xae.Solution}");
         builder.AppendLine($"TargetAmsNetId: {amsNetId}");
-        string? targetName = _profile.ExpectedTarget?.Name;
+        string? targetName = _profile.Target?.Name;
         if (!string.IsNullOrWhiteSpace(targetName))
         {
             builder.AppendLine($"TargetName: {targetName}");
@@ -2360,6 +2357,41 @@ internal sealed class XaeSessionCoordinator : IDisposable
         return builder.ToString();
     }
 
+    private bool IsEffective(CapabilityKey key)
+    {
+        return _capabilities.Evaluate(_profile, key).Effective;
+    }
+
+    private void EnsureProfileIdentity(
+        string? requestedProfile,
+        string stage)
+    {
+        if (string.IsNullOrWhiteSpace(requestedProfile)
+            || string.Equals(
+                requestedProfile,
+                _profile.Name,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new GatewayOperationException(
+            ErrorCodes.XaeSolutionMismatch,
+            $"Profile '{requestedProfile}' is not the active XAE context.",
+            stage: stage,
+            component: GatewayComponent.Xae,
+            sideEffectsStarted: false,
+            expected: new IdentityEvidence
+            {
+                Profile = requestedProfile,
+            },
+            observed: new IdentityEvidence
+            {
+                Profile = _profile.Name,
+                Solution = _profile.Xae.Solution,
+            });
+    }
+
     private static AdsRuntimeStatusReadResult ReadRuntimeStatus(
         XaeSessionSnapshot snapshot)
     {
@@ -2394,14 +2426,14 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         string? expectedAmsNetId =
-            _profile.ExpectedTarget?.AmsNetId;
+            _profile.Target?.AmsNetId;
         return new TargetIdentity
         {
             Name = string.Equals(
                 expectedAmsNetId,
                 snapshot.TargetAmsNetId,
                 StringComparison.OrdinalIgnoreCase)
-                ? _profile.ExpectedTarget?.Name
+                ? _profile.Target?.Name
                 : null,
             AmsNetId = snapshot.TargetAmsNetId,
         };

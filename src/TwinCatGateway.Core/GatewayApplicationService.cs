@@ -56,7 +56,9 @@ public sealed class GatewayApplicationService
         _tcUnitPreparationExecutor;
     private readonly TcUnitOperationExecutor?
         _tcUnitExecutor;
-    private readonly ProjectProfile? _activeProfile;
+    private readonly ResolvedProfile? _activeProfile;
+    private readonly CapabilityEvaluator? _capabilities;
+    private readonly OperationCapabilityPreflight? _preflight;
     private readonly IClock _clock;
     private readonly GatewayEventJournal _eventJournal;
     private readonly Func<string?>? _currentLogPathProvider;
@@ -71,7 +73,9 @@ public sealed class GatewayApplicationService
         Func<GatewayDiagnosticsResult>? diagnosticsProvider = null,
         BuildOperationExecutor? buildExecutor = null,
         ActivationOperationExecutor? activationExecutor = null,
-        ProjectProfile? activeProfile = null,
+        ResolvedProfile? activeProfile = null,
+        OperationCapabilityPreflight? preflight = null,
+        CapabilityEvaluator? capabilities = null,
         IClock? clock = null,
         TcUnitPreparationExecutor?
             tcUnitPreparationExecutor = null,
@@ -103,6 +107,8 @@ public sealed class GatewayApplicationService
             tcUnitPreparationExecutor;
         _tcUnitExecutor = tcUnitExecutor;
         _activeProfile = activeProfile;
+        _preflight = preflight;
+        _capabilities = capabilities;
         _clock = clock ?? SystemClock.Instance;
         _eventJournal = eventJournal
             ?? throw new ArgumentNullException(
@@ -255,6 +261,20 @@ public sealed class GatewayApplicationService
                 stage: "build.enqueue");
         }
 
+        OperationCapabilityPreflight preflight =
+            RequirePreflight("build.admission");
+        ResolvedProfile profile = preflight.EnsureAllowed(
+            parameters.Profile,
+            CapabilityKey.XaeBuild,
+            "build.admission");
+        if (parameters.DiscardDirtyDocuments)
+        {
+            preflight.EnsureAllowed(
+                profile.Name,
+                CapabilityKey.XaeDiscardDirtyDocuments,
+                "build.discard.admission");
+        }
+
         if (!Enum.IsDefined(
             typeof(BuildAction),
             parameters.Action))
@@ -295,8 +315,7 @@ public sealed class GatewayApplicationService
             throw new ArgumentNullException(nameof(parameters));
         }
 
-        if (_activationExecutor is null
-            || _activeProfile is null)
+        if (_activationExecutor is null)
         {
             throw new GatewayOperationException(
                 ErrorCodes.GatewayNotReady,
@@ -313,33 +332,13 @@ public sealed class GatewayApplicationService
                 stage: "activation.validate");
         }
 
-        if (!string.Equals(
+        OperationCapabilityPreflight preflight =
+            RequirePreflight("activation.admission");
+        ResolvedProfile profile = preflight.EnsureAllowed(
             parameters.Profile,
-            _activeProfile.Name,
-            StringComparison.OrdinalIgnoreCase))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ProfileNotFound,
-                $"Project profile '{parameters.Profile}' is not active.",
-                stage: "activation.validate");
-        }
-
-        if (!_activeProfile.Xae.Capabilities.Activate)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ActivationNotAllowed,
-                $"Activation is disabled for profile '{_activeProfile.Name}'.",
-                stage: "activation.validate");
-        }
-
-        if (string.IsNullOrWhiteSpace(
-            _activeProfile.Target?.AmsNetId))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ProfileInvalid,
-                "The activation profile has no expected AMS NetId.",
-                stage: "activation.validate");
-        }
+            CapabilityKey.XaeActivate,
+            "activation.admission",
+            requireTarget: true);
 
         if (parameters.TimeoutSeconds.HasValue
             && parameters.TimeoutSeconds.Value <= 0)
@@ -361,7 +360,7 @@ public sealed class GatewayApplicationService
         }
 
         if (waitForTcUnit
-            && _activeProfile.Target?.TcUnit is null)
+            && profile.Target?.TcUnit is null)
         {
             throw new GatewayOperationException(
                 ErrorCodes.ProfileInvalid,
@@ -378,6 +377,15 @@ public sealed class GatewayApplicationService
                 "The linked TcUnit executor is unavailable.",
                 retryable: true,
                 stage: "activation.tcunit");
+        }
+
+        if (waitForTcUnit)
+        {
+            preflight.EnsureAllowed(
+                profile.Name,
+                CapabilityKey.TargetTcUnitVerification,
+                "activation.tcunit.admission",
+                requireTarget: true);
         }
 
         TwinCatStatus runtimeStatus =
@@ -407,8 +415,7 @@ public sealed class GatewayApplicationService
             throw new ArgumentNullException(nameof(parameters));
         }
 
-        if (_recoveryExecutor is null
-            || _activeProfile is null)
+        if (_recoveryExecutor is null)
         {
             throw new GatewayOperationException(
                 ErrorCodes.GatewayNotReady,
@@ -425,34 +432,11 @@ public sealed class GatewayApplicationService
                 stage: "recovery.validate");
         }
 
-        if (!string.Equals(
+        RequirePreflight("recovery.admission").EnsureAllowed(
             parameters.Profile,
-            _activeProfile.Name,
-            StringComparison.OrdinalIgnoreCase))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ProfileNotFound,
-                $"Project profile '{parameters.Profile}' is not active.",
-                stage: "recovery.validate");
-        }
-
-        if (!_activeProfile.Xae.Capabilities.Activate)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ActivationNotAllowed,
-                $"Runtime recovery is disabled for profile "
-                    + $"'{_activeProfile.Name}'.",
-                stage: "recovery.validate");
-        }
-
-        if (string.IsNullOrWhiteSpace(
-            _activeProfile.Target?.AmsNetId))
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.ProfileInvalid,
-                "The recovery profile has no expected AMS NetId.",
-                stage: "recovery.validate");
-        }
+            CapabilityKey.TargetConfig,
+            "recovery.admission",
+            requireTarget: true);
 
         if (parameters.TimeoutSeconds.HasValue
             && parameters.TimeoutSeconds.Value <= 0)
@@ -485,7 +469,7 @@ public sealed class GatewayApplicationService
             throw new ArgumentNullException(nameof(parameters));
         }
 
-        if (_synchronizeExecutor is null || _activeProfile is null)
+        if (_synchronizeExecutor is null)
         {
             throw new GatewayOperationException(
                 ErrorCodes.GatewayNotReady,
@@ -494,14 +478,18 @@ public sealed class GatewayApplicationService
                 stage: "synchronize.enqueue");
         }
 
-        if (agentRequest
-            && !_activeProfile.Xae.Capabilities.Synchronize)
+        OperationCapabilityPreflight preflight =
+            RequirePreflight("synchronize.admission");
+        ResolvedProfile profile = preflight.EnsureAllowed(
+            parameters.Profile,
+            CapabilityKey.XaeSynchronize,
+            "synchronize.admission");
+        if (parameters.DiscardDirtyDocuments)
         {
-            throw new GatewayOperationException(
-                ErrorCodes.ForceSynchronizationNotAllowed,
-                "Agent-initiated synchronization is disabled for "
-                + $"profile '{_activeProfile.Name}'.",
-                stage: "synchronize.policy");
+            preflight.EnsureAllowed(
+                profile.Name,
+                CapabilityKey.XaeDiscardDirtyDocuments,
+                "synchronize.discard.admission");
         }
 
         if (parameters.TimeoutSeconds.HasValue
@@ -543,14 +531,15 @@ public sealed class GatewayApplicationService
                 stage: "xae.close.enqueue");
         }
 
-        if (!_activeProfile.Xae.Capabilities.Close)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.XaeCloseNotAllowed,
-                $"Closing XAE is disabled for profile "
-                    + $"'{_activeProfile.Name}'.",
-                stage: "xae.close.policy");
-        }
+        CapabilityEvaluator capabilities =
+            RequireCapabilities("xae.close.admission");
+        CapabilityEvaluationContext context = new(
+            _status.Read().Xae.ProcessId);
+        capabilities.EnsureAllowed(
+            _activeProfile,
+            CapabilityKey.XaeClose,
+            "xae.close.admission",
+            context);
 
         if (!Enum.IsDefined(
             typeof(XaeSaveMode),
@@ -562,14 +551,13 @@ public sealed class GatewayApplicationService
                 stage: "xae.close.validate");
         }
 
-        if (parameters.SaveMode == XaeSaveMode.Discard
-            && !_activeProfile.Xae.Capabilities.DiscardDirtyDocuments)
+        if (parameters.SaveMode == XaeSaveMode.Discard)
         {
-            throw new GatewayOperationException(
-                ErrorCodes.XaeCloseDiscardNotAllowed,
-                "Closing XAE with saveMode=discard requires "
-                    + "allowDirtyDocumentDiscard=true.",
-                stage: "xae.close.policy");
+            capabilities.EnsureAllowed(
+                _activeProfile,
+                CapabilityKey.XaeDiscardDirtyDocuments,
+                "xae.close.discard.admission",
+                context);
         }
 
         if (parameters.TimeoutSeconds.HasValue
@@ -1219,6 +1207,32 @@ public sealed class GatewayApplicationService
             Detail = source.Detail,
             TimeoutSeconds = source.TimeoutSeconds,
         };
+    }
+
+    private OperationCapabilityPreflight RequirePreflight(
+        string stage)
+    {
+        return _preflight
+            ?? throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "Operation capability preflight is unavailable.",
+                retryable: true,
+                stage: stage,
+                component: GatewayComponent.Profile,
+                sideEffectsStarted: false);
+    }
+
+    private CapabilityEvaluator RequireCapabilities(
+        string stage)
+    {
+        return _capabilities
+            ?? throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "Capability evaluation is unavailable.",
+                retryable: true,
+                stage: stage,
+                component: GatewayComponent.Profile,
+                sideEffectsStarted: false);
     }
 
     private static SynchronizeParameters

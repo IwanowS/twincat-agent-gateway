@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 using Xunit;
@@ -180,6 +181,103 @@ public sealed class CapabilityEvaluatorTests
             second.OrderBy(state => state.Key).Select(state => state.Key),
             second.Select(state => state.Key));
         Assert.NotEqual(first[0].Effective, second[0].Effective);
+    }
+
+    [Fact]
+    public void PreflightRejectsInactiveProfileBeforeSideEffects()
+    {
+        GatewayConfiguration configuration = CreateConfiguration();
+        configuration.Profiles.Add(
+            new ProjectProfile
+            {
+                Name = "other",
+                Xae = new XaeProfileConfiguration
+                {
+                    Solution = @"C:\Other\Other.sln",
+                },
+            });
+        ProfileResolver profiles = new(configuration);
+        CapabilityEvaluator capabilities = new(configuration);
+        OperationCapabilityPreflight preflight = new(
+            profiles,
+            capabilities,
+            profiles.Resolve("bench"));
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => preflight.EnsureAllowed(
+                    "other",
+                    CapabilityKey.XaeBuild,
+                    "build.admission"));
+
+        Assert.Equal(ErrorCodes.XaeSolutionMismatch, exception.Code);
+        Assert.False(exception.SideEffectsStarted);
+        Assert.Equal("other", exception.Expected?.Profile);
+        Assert.Equal("bench", exception.Observed?.Profile);
+    }
+
+    [Fact]
+    public void DeniedPreflightDoesNotReachQueueBoundary()
+    {
+        GatewayConfiguration configuration = CreateConfiguration();
+        configuration.Profiles[0].Xae.Capabilities.Build = false;
+        ProfileResolver profiles = new(configuration);
+        OperationCapabilityPreflight preflight = new(
+            profiles,
+            new CapabilityEvaluator(configuration),
+            profiles.Resolve("bench"));
+        bool enqueueCalled = false;
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () =>
+                {
+                    preflight.EnsureAllowed(
+                        "bench",
+                        CapabilityKey.XaeBuild,
+                        "build.admission");
+                    enqueueCalled = true;
+                });
+
+        Assert.Equal(ErrorCodes.CapabilityDisabled, exception.Code);
+        Assert.False(exception.SideEffectsStarted);
+        Assert.False(enqueueCalled);
+    }
+
+    [Fact]
+    public void PreflightCallerCannotInjectResourceIdentity()
+    {
+        MethodInfo method = typeof(OperationCapabilityPreflight)
+            .GetMethod(nameof(OperationCapabilityPreflight.EnsureAllowed))!;
+        string[] parameterNames = method.GetParameters()
+            .Select(parameter => parameter.Name!)
+            .ToArray();
+
+        Assert.Contains("requestedProfile", parameterNames);
+        Assert.DoesNotContain("solution", parameterNames);
+        Assert.DoesNotContain("amsNetId", parameterNames);
+        Assert.DoesNotContain("adsPort", parameterNames);
+    }
+
+    [Fact]
+    public void PreflightRequiresTargetBeforeTargetCapability()
+    {
+        GatewayConfiguration configuration = CreateConfiguration();
+        ProfileResolver profiles = new(configuration);
+        OperationCapabilityPreflight preflight = new(
+            profiles,
+            new CapabilityEvaluator(configuration),
+            profiles.Resolve("bench"));
+
+        GatewayOperationException exception =
+            Assert.Throws<GatewayOperationException>(
+                () => preflight.EnsureAllowed(
+                    "bench",
+                    CapabilityKey.TargetConfig,
+                    "target.config.admission",
+                    requireTarget: true));
+
+        Assert.Equal(ErrorCodes.TargetNotConfigured, exception.Code);
     }
 
     private static CapabilityEvaluator CreateEvaluator(

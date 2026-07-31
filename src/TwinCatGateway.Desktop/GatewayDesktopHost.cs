@@ -20,6 +20,8 @@ public sealed class GatewayDesktopHost : IDisposable
     private readonly NamedPipeGatewayServer _server;
     private readonly GatewayStatusSnapshotStore _status;
     private readonly GatewayEventJournal _events;
+    private readonly CapabilityEvaluator _capabilities;
+    private readonly CapabilitySnapshotStore _capabilitySnapshots;
     private readonly AdsRuntimeMonitor? _runtimeMonitor;
     private readonly XaeSessionCoordinator? _xaeCoordinator;
     private Task? _serverTask;
@@ -41,6 +43,22 @@ public sealed class GatewayDesktopHost : IDisposable
         StartupError = hostConfiguration.Error;
         Configuration = hostConfiguration.Configuration;
         ActiveProfile = hostConfiguration.ActiveProfile;
+        _capabilities = new CapabilityEvaluator(Configuration);
+        _capabilitySnapshots = new CapabilitySnapshotStore(
+            _capabilities);
+        _capabilitySnapshots.RefreshGateway();
+        if (ActiveProfile is not null)
+        {
+            _capabilitySnapshots.RefreshProfile(ActiveProfile);
+        }
+
+        OperationCapabilityPreflight? preflight =
+            hostConfiguration.Profiles is null
+                ? null
+                : new OperationCapabilityPreflight(
+                    hostConfiguration.Profiles,
+                    _capabilities,
+                    ActiveProfile);
         PipeName = hostConfiguration.PipeName;
         ConfigurationPath = string.IsNullOrWhiteSpace(
                 options.ConfigurationPath)
@@ -63,7 +81,7 @@ public sealed class GatewayDesktopHost : IDisposable
             logs,
             LogDirectory,
             _logging.SessionBasePath,
-            Configuration.LogRetentionDays);
+            Configuration.Gateway.Logging.RetentionDays);
 
         _status = new GatewayStatusSnapshotStore(
             GatewayStatusSnapshotStore.CreateInitial(version));
@@ -76,7 +94,7 @@ public sealed class GatewayDesktopHost : IDisposable
                 _status,
                 _logging.CreateLogger<AdsRuntimeMonitor>(),
                 _events,
-                Configuration.RuntimeMonitoring,
+                CreateMonitoringConfiguration(ActiveProfile),
                 errorListSnapshots: errorListSnapshots);
         OperationStore operations = new();
         _queue = new OperationQueue(
@@ -88,6 +106,8 @@ public sealed class GatewayDesktopHost : IDisposable
             ? null
             : new XaeSessionCoordinator(
                 ActiveProfile,
+                hostConfiguration.Profiles!,
+                _capabilities,
                 _status,
                 _logging.CreateLogger<XaeSessionCoordinator>(),
                 _logging.CreateLogger<TcUnitRunExecutor>(),
@@ -143,6 +163,8 @@ public sealed class GatewayDesktopHost : IDisposable
             buildExecutor,
             activationExecutor,
             ActiveProfile,
+            preflight,
+            _capabilities,
             clock: null,
             tcUnitPreparationExecutor:
                 tcUnitPreparationExecutor,
@@ -154,7 +176,7 @@ public sealed class GatewayDesktopHost : IDisposable
             closeXaeExecutor: closeXaeExecutor);
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
-            Configuration.AgentProcessControl.AllowShutdown,
+            _capabilities,
             RequestShutdown);
         GatewayProtocolHandler protocol = new(
             dispatcher.DispatchAsync,
@@ -180,7 +202,7 @@ public sealed class GatewayDesktopHost : IDisposable
         initial.Gateway.ActiveProfile =
             ActiveProfile?.Name;
         initial.Gateway.SolutionPath =
-            ActiveProfile?.Solution;
+            ActiveProfile?.Xae.Solution;
         initial.Gateway.LaunchSource = LaunchSource;
         initial.Gateway.UiMode = EffectiveUiMode;
         _status.Replace(initial);
@@ -190,7 +212,12 @@ public sealed class GatewayDesktopHost : IDisposable
 
     public GatewayConfiguration Configuration { get; }
 
-    public ProjectProfile? ActiveProfile { get; }
+    public ResolvedProfile? ActiveProfile { get; }
+
+    public CapabilityEvaluator Capabilities => _capabilities;
+
+    public CapabilitySnapshotStore CapabilitySnapshots =>
+        _capabilitySnapshots;
 
     public string? ConfigurationPath { get; }
 
@@ -523,11 +550,12 @@ public sealed class GatewayDesktopHost : IDisposable
                 return HostConfiguration.Faulted(error);
             }
 
-            ProjectProfileCatalog profiles = new(configuration);
+            ProfileResolver profiles = new(configuration);
             return new HostConfiguration(
                 configuration,
-                profiles.GetRequired(null),
-                configuration.PipeName,
+                profiles,
+                profiles.Resolve(null),
+                configuration.Gateway.PipeName,
                 error: null);
         }
         catch (Exception exception)
@@ -540,9 +568,11 @@ public sealed class GatewayDesktopHost : IDisposable
     private static string ResolveLogDirectory(
         GatewayConfiguration configuration)
     {
-        if (!string.IsNullOrWhiteSpace(configuration.LogDirectory))
+        if (!string.IsNullOrWhiteSpace(
+            configuration.Gateway.Logging.Directory))
         {
-            return Path.GetFullPath(configuration.LogDirectory);
+            return Path.GetFullPath(
+                configuration.Gateway.Logging.Directory!);
         }
 
         return Path.Combine(
@@ -556,11 +586,13 @@ public sealed class GatewayDesktopHost : IDisposable
     {
         public HostConfiguration(
             GatewayConfiguration configuration,
-            ProjectProfile? activeProfile,
+            ProfileResolver? profiles,
+            ResolvedProfile? activeProfile,
             string pipeName,
             string? error)
         {
             Configuration = configuration;
+            Profiles = profiles;
             ActiveProfile = activeProfile;
             PipeName = pipeName;
             Error = error;
@@ -568,7 +600,9 @@ public sealed class GatewayDesktopHost : IDisposable
 
         public GatewayConfiguration Configuration { get; }
 
-        public ProjectProfile? ActiveProfile { get; }
+        public ProfileResolver? Profiles { get; }
+
+        public ResolvedProfile? ActiveProfile { get; }
 
         public string PipeName { get; }
 
@@ -579,11 +613,30 @@ public sealed class GatewayDesktopHost : IDisposable
             return new HostConfiguration(
                 new GatewayConfiguration
                 {
-                    PipeName = DefaultPipeName,
+                    Gateway = new GatewaySettingsConfiguration
+                    {
+                        PipeName = DefaultPipeName,
+                    },
                 },
+                profiles: null,
                 activeProfile: null,
                 DefaultPipeName,
                 error);
         }
+    }
+
+    private static TargetMonitoringConfiguration
+        CreateMonitoringConfiguration(
+            ResolvedProfile? profile)
+    {
+        return new TargetMonitoringConfiguration
+        {
+            PollIntervalMilliseconds =
+                profile?.Target?.PollIntervalMilliseconds
+                ?? 1000,
+            ReadTimeoutMilliseconds =
+                profile?.Target?.ReadTimeoutMilliseconds
+                ?? 500,
+        };
     }
 }

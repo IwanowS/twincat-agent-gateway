@@ -80,17 +80,6 @@ public sealed class CapabilityEvaluator
             throw new ArgumentNullException(nameof(configuration));
         }
 
-        ConfigurationValidationResult validation =
-            GatewayConfigurationValidator.Validate(configuration);
-        if (!validation.IsValid)
-        {
-            string message = string.Join(
-                Environment.NewLine,
-                validation.Issues.Select(
-                    issue => $"{issue.Path}: {issue.Message}"));
-            throw new ArgumentException(message, nameof(configuration));
-        }
-
         _allowGatewayStart =
             configuration.Gateway.ProcessControl.AllowStart;
         _allowGatewayShutdown =
@@ -384,5 +373,82 @@ public sealed class CapabilitySnapshotStore
             Effective = source.Effective,
             Reason = source.Reason,
         };
+    }
+}
+
+public sealed class OperationCapabilityPreflight
+{
+    private readonly ResolvedProfile? _activeProfile;
+    private readonly CapabilityEvaluator _capabilities;
+    private readonly ProfileResolver _profiles;
+
+    public OperationCapabilityPreflight(
+        ProfileResolver profiles,
+        CapabilityEvaluator capabilities,
+        ResolvedProfile? activeProfile)
+    {
+        _profiles = profiles
+            ?? throw new ArgumentNullException(nameof(profiles));
+        _capabilities = capabilities
+            ?? throw new ArgumentNullException(nameof(capabilities));
+        _activeProfile = activeProfile;
+    }
+
+    public ResolvedProfile EnsureAllowed(
+        string? requestedProfile,
+        CapabilityKey capability,
+        string stage,
+        bool requireTarget = false,
+        CapabilityEvaluationContext? context = null)
+    {
+        ResolvedProfile requested =
+            _profiles.Resolve(requestedProfile);
+        ResolvedProfile active = _activeProfile
+            ?? throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "No active profile context is available.",
+                retryable: true,
+                stage: stage,
+                component: GatewayComponent.Profile,
+                sideEffectsStarted: false,
+                expected: new IdentityEvidence
+                {
+                    Profile = requested.Name,
+                    Solution = requested.Xae.Solution,
+                });
+        if (!string.Equals(
+            requested.Name,
+            active.Name,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.XaeSolutionMismatch,
+                $"Profile '{requested.Name}' is not the active XAE context.",
+                stage: stage,
+                component: GatewayComponent.Xae,
+                sideEffectsStarted: false,
+                expected: new IdentityEvidence
+                {
+                    Profile = requested.Name,
+                    Solution = requested.Xae.Solution,
+                },
+                observed: new IdentityEvidence
+                {
+                    Profile = active.Name,
+                    Solution = active.Xae.Solution,
+                });
+        }
+
+        if (requireTarget)
+        {
+            _profiles.RequireTarget(requested);
+        }
+
+        _capabilities.EnsureAllowed(
+            requested,
+            capability,
+            stage,
+            context);
+        return requested;
     }
 }

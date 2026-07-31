@@ -109,7 +109,7 @@ flowchart TD
 |---|---|---|
 | S0 | Target documents, decisions, plan, instructions | completed by this documentation change |
 | S1 | Contracts, errors, config schema v2 | completed 2026-07-31 |
-| S2 | Profile resolver and effective capabilities | pending |
+| S2 | Profile resolver and effective capabilities | completed 2026-07-31 |
 | S3 | Source discovery manifest | pending |
 | S4 | Separate XAE/System Service/PLC states | pending |
 | S5 | Operator locks and XAE close consent backend | pending |

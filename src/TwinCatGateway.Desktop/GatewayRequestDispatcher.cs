@@ -10,7 +10,7 @@ namespace TwinCatGateway.Desktop;
 
 public sealed class GatewayRequestDispatcher
 {
-    private readonly bool _allowShutdown;
+    private readonly CapabilityEvaluator _capabilities;
     private readonly Action? _shutdownRequested;
     private readonly GatewayApplicationService _service;
     private readonly JsonSerializerOptions _serializerOptions =
@@ -18,12 +18,14 @@ public sealed class GatewayRequestDispatcher
 
     public GatewayRequestDispatcher(
         GatewayApplicationService service,
-        bool allowShutdown = false,
+        CapabilityEvaluator capabilities,
         Action? shutdownRequested = null)
     {
         _service = service
             ?? throw new ArgumentNullException(nameof(service));
-        _allowShutdown = allowShutdown;
+        _capabilities = capabilities
+            ?? throw new ArgumentNullException(
+                nameof(capabilities));
         _shutdownRequested = shutdownRequested;
     }
 
@@ -67,6 +69,11 @@ public sealed class GatewayRequestDispatcher
                     Retryable = exception.Retryable,
                     Stage = exception.Stage,
                     RawLogRef = exception.RawLogRef,
+                    Component = exception.Component,
+                    SideEffectsStarted =
+                        exception.SideEffectsStarted,
+                    Expected = exception.Expected,
+                    Observed = exception.Observed,
                 },
                 GetRuntimeAlert());
         }
@@ -88,14 +95,9 @@ public sealed class GatewayRequestDispatcher
 
     private GatewayDispatchResult DispatchShutdown()
     {
-        if (!_allowShutdown)
-        {
-            throw new GatewayOperationException(
-                ErrorCodes.GatewayShutdownDisabled,
-                "Gateway shutdown is disabled by "
-                + "agentProcessControl.allowShutdown.",
-                stage: "gateway.shutdown.policy");
-        }
+        _capabilities.EnsureGatewayAllowed(
+            CapabilityKey.GatewayShutdown,
+            "gateway.shutdown.admission");
 
         Action callback = _shutdownRequested
             ?? throw new GatewayOperationException(

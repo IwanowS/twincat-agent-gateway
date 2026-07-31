@@ -16,7 +16,7 @@ internal interface ITcUnitCompletionEvidenceReader
 {
     TcUnitCompletionReadResult Read(
         string amsNetId,
-        TcUnitProfile profile,
+        ResolvedTcUnitProfile profile,
         TimeSpan timeout);
 }
 
@@ -35,7 +35,7 @@ internal sealed class TcUnitRunExecutor
         TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan MaximumAdsReadTimeout =
         TimeSpan.FromSeconds(3);
-    private readonly ProjectProfile _profile;
+    private readonly ResolvedProfile _profile;
     private readonly LocalLogStore _logs;
     private readonly ILogger<TcUnitRunExecutor> _logger;
     private readonly IGatewayEventSink _events;
@@ -44,7 +44,7 @@ internal sealed class TcUnitRunExecutor
     private readonly ITcUnitExecutionClock _clock;
 
     public TcUnitRunExecutor(
-        ProjectProfile profile,
+        ResolvedProfile profile,
         LocalLogStore logs,
         ILogger<TcUnitRunExecutor> logger,
         IGatewayEventSink events,
@@ -81,7 +81,7 @@ internal sealed class TcUnitRunExecutor
                 nameof(activationOperationId));
         }
 
-        TcUnitProfile tcUnit = GetTcUnitProfile();
+        ResolvedTcUnitProfile tcUnit = GetTcUnitProfile();
         string amsNetId = GetExpectedAmsNetId();
         TcUnitReportBaseline baseline =
             TcUnitReportFile.CaptureBaseline(
@@ -123,7 +123,7 @@ internal sealed class TcUnitRunExecutor
         ValidatePreparation(
             activationOperationId,
             preparation);
-        TcUnitProfile tcUnit = GetTcUnitProfile();
+        ResolvedTcUnitProfile tcUnit = GetTcUnitProfile();
         DateTimeOffset startedAtUtc = _clock.UtcNow;
         DateTimeOffset deadlineUtc =
             startedAtUtc.AddSeconds(
@@ -227,7 +227,7 @@ internal sealed class TcUnitRunExecutor
             string operationId,
             string activationOperationId,
             string amsNetId,
-            TcUnitProfile tcUnit,
+            ResolvedTcUnitProfile tcUnit,
             DateTimeOffset deadlineUtc,
             CancellationToken cancellationToken)
     {
@@ -430,9 +430,9 @@ internal sealed class TcUnitRunExecutor
         }
     }
 
-    private TcUnitProfile GetTcUnitProfile()
+    private ResolvedTcUnitProfile GetTcUnitProfile()
     {
-        return _profile.TcUnit
+        return _profile.Target?.TcUnit
             ?? throw new GatewayOperationException(
                 ErrorCodes.ProfileInvalid,
                 "The active profile has no TcUnit settings.",
@@ -441,7 +441,7 @@ internal sealed class TcUnitRunExecutor
 
     private string GetExpectedAmsNetId()
     {
-        return _profile.ExpectedTarget?.AmsNetId
+        return _profile.Target?.AmsNetId
             ?? throw new GatewayOperationException(
                 ErrorCodes.ProfileInvalid,
                 "The active profile has no expected AMS NetId.",
@@ -563,7 +563,7 @@ internal sealed class TcUnitCompletionEvidenceReader
 
     public TcUnitCompletionReadResult Read(
         string amsNetId,
-        TcUnitProfile profile,
+        ResolvedTcUnitProfile profile,
         TimeSpan timeout)
     {
         return _reader.Read(
