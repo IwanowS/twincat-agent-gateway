@@ -4,23 +4,23 @@ using TwinCAT.Ads;
 
 namespace TwinCatGateway.Ads;
 
-public interface IAdsRuntimeStatusProbe : IDisposable
+public interface IAdsStateProbe : IDisposable
 {
-    AdsRuntimeStatusReadResult Read(
+    AdsStateReadResult Read(
         string amsNetId,
         int port,
         TimeSpan timeout);
 }
 
-public sealed class AdsRuntimeStatusProbe :
-    IAdsRuntimeStatusProbe
+public sealed class AdsStateProbe :
+    IAdsStateProbe
 {
     private readonly object _sync = new();
     private readonly Dictionary<string, ClientEntry> _clients =
         new(StringComparer.Ordinal);
     private bool _disposed;
 
-    public AdsRuntimeStatusReadResult Read(
+    public AdsStateReadResult Read(
         string amsNetId,
         int port,
         TimeSpan timeout)
@@ -32,27 +32,24 @@ public sealed class AdsRuntimeStatusProbe :
             ThrowIfDisposed();
             if (!_clients.TryGetValue(key, out entry!))
             {
-                entry = new ClientEntry(
-                    amsNetId,
-                    port);
+                entry = new ClientEntry();
                 _clients.Add(key, entry);
             }
         }
 
-        AdsRuntimeStatusReadResult result;
+        AdsStateReadResult result;
         lock (entry.Sync)
         {
-            result = AdsRuntimeStatusReader.Read(
+            result = AdsStateReader.Read(
                 entry.Client,
                 amsNetId,
                 port,
                 timeout,
                 connect: !entry.Connected);
-            entry.Connected =
-                result.Diagnostics.ErrorCode is null;
+            entry.Connected = result.Succeeded;
         }
 
-        if (result.Diagnostics.ErrorCode is not null)
+        if (!result.Succeeded)
         {
             RemoveFailedClient(key, entry);
         }
@@ -116,28 +113,15 @@ public sealed class AdsRuntimeStatusProbe :
         if (_disposed)
         {
             throw new ObjectDisposedException(
-                nameof(AdsRuntimeStatusProbe));
+                nameof(AdsStateProbe));
         }
     }
 
     private sealed class ClientEntry
     {
-        public ClientEntry(
-            string amsNetId,
-            int port)
-        {
-            Client = new AdsClient();
-            AmsNetId = amsNetId;
-            Port = port;
-        }
-
         public object Sync { get; } = new();
 
-        public AdsClient Client { get; }
-
-        public string AmsNetId { get; }
-
-        public int Port { get; }
+        public AdsClient Client { get; } = new();
 
         public bool Connected { get; set; }
     }
