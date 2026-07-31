@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
 using TwinCatGateway.Ads;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
@@ -37,7 +38,6 @@ public sealed class TcUnitRunExecutorTests
 
         TestResult result =
             await fixture.Executor.ExecuteAsync(
-                "test-1",
                 "activation-1",
                 preparation,
                 CancellationToken.None);
@@ -48,11 +48,9 @@ public sealed class TcUnitRunExecutorTests
         Assert.Equal(2, result.Counts.Passed);
         Assert.Equal(1, result.InitializedSuites);
         Assert.NotNull(result.Report);
-        ResourceContent report = fixture.Logs.Read(
-            result.Report!.Uri);
         Assert.Contains(
             "Starts",
-            report.Content);
+            fixture.ReportContent);
         Assert.Equal(
             new[]
             {
@@ -61,8 +59,7 @@ public sealed class TcUnitRunExecutorTests
                 GatewayEventTypes
                     .TcUnitReportProduced,
             },
-            fixture.Events.ReadAfter(null, 0, 20)
-                .Events.Select(
+            fixture.Events.Events.Select(
                     gatewayEvent => gatewayEvent.Type));
     }
 
@@ -83,13 +80,34 @@ public sealed class TcUnitRunExecutorTests
             await Assert.ThrowsAsync<
                 GatewayOperationException>(
                 () => fixture.Executor.ExecuteAsync(
-                    "test-1",
                     "activation-1",
                     preparation,
                     CancellationToken.None));
 
         Assert.Equal(
             ErrorCodes.TestReportNotProduced,
+            exception.Code);
+    }
+
+    [Fact]
+    public async Task AlreadyTrueCompletionRequiresResetEdge()
+    {
+        using ExecutorFixture fixture = new(
+            baselineFinished: true);
+        fixture.Reader.Fallback =
+            () => Completed(initializedSuites: 1);
+        TcUnitRunPreparation preparation =
+            fixture.Executor.Prepare("activation-1");
+
+        GatewayOperationException exception =
+            await Assert.ThrowsAsync<GatewayOperationException>(
+                () => fixture.Executor.ExecuteAsync(
+                    "activation-1",
+                    preparation,
+                    CancellationToken.None));
+
+        Assert.Equal(
+            ErrorCodes.TestCompletionTimeout,
             exception.Code);
     }
 
@@ -106,7 +124,7 @@ public sealed class TcUnitRunExecutorTests
                 AdsErrorCode =
                     "DeviceSymbolNotFound",
                 FailedSymbol =
-                    fixture.Profile.TcUnit!
+                    fixture.Profile.Target!.TcUnit!
                         .FinishedSymbol,
             };
         TcUnitRunPreparation preparation =
@@ -117,7 +135,6 @@ public sealed class TcUnitRunExecutorTests
             await Assert.ThrowsAsync<
                 GatewayOperationException>(
                 () => fixture.Executor.ExecuteAsync(
-                    "test-1",
                     "activation-1",
                     preparation,
                     CancellationToken.None));
@@ -149,7 +166,6 @@ public sealed class TcUnitRunExecutorTests
             await Assert.ThrowsAsync<
                 GatewayOperationException>(
                 () => fixture.Executor.ExecuteAsync(
-                    "test-1",
                     "activation-1",
                     preparation,
                     CancellationToken.None));
@@ -179,7 +195,6 @@ public sealed class TcUnitRunExecutorTests
             await Assert.ThrowsAsync<
                 GatewayOperationException>(
                 () => fixture.Executor.ExecuteAsync(
-                    "test-1",
                     "activation-1",
                     preparation,
                     CancellationToken.None));
@@ -213,7 +228,6 @@ public sealed class TcUnitRunExecutorTests
 
         TestResult result =
             await fixture.Executor.ExecuteAsync(
-                "test-1",
                 "activation-1",
                 preparation,
                 CancellationToken.None);
@@ -232,8 +246,7 @@ public sealed class TcUnitRunExecutorTests
         bool expectedOk,
         bool expectedWarning)
     {
-        using ExecutorFixture fixture = new();
-        fixture.Profile.TcUnit!.ZeroTests = policy;
+        using ExecutorFixture fixture = new(policy);
         fixture.Reader.Results.Enqueue(
             () =>
             {
@@ -248,7 +261,6 @@ public sealed class TcUnitRunExecutorTests
 
         TestResult result =
             await fixture.Executor.ExecuteAsync(
-                "test-1",
                 "activation-1",
                 preparation,
                 CancellationToken.None);
@@ -256,8 +268,7 @@ public sealed class TcUnitRunExecutorTests
         Assert.Equal(expectedOk, result.Ok);
         Assert.Equal(
             expectedWarning,
-            fixture.Events.ReadAfter(null, 0, 20)
-                .Events.Any(gatewayEvent =>
+            fixture.Events.Events.Any(gatewayEvent =>
                     gatewayEvent.Type
                         == GatewayEventTypes
                             .TcUnitZeroTests));
@@ -276,6 +287,18 @@ public sealed class TcUnitRunExecutorTests
         };
     }
 
+    private static TcUnitCompletionReadResult Pending(
+        int initializedSuites)
+    {
+        return new TcUnitCompletionReadResult
+        {
+            Finished = false,
+            InitializedSuites = initializedSuites,
+            FailureKind =
+                TcUnitCompletionFailureKind.None,
+        };
+    }
+
     private const string SuccessfulReport =
         """
         <testsuite name="Suite">
@@ -287,9 +310,10 @@ public sealed class TcUnitRunExecutorTests
     private sealed class ExecutorFixture : IDisposable
     {
         private readonly string _directory;
-        private readonly GatewayLoggingSession _logging;
 
-        public ExecutorFixture()
+        public ExecutorFixture(
+            ZeroTestsPolicy zeroTests = ZeroTestsPolicy.Fail,
+            bool baselineFinished = false)
         {
             _directory = Path.Combine(
                 Path.GetTempPath(),
@@ -299,29 +323,41 @@ public sealed class TcUnitRunExecutorTests
             ReportPath = Path.Combine(
                 _directory,
                 "tcunit.xml");
-            Profile = new ProjectProfile
+            ProjectProfile configuredProfile = new()
             {
                 Name = "fixture",
-                Solution =
-                    @"C:\Projects\Machine\Machine.sln",
-                ExpectedTarget = new TargetIdentity
+                Xae = new XaeProfileConfiguration
                 {
-                    AmsNetId =
-                        "192.168.3.31.1.1",
+                    Solution =
+                        @"C:\Projects\Machine\Machine.sln",
                 },
-                TcUnit = new TcUnitProfile
+                Target = new TargetProfileConfiguration
                 {
-                    AdsPort = 851,
-                    ReportPath = ReportPath,
-                    CompletionTimeoutSeconds = 1,
+                    AmsNetId = "192.168.3.31.1.1",
+                    TcUnit = new TcUnitProfile
+                    {
+                        RuntimeId = "plc-851",
+                        AdsPort = 851,
+                        ReportPath = ReportPath,
+                        CompletionTimeoutSeconds = 1,
+                        ZeroTests = zeroTests,
+                    },
                 },
             };
-            Status = new GatewayStatusSnapshotStore(
-                GatewayStatusSnapshotStore
-                    .CreateInitial("0.1.0"));
-            Events = new GatewayEventJournal(Status);
-            Logs = new LocalLogStore(_directory);
+            Profile = new ProfileResolver(
+                new GatewayConfiguration
+                {
+                    Profiles =
+                    {
+                        configuredProfile,
+                    },
+                }).Resolve("fixture");
+            Events = new RecordingEventSink();
             Reader = new FakeCompletionReader();
+            Reader.Results.Enqueue(
+                () => baselineFinished
+                    ? Completed(initializedSuites: 1)
+                    : Pending(initializedSuites: 1));
             Clock = new AdvancingClock(
                 new DateTimeOffset(
                     2026,
@@ -331,11 +367,10 @@ public sealed class TcUnitRunExecutorTests
                     0,
                     0,
                     TimeSpan.Zero));
-            _logging = GatewayLoggingSession.Create(_directory);
             Executor = new TcUnitRunExecutor(
                 Profile,
-                Logs,
-                _logging.CreateLogger<TcUnitRunExecutor>(),
+                WriteReport,
+                NullLogger<TcUnitRunExecutor>.Instance,
                 Events,
                 Reader,
                 Clock);
@@ -343,13 +378,11 @@ public sealed class TcUnitRunExecutorTests
 
         public string ReportPath { get; }
 
-        public ProjectProfile Profile { get; }
+        public ResolvedProfile Profile { get; }
 
-        public GatewayStatusSnapshotStore Status { get; }
+        public RecordingEventSink Events { get; }
 
-        public GatewayEventJournal Events { get; }
-
-        public LocalLogStore Logs { get; }
+        public string ReportContent { get; private set; } = string.Empty;
 
         public FakeCompletionReader Reader { get; }
 
@@ -359,13 +392,39 @@ public sealed class TcUnitRunExecutorTests
 
         public void Dispose()
         {
-            _logging.Dispose();
             if (Directory.Exists(_directory))
             {
                 Directory.Delete(
                     _directory,
-                    recursive: true);
+                recursive: true);
             }
+        }
+
+        private ResourceReference WriteReport(
+            string operationId,
+            string xml)
+        {
+            ReportContent = xml;
+            return new ResourceReference
+            {
+                Uri = $"twincat-operation://{operationId}/test/xunit",
+                MimeType = "application/xml",
+            };
+        }
+    }
+
+    private sealed class RecordingEventSink : IGatewayEventSink
+    {
+        public List<GatewayEvent> Events { get; } = new();
+
+        public long Record(
+            GatewayEvent gatewayEvent,
+            DateTimeOffset occurredAtUtc)
+        {
+            gatewayEvent.Cursor = Events.Count + 1;
+            gatewayEvent.OccurredAtUtc = occurredAtUtc;
+            Events.Add(gatewayEvent);
+            return gatewayEvent.Cursor;
         }
     }
 
@@ -381,7 +440,7 @@ public sealed class TcUnitRunExecutorTests
 
         public TcUnitCompletionReadResult Read(
             string amsNetId,
-            TcUnitProfile profile,
+            ResolvedTcUnitProfile profile,
             TimeSpan timeout)
         {
             Assert.Equal(

@@ -107,7 +107,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 nameof(capabilitySnapshots));
         _tcUnit = new TcUnitRunExecutor(
             _profile,
-            _logs,
+            (operationId, xml) => _logs.WriteText(
+                operationId,
+                ResourceKind.TestReport,
+                xml),
             tcUnitLogger,
             _events);
         _session.DialogObserved += OnDialogObserved;
@@ -664,6 +667,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             _capabilities,
             _profile,
             CapabilityKey.XaeActivate);
+        bool runAfterActivation = parameters.FinalTargetMode
+            == ActivationFinalTargetMode.Run;
         bool sideEffectsStarted = false;
 
         string expectedAmsNetId =
@@ -680,7 +685,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 operationId,
                 "activate",
                 "activation.preflight",
-                parameters.RunAfterActivation);
+                runAfterActivation);
         XaeSessionSnapshot snapshot =
             await dialogScope.ObserveAsync(
                 _session.VerifyAttachedAsync(
@@ -695,6 +700,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
         AdsRuntimeStatusReadResult runtime =
             ReadRuntimeStatus(snapshot);
         RuntimeMode initialRuntimeMode = runtime.Status.Mode;
+        SynchronizeResult synchronizationResult = new()
+        {
+            Ok = true,
+            OperationId = operationId,
+            Scope = SynchronizationScope.None,
+        };
         if (_profile.Xae.Workspace.AutoSynchronizeBeforeOperation)
         {
             _capabilities.EnsureAllowed(
@@ -720,6 +731,18 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 sideEffectsStarted =
                     synchronization.SynchronizedDocuments.Count > 0
                     || synchronization.DiscardedDocuments.Count > 0;
+                synchronizationResult = new SynchronizeResult
+                {
+                    Ok = true,
+                    OperationId = operationId,
+                    Scope = synchronization.Scope,
+                    SynchronizedFileCount =
+                        synchronization.SynchronizedDocuments.Count,
+                    DiscardedDocumentCount =
+                        synchronization.DiscardedDocuments.Count,
+                    DiscardedDocuments =
+                        synchronization.DiscardedDocuments.ToList(),
+                };
             }
             catch (GatewayOperationException exception) when (
                 RequiresSynchronization(exception.Code)
@@ -753,7 +776,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     await _session.ActivateConfigurationAsync(
                         _profile.Xae.Solution,
                         expectedAmsNetId,
-                        parameters.RunAfterActivation,
+                        runAfterActivation,
                         dialogScope,
                         GetRemaining(
                             deadlineUtc,
@@ -823,11 +846,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     operationId,
                     expectedAmsNetId,
                     initialRuntimeMode,
-                    parameters.RunAfterActivation,
+                    runAfterActivation,
                     command.AutostartSelection,
                     command.Dialogs,
                     compile,
-                    ActivationCompletion.Unknown,
+                    parameters.FinalTargetMode,
                     activeConfigurationVerified: false,
                     runtime,
                     failedDurationMs));
@@ -843,14 +866,18 @@ internal sealed class XaeSessionCoordinator : IDisposable
                     Name = _profile.Target?.Name,
                     AmsNetId = expectedAmsNetId,
                 },
-                RunAfterActivation =
-                    parameters.RunAfterActivation,
-                Completion = ActivationCompletion.Unknown,
-                ActiveConfigurationVerified = false,
-                ObservedRuntimeMode = runtime.Status.Mode,
-                AutostartBootProjects =
-                    command.AutostartSelection,
-                Compile = compile,
+                Sync = CreateSucceededSyncStage(
+                    operationId,
+                    synchronizationResult),
+                Compile = CreateCompileStage(
+                    operationId,
+                    compile,
+                    OperationCompletion.Failed),
+                Deploy = CreateSkippedDeployStage(operationId),
+                TargetTransition = CreateSkippedTargetTransitionStage(
+                    operationId,
+                    parameters.FinalTargetMode),
+                Verification = CreateSkippedVerificationStage(operationId),
                 Resources =
                 {
                     failedLog,
@@ -880,18 +907,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
 
         dialogScope.SetStage("activation.verify");
-        if (parameters.RunAfterActivation)
+        TargetSystemObservation? targetObservation = null;
+        if (runAfterActivation)
         {
-            runtime = await dialogScope.ObserveAsync(
-                WaitForRuntimeModeAsync(
-                    expectedAmsNetId,
-                    RuntimeMode.Run,
-                    deadlineUtc,
-                    ErrorCodes.TwinCatRestartFailed,
-                    "TwinCAT did not reach Run after activation.",
-                    "activation.verify",
-                    cancellationToken,
-                    failOnException: true)).ConfigureAwait(false);
+            targetObservation = await WaitForDirectTargetRunAsync(
+                deadlineUtc,
+                cancellationToken).ConfigureAwait(false);
+            runtime = ReadRuntimeStatus(snapshot);
         }
         else
         {
@@ -909,12 +931,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
             snapshot,
             "activation.verify");
         PublishConnected(snapshot);
-        ActivationCompletion completion;
-        bool activeConfigurationVerified;
-        if (parameters.RunAfterActivation)
+        bool physicalActivationVerified;
+        if (runAfterActivation)
         {
-            completion = ActivationCompletion.AppliedAndRunning;
-            activeConfigurationVerified = true;
+            physicalActivationVerified = true;
             RecordActivationEvent(
                 operationId,
                 GatewayEventTypes.ActivationConfigurationActivated,
@@ -924,8 +944,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         }
         else
         {
-            completion = ActivationCompletion.RestartSkipped;
-            activeConfigurationVerified = false;
+            physicalActivationVerified = false;
             RecordActivationEvent(
                 operationId,
                 GatewayEventTypes.ActivationRestartSkipped,
@@ -939,7 +958,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             operationId,
             GatewayEventTypes.ActivationRuntimeReady,
             "activation.verify",
-            parameters.RunAfterActivation
+            runAfterActivation
                 ? "TwinCAT runtime reached Run."
                 : "TwinCAT runtime state was observed without treating "
                     + "it as proof that the new configuration is active.",
@@ -956,12 +975,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 operationId,
                 expectedAmsNetId,
                 initialRuntimeMode,
-                parameters.RunAfterActivation,
+                runAfterActivation,
                 command.AutostartSelection,
                 command.Dialogs,
                 compile,
-                completion,
-                activeConfigurationVerified,
+                parameters.FinalTargetMode,
+                physicalActivationVerified,
                 runtime,
                 durationMs));
         ActivationResult result = new()
@@ -976,15 +995,22 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 Name = _profile.Target?.Name,
                 AmsNetId = expectedAmsNetId,
             },
-            RunAfterActivation =
-                parameters.RunAfterActivation,
-            Completion = completion,
-            ActiveConfigurationVerified =
-                activeConfigurationVerified,
-            ObservedRuntimeMode = runtime.Status.Mode,
-            AutostartBootProjects =
+            Sync = CreateSucceededSyncStage(
+                operationId,
+                synchronizationResult),
+            Compile = CreateCompileStage(
+                operationId,
+                compile,
+                OperationCompletion.Succeeded),
+            Deploy = CreateDeployStage(
+                operationId,
                 command.AutostartSelection,
-            Compile = compile,
+                physicalActivationVerified),
+            TargetTransition = CreateTargetTransitionStage(
+                operationId,
+                parameters.FinalTargetMode,
+                targetObservation),
+            Verification = CreateSkippedVerificationStage(operationId),
             Resources =
             {
                 log,
@@ -1001,8 +1027,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 ["profile"] = _profile.Name,
                 ["solution"] = _profile.Xae.Solution,
                 ["amsNetId"] = expectedAmsNetId,
-                ["runAfterActivation"] =
-                    parameters.RunAfterActivation.ToString(),
+                ["finalTargetMode"] =
+                    parameters.FinalTargetMode.ToString(),
                 ["autostartBootProjects"] =
                     command.AutostartSelection.ToString(),
                 ["durationMs"] = durationMs.ToString(
@@ -1242,7 +1268,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
     public async Task<TestResult> ExecuteTcUnitAsync(
         string operationId,
-        string activationOperationId,
         TcUnitRunPreparation preparation,
         CancellationToken cancellationToken)
     {
@@ -1262,7 +1287,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             "tcunit.execute.preSideEffect");
         return await _tcUnit.ExecuteAsync(
             operationId,
-            activationOperationId,
             preparation,
             cancellationToken).ConfigureAwait(false);
     }
@@ -2588,7 +2612,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             FormatBuildOutput(execution.Output));
         return new ActivationCompileResult
         {
-            Completed = true,
             Ok = execution.FailedProjects == 0
                 && errors == 0,
             DurationMs = execution.DurationMs,
@@ -2608,6 +2631,186 @@ internal sealed class XaeSessionCoordinator : IDisposable
         };
     }
 
+    private static OperationStageResult<SynchronizeResult>
+        CreateSucceededSyncStage(
+            string operationId,
+            SynchronizeResult result)
+    {
+        return new OperationStageResult<SynchronizeResult>
+        {
+            OperationId = operationId,
+            Component = GatewayComponent.Xae,
+            Stage = "activation.sync",
+            Completion = OperationCompletion.Succeeded,
+            SideEffectsStarted =
+                result.SynchronizedFileCount > 0
+                || result.DiscardedDocumentCount > 0,
+            Result = result,
+        };
+    }
+
+    private static OperationStageResult<ActivationCompileResult>
+        CreateCompileStage(
+            string operationId,
+            ActivationCompileResult result,
+            OperationCompletion completion)
+    {
+        OperationStageResult<ActivationCompileResult> stage = new()
+        {
+            OperationId = operationId,
+            Component = GatewayComponent.Xae,
+            Stage = "activation.compile",
+            Completion = completion,
+            SideEffectsStarted = true,
+            Result = result,
+        };
+        if (completion == OperationCompletion.Failed)
+        {
+            stage.Error = new GatewayError
+            {
+                Code = ErrorCodes.ActivationCompileFailed,
+                Message = "XAE activation compilation completed with errors.",
+                OperationId = operationId,
+                Component = GatewayComponent.Xae,
+                Stage = stage.Stage,
+                SideEffectsStarted = true,
+                RawLogRef = result.Log?.Uri,
+            };
+        }
+        if (result.Log is not null)
+        {
+            stage.Resources.Add(result.Log);
+        }
+        return stage;
+    }
+
+    private static OperationStageResult<ActivationDeployResult>
+        CreateDeployStage(
+            string operationId,
+            AutostartBootProjectSelection autostartSelection,
+            bool physicalActivationVerified)
+    {
+        return new OperationStageResult<ActivationDeployResult>
+        {
+            OperationId = operationId,
+            Component = GatewayComponent.Xae,
+            Stage = "activation.deploy",
+            Completion = OperationCompletion.Succeeded,
+            SideEffectsStarted = true,
+            Result = new ActivationDeployResult
+            {
+                ConfigurationStored = true,
+                PhysicalActivationVerified = physicalActivationVerified,
+                AutostartBootProjects = autostartSelection,
+            },
+        };
+    }
+
+    private static OperationStageResult<ActivationDeployResult>
+        CreateSkippedDeployStage(string operationId)
+    {
+        return new OperationStageResult<ActivationDeployResult>
+        {
+            OperationId = operationId,
+            Component = GatewayComponent.Xae,
+            Stage = "activation.deploy",
+            Completion = OperationCompletion.Skipped,
+            SideEffectsStarted = false,
+        };
+    }
+
+    private static OperationStageResult<ActivationTargetTransitionResult>
+        CreateTargetTransitionStage(
+            string operationId,
+            ActivationFinalTargetMode requestedMode,
+            TargetSystemObservation? observation)
+    {
+        return new OperationStageResult<ActivationTargetTransitionResult>
+        {
+            OperationId = operationId,
+            Component = GatewayComponent.Target,
+            Stage = "activation.targetTransition",
+            Completion = requestedMode == ActivationFinalTargetMode.Run
+                ? OperationCompletion.Succeeded
+                : OperationCompletion.Skipped,
+            SideEffectsStarted =
+                requestedMode == ActivationFinalTargetMode.Run,
+            Result = new ActivationTargetTransitionResult
+            {
+                RequestedMode = requestedMode,
+                Observation = observation,
+            },
+        };
+    }
+
+    private static OperationStageResult<ActivationTargetTransitionResult>
+        CreateSkippedTargetTransitionStage(
+            string operationId,
+            ActivationFinalTargetMode requestedMode)
+    {
+        return new OperationStageResult<ActivationTargetTransitionResult>
+        {
+            OperationId = operationId,
+            Component = GatewayComponent.Target,
+            Stage = "activation.targetTransition",
+            Completion = OperationCompletion.Skipped,
+            SideEffectsStarted = false,
+            Result = new ActivationTargetTransitionResult
+            {
+                RequestedMode = requestedMode,
+            },
+        };
+    }
+
+    private static OperationStageResult<TestResult>
+        CreateSkippedVerificationStage(string operationId)
+    {
+        return new OperationStageResult<TestResult>
+        {
+            OperationId = operationId,
+            Component = GatewayComponent.Verification,
+            Stage = "activation.verification",
+            Completion = OperationCompletion.Skipped,
+            SideEffectsStarted = false,
+        };
+    }
+
+    private async Task<TargetSystemObservation>
+        WaitForDirectTargetRunAsync(
+            DateTimeOffset deadlineUtc,
+            CancellationToken cancellationToken)
+    {
+        while (DateTimeOffset.UtcNow < deadlineUtc)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            TimeSpan remaining = deadlineUtc - DateTimeOffset.UtcNow;
+            TimeSpan readTimeout = remaining < TimeSpan.FromSeconds(3)
+                ? remaining
+                : TimeSpan.FromSeconds(3);
+            TargetSystemObservation observation =
+                await ReadDirectTargetObservationAsync(
+                    readTimeout,
+                    cancellationToken).ConfigureAwait(false);
+            if (observation.Freshness == ObservationFreshness.Fresh
+                && observation.Error is null
+                && observation.State == TargetSystemState.Run)
+            {
+                return observation;
+            }
+            await Task.Delay(
+                TimeSpan.FromMilliseconds(250),
+                cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new GatewayOperationException(
+            ErrorCodes.TargetTransitionFailed,
+            "Target did not reach a freshly observed Run state after activation.",
+            retryable: true,
+            stage: "activation.targetTransition",
+            component: GatewayComponent.Target,
+            sideEffectsStarted: true);
+    }
+
     private string FormatActivationLog(
         string operationId,
         string amsNetId,
@@ -2616,7 +2819,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         AutostartBootProjectSelection autostartSelection,
         IReadOnlyList<XaeDialogObservation> dialogs,
         ActivationCompileResult compile,
-        ActivationCompletion completion,
+        ActivationFinalTargetMode finalTargetMode,
         bool activeConfigurationVerified,
         AdsRuntimeStatusReadResult runtime,
         long durationMs)
@@ -2637,8 +2840,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             $"RunAfterActivation: {runAfterActivation}");
         builder.AppendLine(
             $"AutostartBootProjects: {autostartSelection}");
-        builder.AppendLine(
-            $"CompileCompleted: {compile.Completed}");
         builder.AppendLine($"CompileOk: {compile.Ok}");
         builder.AppendLine(
             $"CompileFailedProjects: {compile.FailedProjects}");
@@ -2646,7 +2847,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             $"CompileErrors: {compile.Counts.Errors}");
         builder.AppendLine(
             $"CompileWarnings: {compile.Counts.Warnings}");
-        builder.AppendLine($"Completion: {completion}");
+        builder.AppendLine($"FinalTargetMode: {finalTargetMode}");
         builder.AppendLine(
             $"ActiveConfigurationVerified: "
                 + $"{activeConfigurationVerified}");

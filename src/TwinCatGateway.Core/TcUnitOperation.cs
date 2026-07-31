@@ -7,7 +7,7 @@ namespace TwinCatGateway.Core;
 
 public sealed class TcUnitRunPreparation
 {
-    public string ActivationOperationId { get; set; } =
+    public string RootOperationId { get; set; } =
         string.Empty;
 
     public string ExpectedAmsNetId { get; set; } =
@@ -17,14 +17,29 @@ public sealed class TcUnitRunPreparation
 
     public TcUnitReportBaseline ReportBaseline { get; set; } =
         new();
+
+    public TcUnitCompletionBaseline CompletionBaseline { get; set; } =
+        new();
+}
+
+public sealed class TcUnitCompletionBaseline
+{
+    public bool Finished { get; set; }
+
+    public int InitializedSuites { get; set; }
+
+    public DateTimeOffset ReadAtUtc { get; set; }
 }
 
 public delegate TcUnitRunPreparation
     TcUnitPreparationExecutor(
-        string activationOperationId);
+        string rootOperationId);
 
 public delegate Task<TestResult> TcUnitOperationExecutor(
     string operationId,
-    string activationOperationId,
     TcUnitRunPreparation preparation,
     CancellationToken cancellationToken);
+
+public delegate ResourceReference TcUnitReportResourceWriter(
+    string operationId,
+    string xml);

@@ -1,0 +1,52 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <PlatformTarget>x86</PlatformTarget>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <Description>Tracked architecture-v2 checkpoint for activation and TcUnit verification.</Description>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\src\TwinCatGateway.Contracts\TwinCatGateway.Contracts.csproj" />
+    <ProjectReference Include="..\..\..\src\TwinCatGateway.Ads\TwinCatGateway.Ads.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="8.0.2" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\Clock.cs"
+             Link="Production\Clock.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\ConfigurationIssue.cs"
+             Link="Production\ConfigurationIssue.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\ConfigurationValidationResult.cs"
+             Link="Production\ConfigurationValidationResult.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\GatewayOperationException.cs"
+             Link="Production\GatewayOperationException.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\GatewayConfigurationValidator.cs"
+             Link="Production\GatewayConfigurationValidator.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\IGatewayEventSink.cs"
+             Link="Production\IGatewayEventSink.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\ProfileResolver.cs"
+             Link="Production\ProfileResolver.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\TcUnitOperation.cs"
+             Link="Production\TcUnitOperation.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\TcUnitReportFile.cs"
+             Link="Production\TcUnitReportFile.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Core\TcUnitReportParser.cs"
+             Link="Production\TcUnitReportParser.cs" />
+    <Compile Include="..\..\..\src\TwinCatGateway.Desktop\TcUnitRunExecutor.cs"
+             Link="Production\TcUnitRunExecutor.cs" />
+    <Compile Include="..\..\TwinCatGateway.IntegrationTests\TcUnitRunExecutorTests.cs"
+             Link="Tests\TcUnitRunExecutorTests.cs" />
+  </ItemGroup>
+</Project>

@@ -322,6 +322,14 @@ public sealed class TargetOperationService
             Action = action,
             Before = before,
             After = after,
+            Verification = new OperationStageResult<TestResult>
+            {
+                OperationId = operationId,
+                Component = GatewayComponent.Verification,
+                Stage = "target.startRestart.verification",
+                Completion = OperationCompletion.Skipped,
+                SideEffectsStarted = false,
+            },
         };
     }
 

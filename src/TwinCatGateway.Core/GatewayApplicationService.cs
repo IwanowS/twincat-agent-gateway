@@ -385,26 +385,28 @@ public sealed class GatewayApplicationService
                 stage: "activation.validate");
         }
 
-        bool waitForTcUnit = parameters.WaitForTcUnit ?? false;
-        if (waitForTcUnit
-            && !parameters.RunAfterActivation)
+        bool verifyWithTcUnit =
+            parameters.Verification == VerificationMode.TcUnit;
+        if (verifyWithTcUnit
+            && parameters.FinalTargetMode
+                != ActivationFinalTargetMode.Run)
         {
             throw new GatewayOperationException(
                 ErrorCodes.RequestInvalid,
-                "TcUnit waiting requires runAfterActivation=true.",
+                "TcUnit verification requires finalTargetMode=run.",
                 stage: "activation.validate");
         }
 
-        if (waitForTcUnit
+        if (verifyWithTcUnit
             && profile.Target?.TcUnit is null)
         {
             throw new GatewayOperationException(
                 ErrorCodes.ProfileInvalid,
-                "TcUnit waiting is enabled but no TcUnit profile is configured.",
+                "TcUnit verification is requested but no TcUnit profile is configured.",
                 stage: "activation.validate");
         }
 
-        if (waitForTcUnit
+        if (verifyWithTcUnit
             && (_tcUnitPreparationExecutor is null
                 || _tcUnitExecutor is null))
         {
@@ -416,7 +418,7 @@ public sealed class GatewayApplicationService
         }
 
         OperationCapabilityGuard? verificationGuard = null;
-        if (waitForTcUnit)
+        if (verifyWithTcUnit)
         {
             preflight.EnsureAllowed(
                 profile.Name,
@@ -431,8 +433,13 @@ public sealed class GatewayApplicationService
 
         ActivateParameters captured =
             CloneActivateParameters(parameters);
-        TimeSpan timeout = TimeSpan.FromSeconds(
-            captured.TimeoutSeconds ?? 120);
+        int timeoutSeconds = captured.TimeoutSeconds ?? 120;
+        if (verifyWithTcUnit)
+        {
+            timeoutSeconds +=
+                profile.Target!.TcUnit!.CompletionTimeoutSeconds + 5;
+        }
+        TimeSpan timeout = TimeSpan.FromSeconds(timeoutSeconds);
         return _queue.Enqueue(
             OperationKind.Activate,
             (operationId, cancellationToken) =>
@@ -518,9 +525,43 @@ public sealed class GatewayApplicationService
             RequireCapabilities("target.startRestart.admission"),
             profile,
             CapabilityKey.TargetStartRestart);
+        bool verifyWithTcUnit =
+            parameters.Verification == VerificationMode.TcUnit;
+        OperationCapabilityGuard? verificationGuard = null;
+        if (verifyWithTcUnit)
+        {
+            if (profile.Target?.TcUnit is null)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.ProfileInvalid,
+                    "TcUnit verification is requested but no TcUnit profile is configured.",
+                    stage: "target.startRestart.validate");
+            }
+            if (_tcUnitPreparationExecutor is null
+                || _tcUnitExecutor is null)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.GatewayNotReady,
+                    "The linked TcUnit executor is unavailable.",
+                    retryable: true,
+                    stage: "target.startRestart.verification");
+            }
+            RequirePreflight(
+                "target.startRestart.verification.admission").EnsureAllowed(
+                    profile.Name,
+                    CapabilityKey.TargetTcUnitVerification,
+                    "target.startRestart.verification.admission",
+                    requireTarget: true);
+            verificationGuard = new OperationCapabilityGuard(
+                RequireCapabilities(
+                    "target.startRestart.verification.admission"),
+                profile,
+                CapabilityKey.TargetTcUnitVerification);
+        }
         TargetStartRestartParameters captured = new()
         {
             Profile = parameters.Profile,
+            Verification = parameters.Verification,
         };
         return _queue.Enqueue(
             OperationKind.TargetStartRestart,
@@ -529,8 +570,12 @@ public sealed class GatewayApplicationService
                     operationId,
                     captured,
                     capabilityGuard,
+                    verificationGuard,
                     cancellationToken),
-            TimeSpan.FromSeconds(120));
+            TimeSpan.FromSeconds(
+                120 + (verifyWithTcUnit
+                    ? profile.Target!.TcUnit!.CompletionTimeoutSeconds + 5
+                    : 0)));
     }
 
     public OperationAccepted StartSynchronization(
@@ -1101,9 +1146,10 @@ public sealed class GatewayApplicationService
         {
             activationGuard.EnsureAllowed(
                 "activation.preSideEffect");
-            bool waitForTcUnit = parameters.WaitForTcUnit ?? false;
+            bool verifyWithTcUnit =
+                parameters.Verification == VerificationMode.TcUnit;
             TcUnitRunPreparation? preparation =
-                waitForTcUnit
+                verifyWithTcUnit
                     ? _tcUnitPreparationExecutor!(
                         operationId)
                     : null;
@@ -1116,23 +1162,15 @@ public sealed class GatewayApplicationService
             if (result.Ok
                 && preparation is not null)
             {
-                int timeoutSeconds =
-                    _activeProfile!.Target!.TcUnit!
-                        .CompletionTimeoutSeconds;
-                OperationAccepted test =
-                    _queue.Enqueue(
-                        OperationKind.Test,
-                        (testOperationId, testCancellation) =>
-                            ExecuteTcUnitAsync(
-                                testOperationId,
-                                operationId,
-                                preparation,
-                                verificationGuard!,
-                                testCancellation),
-                        TimeSpan.FromSeconds(
-                            timeoutSeconds + 5d));
-                result.TestOperationId =
-                    test.OperationId;
+                result.Verification =
+                    await ExecuteTcUnitStageAsync(
+                        operationId,
+                        "activation.verification",
+                        preparation,
+                        verificationGuard!,
+                        cancellationToken).ConfigureAwait(false);
+                result.Ok = result.Verification.Completion
+                    == OperationCompletion.Succeeded;
             }
 
             _status.Update(status =>
@@ -1154,27 +1192,7 @@ public sealed class GatewayApplicationService
             }
 
             return OperationExecutionResult.Failure(
-                new GatewayError
-                {
-                    Code = result.Compile?.Completed == true
-                        && !result.Compile.Ok
-                            ? ErrorCodes.BuildFailed
-                            : ErrorCodes.ActivateConfigurationFailed,
-                    Message = result.Compile?.Completed == true
-                        && !result.Compile.Ok
-                            ? "XAE activation stopped because its internal "
-                                + "build completed with errors."
-                            : "TwinCAT activation did not satisfy its "
-                                + "postconditions.",
-                    Stage = result.Compile?.Completed == true
-                        && !result.Compile.Ok
-                            ? "activation.compile"
-                            : "activation.verify",
-                    RawLogRef = result.Compile?.Completed == true
-                        && !result.Compile.Ok
-                            ? result.Compile.Log?.Uri
-                            : null,
-                },
+                GetActivationFailure(result),
                 result,
                 result.Resources);
         }
@@ -1214,54 +1232,72 @@ public sealed class GatewayApplicationService
             string operationId,
             TargetStartRestartParameters parameters,
             OperationCapabilityGuard capabilityGuard,
+            OperationCapabilityGuard? verificationGuard,
             CancellationToken cancellationToken)
     {
         capabilityGuard.EnsureAllowed(
             "target.startRestart.preSideEffect",
             sideEffectsStarted: false);
+        TcUnitRunPreparation? preparation =
+            parameters.Verification == VerificationMode.TcUnit
+                ? _tcUnitPreparationExecutor!(operationId)
+                : null;
         TargetStartRestartResult result =
             await _targetStartRestartExecutor!(
                 operationId,
                 parameters,
                 cancellationToken).ConfigureAwait(false);
         result.OperationId = operationId;
-        return OperationExecutionResult.Success(result);
+        if (preparation is null)
+        {
+            result.Verification = CreateSkippedVerificationStage(
+                operationId,
+                "target.startRestart.verification");
+            return OperationExecutionResult.Success(result);
+        }
+
+        result.Verification = await ExecuteTcUnitStageAsync(
+            operationId,
+            "target.startRestart.verification",
+            preparation,
+            verificationGuard!,
+            cancellationToken).ConfigureAwait(false);
+        result.Ok = result.Verification.Completion
+            == OperationCompletion.Succeeded;
+        if (result.Ok)
+        {
+            return OperationExecutionResult.Success(
+                result,
+                result.Verification.Resources);
+        }
+
+        return OperationExecutionResult.Failure(
+            result.Verification.Error
+                ?? CreateTestFailedError(
+                    operationId,
+                    "target.startRestart.verification",
+                    result.Verification.Result),
+            result,
+            result.Verification.Resources);
     }
 
-    private async Task<OperationExecutionResult>
-        ExecuteTcUnitAsync(
+    private async Task<OperationStageResult<TestResult>>
+        ExecuteTcUnitStageAsync(
             string operationId,
-            string activationOperationId,
+            string stage,
             TcUnitRunPreparation preparation,
             OperationCapabilityGuard verificationGuard,
             CancellationToken cancellationToken)
     {
-        DateTimeOffset startedAtUtc = _clock.UtcNow;
-        _status.Update(status =>
-        {
-            status.Gateway.State = GatewayState.Testing;
-            status.CurrentOperation = new OperationSummary
-            {
-                OperationId = operationId,
-                Kind = OperationKind.Test,
-                State = OperationState.Running,
-                QueuedAtUtc = startedAtUtc,
-                StartedAtUtc = startedAtUtc,
-            };
-            return status;
-        });
         try
         {
             verificationGuard.EnsureAllowed(
-                "tcunit.preSideEffect");
+                stage + ".preflight");
             TestResult result = await _tcUnitExecutor!(
                 operationId,
-                activationOperationId,
                 preparation,
                 cancellationToken).ConfigureAwait(false);
             result.OperationId = operationId;
-            result.ActivationOperationId =
-                activationOperationId;
             _status.Update(status =>
             {
                 status.LastTest = new TestSummary
@@ -1281,35 +1317,43 @@ public sealed class GatewayApplicationService
                     {
                         result.Report,
                     };
-            if (result.Ok)
+            OperationStageResult<TestResult> stageResult = new()
             {
-                return OperationExecutionResult.Success(
-                    result,
-                    resources);
+                OperationId = operationId,
+                Component = GatewayComponent.Verification,
+                Stage = stage,
+                Completion = result.Ok
+                    ? OperationCompletion.Succeeded
+                    : OperationCompletion.Failed,
+                SideEffectsStarted = true,
+                Result = result,
+                Resources = resources.ToList(),
+            };
+            if (!result.Ok)
+            {
+                stageResult.Error = CreateTestFailedError(
+                    operationId,
+                    stage,
+                    result);
             }
-
-            return OperationExecutionResult.Failure(
-                new GatewayError
-                {
-                    Code = ErrorCodes.TestFailed,
-                    Message =
-                        "TcUnit completed with failed tests.",
-                    Stage = "tcunit.verify",
-                    RawLogRef = result.Report?.Uri,
-                },
-                result,
-                resources);
+            return stageResult;
         }
-        finally
+        catch (GatewayOperationException exception)
         {
-            _status.Update(status =>
+            return new OperationStageResult<TestResult>
             {
-                status.CurrentOperation = null;
-                status.Gateway.State = status.Xae.Connected
-                    ? GatewayState.Ready
-                    : GatewayState.Disconnected;
-                return status;
-            });
+                OperationId = operationId,
+                Component = GatewayComponent.Verification,
+                Stage = exception.Stage ?? stage,
+                Completion = OperationCompletion.Failed,
+                SideEffectsStarted =
+                    exception.SideEffectsStarted ?? true,
+                Error = ToGatewayError(
+                    operationId,
+                    exception,
+                    GatewayComponent.Verification,
+                    stage),
+            };
         }
     }
 
@@ -1377,9 +1421,84 @@ public sealed class GatewayApplicationService
         return new ActivateParameters
         {
             Profile = source.Profile,
-            RunAfterActivation = source.RunAfterActivation,
-            WaitForTcUnit = source.WaitForTcUnit,
+            FinalTargetMode = source.FinalTargetMode,
+            Verification = source.Verification,
+            ChangedPaths = source.ChangedPaths?.ToList()
+                ?? new List<string>(),
             TimeoutSeconds = source.TimeoutSeconds,
+        };
+    }
+
+    private static OperationStageResult<TestResult>
+        CreateSkippedVerificationStage(
+            string operationId,
+            string stage)
+    {
+        return new OperationStageResult<TestResult>
+        {
+            OperationId = operationId,
+            Component = GatewayComponent.Verification,
+            Stage = stage,
+            Completion = OperationCompletion.Skipped,
+            SideEffectsStarted = false,
+        };
+    }
+
+    private static GatewayError GetActivationFailure(
+        ActivationResult result)
+    {
+        return result.Sync.Error
+            ?? result.Compile.Error
+            ?? result.Deploy.Error
+            ?? result.TargetTransition.Error
+            ?? result.Verification.Error
+            ?? new GatewayError
+            {
+                Code = ErrorCodes.ActivateConfigurationFailed,
+                Message = "TwinCAT activation did not satisfy its postconditions.",
+                OperationId = result.OperationId,
+                Component = GatewayComponent.Xae,
+                Stage = "activation.complete",
+                SideEffectsStarted = result.Deploy.SideEffectsStarted,
+            };
+    }
+
+    private static GatewayError CreateTestFailedError(
+        string operationId,
+        string stage,
+        TestResult? result)
+    {
+        return new GatewayError
+        {
+            Code = ErrorCodes.TestFailed,
+            Message = "TcUnit completed with failed tests.",
+            OperationId = operationId,
+            Component = GatewayComponent.Verification,
+            Stage = stage,
+            SideEffectsStarted = true,
+            RawLogRef = result?.Report?.Uri,
+        };
+    }
+
+    private static GatewayError ToGatewayError(
+        string operationId,
+        GatewayOperationException exception,
+        GatewayComponent fallbackComponent,
+        string fallbackStage)
+    {
+        return new GatewayError
+        {
+            Code = exception.Code,
+            Message = exception.Message,
+            Details = exception.Details,
+            Retryable = exception.Retryable,
+            OperationId = operationId,
+            Stage = exception.Stage ?? fallbackStage,
+            RawLogRef = exception.RawLogRef,
+            Component = exception.Component ?? fallbackComponent,
+            SideEffectsStarted = exception.SideEffectsStarted,
+            Expected = exception.Expected,
+            Observed = exception.Observed,
         };
     }
 

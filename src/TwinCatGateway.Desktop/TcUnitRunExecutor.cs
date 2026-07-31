@@ -31,12 +31,27 @@ internal interface ITcUnitExecutionClock
 
 internal sealed class TcUnitRunExecutor
 {
+    private static readonly Action<ILogger, string, Exception?> LogInformation =
+        LoggerMessage.Define<string>(
+            LogLevel.Information,
+            new EventId(1, "tcunit"),
+            "{Message}");
+    private static readonly Action<ILogger, string, Exception?> LogWarning =
+        LoggerMessage.Define<string>(
+            LogLevel.Warning,
+            new EventId(2, "tcunit.warning"),
+            "{Message}");
+    private static readonly Action<ILogger, string, Exception?> LogError =
+        LoggerMessage.Define<string>(
+            LogLevel.Error,
+            new EventId(3, "tcunit.error"),
+            "{Message}");
     private static readonly TimeSpan PollInterval =
         TimeSpan.FromMilliseconds(250);
     private static readonly TimeSpan MaximumAdsReadTimeout =
         TimeSpan.FromSeconds(3);
     private readonly ResolvedProfile _profile;
-    private readonly LocalLogStore _logs;
+    private readonly TcUnitReportResourceWriter _writeReport;
     private readonly ILogger<TcUnitRunExecutor> _logger;
     private readonly IGatewayEventSink _events;
     private readonly ITcUnitCompletionEvidenceReader
@@ -45,7 +60,7 @@ internal sealed class TcUnitRunExecutor
 
     public TcUnitRunExecutor(
         ResolvedProfile profile,
-        LocalLogStore logs,
+        TcUnitReportResourceWriter writeReport,
         ILogger<TcUnitRunExecutor> logger,
         IGatewayEventSink events,
         ITcUnitCompletionEvidenceReader?
@@ -55,9 +70,9 @@ internal sealed class TcUnitRunExecutor
         _profile = profile
             ?? throw new ArgumentNullException(
                 nameof(profile));
-        _logs = logs
+        _writeReport = writeReport
             ?? throw new ArgumentNullException(
-                nameof(logs));
+                nameof(writeReport));
         _logger = logger
             ?? throw new ArgumentNullException(
                 nameof(logger));
@@ -71,57 +86,65 @@ internal sealed class TcUnitRunExecutor
     }
 
     public TcUnitRunPreparation Prepare(
-        string activationOperationId)
+        string rootOperationId)
     {
         if (string.IsNullOrWhiteSpace(
-            activationOperationId))
+            rootOperationId))
         {
             throw new ArgumentException(
-                "Activation operation ID is required.",
-                nameof(activationOperationId));
+                "Root operation ID is required.",
+                nameof(rootOperationId));
         }
 
         ResolvedTcUnitProfile tcUnit = GetTcUnitProfile();
         string amsNetId = GetExpectedAmsNetId();
+        TcUnitCompletionReadResult completion =
+            _completionReader.Read(
+                amsNetId,
+                tcUnit,
+                MaximumAdsReadTimeout);
+        EnsureReadableCompletionBaseline(completion);
         TcUnitReportBaseline baseline =
             TcUnitReportFile.CaptureBaseline(
                 tcUnit.ReportPath,
                 tcUnit.AllowDeleteExistingReport);
         TcUnitRunPreparation preparation = new()
         {
-            ActivationOperationId =
-                activationOperationId,
+            RootOperationId = rootOperationId,
             ExpectedAmsNetId = amsNetId,
             PreparedAtUtc = _clock.UtcNow,
             ReportBaseline = baseline,
-        };
-        _logger.Write(
-            LogLevel.Information,
-            "tcunit.prepared",
-            "TcUnit report baseline captured.",
-            activationOperationId,
-            new Dictionary<string, string>
+            CompletionBaseline = new TcUnitCompletionBaseline
             {
-                ["profile"] = _profile.Name,
-                ["amsNetId"] = amsNetId,
-                ["reportPath"] = baseline.Path,
-                ["baselineExists"] =
-                    baseline.Exists.ToString(),
-                ["baselineDeleted"] =
-                    baseline.ExistingReportDeleted
-                        .ToString(),
-            });
+                Finished = completion.Finished!.Value,
+                InitializedSuites =
+                    completion.InitializedSuites!.Value,
+                ReadAtUtc = completion.ReadAtUtc,
+            },
+        };
+        LogInformation(
+            _logger,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "TcUnit baseline captured for {0}, profile {1}, target {2}, "
+                    + "report {3}; completion={4}, suites={5}.",
+                rootOperationId,
+                _profile.Name,
+                amsNetId,
+                baseline.Path,
+                completion.Finished.Value,
+                completion.InitializedSuites.Value),
+            null);
         return preparation;
     }
 
     public async Task<TestResult> ExecuteAsync(
         string operationId,
-        string activationOperationId,
         TcUnitRunPreparation preparation,
         CancellationToken cancellationToken)
     {
         ValidatePreparation(
-            activationOperationId,
+            operationId,
             preparation);
         ResolvedTcUnitProfile tcUnit = GetTcUnitProfile();
         DateTimeOffset startedAtUtc = _clock.UtcNow;
@@ -131,14 +154,13 @@ internal sealed class TcUnitRunExecutor
         TcUnitCompletionReadResult completion =
             await WaitForCompletionAsync(
                 operationId,
-                activationOperationId,
                 preparation.ExpectedAmsNetId,
                 tcUnit,
+                preparation.CompletionBaseline,
                 deadlineUtc,
                 cancellationToken).ConfigureAwait(false);
         RecordEvent(
             operationId,
-            activationOperationId,
             GatewayEventTypes.TcUnitCompletionObserved,
             DiagnosticSeverity.Info,
             "tcunit.adsCompletion",
@@ -161,9 +183,8 @@ internal sealed class TcUnitRunExecutor
                 deadlineUtc,
                 cancellationToken).ConfigureAwait(false);
         ResourceReference reportResource =
-            _logs.WriteText(
+            _writeReport(
                 operationId,
-                ResourceKind.TestReport,
                 report.Xml);
         bool zeroTests =
             report.Parsed.Counts.Tests == 0;
@@ -177,7 +198,6 @@ internal sealed class TcUnitRunExecutor
         {
             RecordEvent(
                 operationId,
-                activationOperationId,
                 GatewayEventTypes.TcUnitZeroTests,
                 DiagnosticSeverity.Warning,
                 "tcunit.verify",
@@ -186,7 +206,6 @@ internal sealed class TcUnitRunExecutor
 
         RecordEvent(
             operationId,
-            activationOperationId,
             GatewayEventTypes.TcUnitReportProduced,
             DiagnosticSeverity.Info,
             "tcunit.report",
@@ -205,8 +224,6 @@ internal sealed class TcUnitRunExecutor
         {
             Ok = ok,
             OperationId = operationId,
-            ActivationOperationId =
-                activationOperationId,
             DurationMs = Math.Max(
                 0,
                 (long)(_clock.UtcNow - startedAtUtc)
@@ -225,13 +242,14 @@ internal sealed class TcUnitRunExecutor
     private async Task<TcUnitCompletionReadResult>
         WaitForCompletionAsync(
             string operationId,
-            string activationOperationId,
             string amsNetId,
             ResolvedTcUnitProfile tcUnit,
+            TcUnitCompletionBaseline baseline,
             DateTimeOffset deadlineUtc,
             CancellationToken cancellationToken)
     {
         TcUnitCompletionReadResult? last = null;
+        bool resetObserved = !baseline.Finished;
         while (_clock.UtcNow < deadlineUtc)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -248,11 +266,19 @@ internal sealed class TcUnitRunExecutor
                     tcUnit,
                     readTimeout);
                 if (last.FailureKind
-                        == TcUnitCompletionFailureKind.None
-                    && last.Finished == true
-                    && last.InitializedSuites.HasValue)
+                    == TcUnitCompletionFailureKind.None)
                 {
-                    return last;
+                    if (last.Finished == false)
+                    {
+                        resetObserved = true;
+                    }
+                    else if (last.Finished == true
+                        && resetObserved
+                        && last.InitializedSuites.HasValue
+                        && last.ReadAtUtc >= baseline.ReadAtUtc)
+                    {
+                        return last;
+                    }
                 }
             }
 
@@ -263,25 +289,17 @@ internal sealed class TcUnitRunExecutor
 
         GatewayOperationException exception =
             CreateCompletionFailure(last);
-        _logger.Write(
-            LogLevel.Error,
-            "tcunit.completionFailed",
-            exception.Message,
-            operationId,
-            new Dictionary<string, string>
-            {
-                ["activationOperationId"] =
-                    activationOperationId,
-                ["amsNetId"] = amsNetId,
-                ["adsPort"] = tcUnit.AdsPort.ToString(
-                    CultureInfo.InvariantCulture),
-                ["adsError"] =
-                    last?.AdsErrorCode
-                    ?? "none",
-                ["failedSymbol"] =
-                    last?.FailedSymbol
-                    ?? "none",
-            },
+        LogError(
+            _logger,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "TcUnit completion failed for {0}, target {1}:{2}; "
+                    + "ADS error {3}, symbol {4}.",
+                operationId,
+                amsNetId,
+                tcUnit.AdsPort,
+                last?.AdsErrorCode ?? "none",
+                last?.FailedSymbol ?? "none"),
             exception);
         throw exception;
     }
@@ -398,7 +416,7 @@ internal sealed class TcUnitRunExecutor
     }
 
     private void ValidatePreparation(
-        string activationOperationId,
+        string operationId,
         TcUnitRunPreparation preparation)
     {
         if (preparation is null)
@@ -408,13 +426,13 @@ internal sealed class TcUnitRunExecutor
         }
 
         if (!string.Equals(
-            activationOperationId,
-            preparation.ActivationOperationId,
+            operationId,
+            preparation.RootOperationId,
             StringComparison.Ordinal))
         {
             throw new GatewayOperationException(
                 ErrorCodes.RequestInvalid,
-                "TcUnit preparation belongs to another activation.",
+                "TcUnit preparation belongs to another root operation.",
                 stage: "tcunit.preflight");
         }
 
@@ -428,6 +446,19 @@ internal sealed class TcUnitRunExecutor
                 "TcUnit target AMS NetId changed after activation.",
                 stage: "tcunit.preflight");
         }
+    }
+
+    private static void EnsureReadableCompletionBaseline(
+        TcUnitCompletionReadResult completion)
+    {
+        if (completion.FailureKind == TcUnitCompletionFailureKind.None
+            && completion.Finished.HasValue
+            && completion.InitializedSuites.HasValue)
+        {
+            return;
+        }
+
+        throw CreateCompletionFailure(completion);
     }
 
     private ResolvedTcUnitProfile GetTcUnitProfile()
@@ -485,7 +516,6 @@ internal sealed class TcUnitRunExecutor
 
     private void RecordEvent(
         string operationId,
-        string activationOperationId,
         string type,
         DiagnosticSeverity severity,
         string stage,
@@ -495,8 +525,7 @@ internal sealed class TcUnitRunExecutor
     {
         Dictionary<string, string> properties = new()
         {
-            ["activationOperationId"] =
-                activationOperationId,
+            ["rootOperationId"] = operationId,
             ["profile"] = _profile.Name,
             ["amsNetId"] = GetExpectedAmsNetId(),
         };
@@ -510,14 +539,19 @@ internal sealed class TcUnitRunExecutor
             }
         }
 
-        _logger.Write(
+        Action<ILogger, string, Exception?> writeLog =
             severity == DiagnosticSeverity.Warning
-                ? LogLevel.Warning
-                : LogLevel.Information,
-            type,
-            message,
-            operationId,
-            properties);
+                ? LogWarning
+                : LogInformation;
+        writeLog(
+            _logger,
+            string.Format(
+                CultureInfo.InvariantCulture,
+                "{0}: {1}; operation={2}",
+                type,
+                message,
+                operationId),
+            null);
         _events.Record(
             new GatewayEvent
             {
@@ -568,7 +602,19 @@ internal sealed class TcUnitCompletionEvidenceReader
     {
         return _reader.Read(
             amsNetId,
-            profile,
+            new TcUnitProfile
+            {
+                RuntimeId = profile.RuntimeId,
+                AdsPort = profile.AdsPort,
+                FinishedSymbol = profile.FinishedSymbol,
+                SuiteCountSymbol = profile.SuiteCountSymbol,
+                ReportPath = profile.ReportPath,
+                AllowDeleteExistingReport =
+                    profile.AllowDeleteExistingReport,
+                CompletionTimeoutSeconds =
+                    profile.CompletionTimeoutSeconds,
+                ZeroTests = profile.ZeroTests,
+            },
             timeout);
     }
 }
