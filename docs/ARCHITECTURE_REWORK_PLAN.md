@@ -11,6 +11,8 @@
 - Target configuration: [`CONFIGURATION.md`](CONFIGURATION.md).
 - Target MCP surface: [`MCP_REFERENCE.md`](MCP_REFERENCE.md).
 - Agent workflows: [`WORKFLOWS.md`](WORKFLOWS.md).
+- Durable session history:
+  [`ARCHITECTURE_REWORK_HANDOFF.md`](ARCHITECTURE_REWORK_HANDOFF.md).
 
 ## 1. Цель переработки
 
@@ -58,14 +60,23 @@
    - `AGENTS.md`;
    - этого плана;
    - relevant target document;
-   - предыдущего `.session/SESSION_HANDOFF.md`, если он существует;
+   - последней записи в tracked
+     `docs/ARCHITECTURE_REWORK_HANDOFF.md`;
 2. проверяет branch/HEAD/worktree и сохраняет unrelated changes;
 3. берёт только один session scope из этого плана;
 4. делает один или несколько тематических commits;
-5. обновляет progress table и handoff;
-6. не выполняет remote activation/TcUnit как inner-loop check;
-7. запускает только соответствующий validation checkpoint;
-8. честно фиксирует red build, skipped real-XAE checks и remaining consumers.
+5. запускает финальные проверки сессии и только затем обновляет progress table;
+6. добавляет durable запись в `docs/ARCHITECTURE_REWORK_HANDOFF.md`;
+7. не выполняет remote activation/TcUnit как inner-loop check;
+8. запускает только соответствующий validation checkpoint;
+9. честно фиксирует red build, skipped real-XAE checks и remaining consumers.
+
+`.session/` может содержать объёмные логи и временные эксперименты, но ignored
+handoff и untracked source-linked harness не являются acceptance evidence. Если
+канонические проекты не компилируются во время breaking migration, добавляется
+tracked checkpoint project с production target framework и analyzers для уже
+мигрировавшего slice. Удалённые v1 contracts нельзя воссоздавать только ради
+компиляции такого checkpoint.
 
 Рекомендуемый handoff:
 
@@ -105,21 +116,27 @@ flowchart TD
 
 ## 5. Progress
 
-| Session | Scope | Status |
-|---|---|---|
-| S0 | Target documents, decisions, plan, instructions | completed by this documentation change |
-| S1 | Contracts, errors, config schema v2 | completed 2026-07-31 |
-| S2 | Profile resolver and effective capabilities | completed 2026-07-31 |
-| S3 | Source discovery manifest | completed 2026-07-31 |
-| S4 | Separate XAE/System Service/PLC states | completed 2026-07-31 |
-| S5 | Operator locks and XAE close consent backend | completed 2026-07-31 |
-| S6 | XAE build scope and policy cutover | completed 2026-07-31 |
-| S7 | Target Config/start-restart | pending |
-| S8 | Activation and TcUnit verification unification | pending |
-| S9 | MCP tools/resources and operation journal cutover | pending |
-| S10 | Desktop UI redesign | pending |
-| S11 | Skills, project template, installed docs, packaging | pending |
-| S12 | Full regression and real-XAE acceptance | pending |
+`Implemented` означает, что scoped production change существует. `Tracked
+local validation` и `Real-XAE` — независимые acceptance gates: реализованная
+строка не считается принятой, пока required gate остаётся pending. Дальнейшая
+реализация может идти по dependency graph, но S8 и S12 наследуют все открытые
+real-XAE gates.
+
+| Session | Scope | Implemented | Tracked local validation | Real-XAE | Acceptance |
+|---|---|---|---|---|---|
+| S0 | Target documents, decisions, plan, instructions | yes | recorded | not required | accepted locally |
+| S1 | Contracts, errors, config schema v2 | yes | Contracts: 23/23 on net8.0 and 23/23 on net48 | not required | accepted locally |
+| S2 | Profile resolver and effective capabilities | yes | covered by tracked migration suite: 82/82 | not required | accepted locally |
+| S3 | Source discovery manifest | yes | covered by tracked migration suite: 82/82 | not required | accepted locally |
+| S4 | Separate XAE/System Service/PLC states | yes | observation suite: 59 passed, 1 skipped | pending | pending |
+| S5 | Operator locks and XAE close consent backend | yes | partial: tracked session-state coverage passes; cancellation coverage remains local-only until S9 cutover | not required | pending local gate |
+| S6 | XAE build scope and policy cutover | yes | production-TFM compile passes; migration 82/82; XAE event suite 7/7 | pending | pending |
+| S7 | Target Config/start-restart | no | pending | pending | pending |
+| S8 | Activation and TcUnit verification unification | no | pending | pending | pending |
+| S9 | MCP tools/resources and operation journal cutover | no | pending | pending | pending |
+| S10 | Desktop UI redesign | no | pending | pending | pending |
+| S11 | Skills, project template, installed docs, packaging | no | pending | pending | pending |
+| S12 | Full regression and real-XAE acceptance | no | pending | pending | pending |
 
 ## 6. S0 — target documents and migration boundary
 
@@ -493,6 +510,22 @@ Compile-fix loop requires no status, Config, or Target diagnostic call.
 - cut internal IPC/client dispatch over to `xaeBuild`; public MCP tool wiring
   remains deferred to S9 and Desktop UI redesign remains deferred to S10.
 
+### Corrective validation gate (2026-07-31)
+
+- fixed two compiler defects hidden by the excluded source-linked harnesses:
+  the capability evaluator field name and nullable build-project selection;
+- added tracked migration projects for the completed Core slice, S4
+  observation slice, and S6 XAE build-event slice;
+- the Core slice now compiles on its production `netstandard2.0` target with
+  analyzers enabled; test-only target mismatch warnings are suppressed only
+  on the net8.0 runner;
+- S4 and S6 remain unaccepted until their required real-XAE cases run;
+- S5 cancellation evidence remains non-acceptance local evidence until the
+  operation journal is cut over in S9; removed v1 journal contracts were not
+  restored for a synthetic green test;
+- existing commit history is not rewritten; future session completion markers
+  follow final validation and use thematic commits.
+
 ## 13. S7 — Target Config and start/restart
 
 ### Goal
@@ -832,6 +865,11 @@ Test execution remains checkpoint-based:
 
 - nearest unit tests during inner loop;
 - contract tests after DTO/IPC/MCP changes;
+- tracked migration checkpoint projects while canonical consumers are
+  intentionally red; source-linked production code must compile on its actual
+  target framework with analyzers enabled;
+- ignored or untracked harnesses may aid diagnosis but cannot satisfy a local
+  acceptance gate;
 - one coherent real-XAE checkpoint after related changes stabilize;
 - final combined real-XAE run at S12.
 

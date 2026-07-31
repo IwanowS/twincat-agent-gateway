@@ -31,6 +31,8 @@ not have to keep the complete solution working.
   [`docs/WORKFLOWS.md`](docs/WORKFLOWS.md);
 - ordered multi-session implementation:
   [`docs/ARCHITECTURE_REWORK_PLAN.md`](docs/ARCHITECTURE_REWORK_PLAN.md);
+- durable append-only migration handoff:
+  [`docs/ARCHITECTURE_REWORK_HANDOFF.md`](docs/ARCHITECTURE_REWORK_HANDOFF.md);
 - implemented v1 details useful during migration:
   [`docs/ARCHITECTURE_V1_BASELINE.md`](docs/ARCHITECTURE_V1_BASELINE.md) and
   [`docs/CONFIGURATION_V1_BASELINE.md`](docs/CONFIGURATION_V1_BASELINE.md);
