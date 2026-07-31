@@ -14,105 +14,167 @@ namespace TwinCatGateway.Desktop;
 
 internal sealed class AdsRuntimeMonitor : IDisposable
 {
-    private const string SystemRuntimeName = "TwinCAT System";
+    private static readonly Action<
+        ILogger,
+        string,
+        string,
+        Exception?> LogInformation =
+            LoggerMessage.Define<string, string>(
+                LogLevel.Information,
+                new EventId(1, "state.observation"),
+                "{Message} {Properties}");
+    private static readonly Action<
+        ILogger,
+        string,
+        string,
+        Exception?> LogWarning =
+            LoggerMessage.Define<string, string>(
+                LogLevel.Warning,
+                new EventId(2, "state.observation.warning"),
+                "{Message} {Properties}");
+    private static readonly Action<
+        ILogger,
+        string,
+        string,
+        Exception?> LogError =
+            LoggerMessage.Define<string, string>(
+                LogLevel.Error,
+                new EventId(3, "state.observation.error"),
+                "{Message} {Properties}");
     private readonly object _sync = new();
-    private readonly GatewayStatusSnapshotStore _status;
+    private readonly ProfileObservationStore _observations;
     private readonly ILogger<AdsRuntimeMonitor> _logger;
     private readonly IGatewayEventSink _events;
-    private readonly IAdsRuntimeStatusProbe _probe;
-    private readonly XaeErrorListSnapshotStore
-        _errorListSnapshots;
+    private readonly IAdsStateProbe _probe;
+    private readonly string _profile;
+    private readonly string _amsNetId;
+    private readonly string? _tcUnitRuntimeId;
+    private readonly int? _tcUnitPort;
     private readonly TimeSpan _pollInterval;
     private readonly TimeSpan _readTimeout;
     private readonly SemaphoreSlim _wakeSignal = new(0, 1);
-    private readonly Dictionary<int, string> _lastSignatures = new();
-    private readonly Dictionary<int, long> _lastEventCursors = new();
-    private RuntimeTarget? _target;
-    private AdsRuntimeDiagnostics _systemDiagnostics = new();
-    private IReadOnlyList<AdsRuntimeDiagnostics> _plcDiagnostics =
-        Array.Empty<AdsRuntimeDiagnostics>();
-    private RuntimeAlert? _currentAlert;
-    private string? _currentAlertSignature;
+    private readonly Dictionary<string, string> _lastSignatures =
+        new(StringComparer.Ordinal);
+    private IReadOnlyList<PlcRuntimeTarget> _plcTargets =
+        Array.Empty<PlcRuntimeTarget>();
+    private bool _diverged;
     private int _disposed;
 
     public AdsRuntimeMonitor(
-        GatewayStatusSnapshotStore status,
+        ProfileObservationStore observations,
         ILogger<AdsRuntimeMonitor> logger,
         IGatewayEventSink events,
-        TargetMonitoringConfiguration configuration,
-        IAdsRuntimeStatusProbe? probe = null,
-        XaeErrorListSnapshotStore? errorListSnapshots = null)
+        string profile,
+        string amsNetId,
+        int pollIntervalMilliseconds,
+        int readTimeoutMilliseconds,
+        string? tcUnitRuntimeId = null,
+        int? tcUnitPort = null,
+        IAdsStateProbe? probe = null)
     {
-        _status = status
-            ?? throw new ArgumentNullException(nameof(status));
+        _observations = observations
+            ?? throw new ArgumentNullException(nameof(observations));
         _logger = logger
             ?? throw new ArgumentNullException(nameof(logger));
         _events = events
             ?? throw new ArgumentNullException(nameof(events));
-        if (configuration is null)
+        _profile = string.IsNullOrWhiteSpace(profile)
+            ? throw new ArgumentException(
+                "Profile is required.",
+                nameof(profile))
+            : profile;
+        _amsNetId = string.IsNullOrWhiteSpace(amsNetId)
+            ? throw new ArgumentException(
+                "AMS NetId is required.",
+                nameof(amsNetId))
+            : amsNetId;
+        if (pollIntervalMilliseconds <= 0)
         {
-            throw new ArgumentNullException(nameof(configuration));
+            throw new ArgumentOutOfRangeException(
+                nameof(pollIntervalMilliseconds));
+        }
+
+        if (readTimeoutMilliseconds <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(readTimeoutMilliseconds));
         }
 
         _pollInterval = TimeSpan.FromMilliseconds(
-            configuration.PollIntervalMilliseconds);
+            pollIntervalMilliseconds);
         _readTimeout = TimeSpan.FromMilliseconds(
-            configuration.ReadTimeoutMilliseconds);
-        _probe = probe ?? new AdsRuntimeStatusProbe();
-        _errorListSnapshots = errorListSnapshots
-            ?? new XaeErrorListSnapshotStore();
+            readTimeoutMilliseconds);
+        _tcUnitRuntimeId = tcUnitRuntimeId;
+        _tcUnitPort = tcUnitPort;
+        _probe = probe ?? new AdsStateProbe();
     }
 
-    public void UpdateTarget(
-        string? amsNetId,
-        string? twinCatProjectPath)
+    public ProfileObservationSnapshot Read()
     {
-        if (string.IsNullOrWhiteSpace(amsNetId))
+        return _observations.Read();
+    }
+
+    public void PublishXaeObservation(
+        XaeTwinCatSystemObservation? observation)
+    {
+        ProfileObservationSnapshot snapshot;
+        if (observation is null)
         {
-            return;
+            snapshot = _observations.MarkXaeUnavailable(
+                DateTimeOffset.UtcNow,
+                new ObservationError
+                {
+                    Code =
+                        ErrorCodes.XaeSystemStateUnavailable,
+                    Message =
+                        "XAE has no TwinCAT system observation.",
+                    Retryable = true,
+                });
+        }
+        else
+        {
+            snapshot =
+                _observations.PublishXae(observation);
         }
 
-        IReadOnlyList<PlcRuntimeTarget> plcTargets =
+        PublishXaeEvent(snapshot.Xae);
+        PublishDivergenceEvent(snapshot);
+    }
+
+    public void MarkXaeUnavailable(string message)
+    {
+        ProfileObservationSnapshot snapshot =
+            _observations.MarkXaeUnavailable(
+                DateTimeOffset.UtcNow,
+                new ObservationError
+                {
+                    Code =
+                        ErrorCodes.XaeSystemStateUnavailable,
+                    Message = message,
+                    Retryable = true,
+                });
+        PublishXaeEvent(snapshot.Xae);
+        PublishDivergenceEvent(snapshot);
+    }
+
+    public void UpdateProject(string? twinCatProjectPath)
+    {
+        IReadOnlyList<PlcRuntimeTarget> targets =
             DiscoverPlcTargets(twinCatProjectPath);
-        RuntimeTarget target = new(
-            amsNetId!,
-            plcTargets);
-        bool changed;
         lock (_sync)
         {
-            changed = _target is null
-                || !string.Equals(
-                    _target.Signature,
-                    target.Signature,
-                    StringComparison.Ordinal);
-            if (!changed)
-            {
-                return;
-            }
-
-            _target = target;
-            _lastSignatures.Clear();
-            _lastEventCursors.Clear();
-            _systemDiagnostics = new AdsRuntimeDiagnostics
-            {
-                RuntimeName = SystemRuntimeName,
-                AmsNetId = target.AmsNetId,
-                Port = AdsRuntimeStatusReader.SystemServicePort,
-            };
-            _plcDiagnostics = Array.Empty<AdsRuntimeDiagnostics>();
-            _currentAlert = null;
-            _currentAlertSignature = null;
+            _plcTargets = targets;
+            _lastSignatures
+                .Where(pair =>
+                    pair.Key.StartsWith(
+                        "plc:",
+                        StringComparison.Ordinal))
+                .Select(pair => pair.Key)
+                .ToList()
+                .ForEach(key => _lastSignatures.Remove(key));
         }
 
-        _status.Update(status =>
-        {
-            status.TwinCat.Started = null;
-            status.TwinCat.Mode = RuntimeMode.Unknown;
-            status.TwinCat.SystemMode = RuntimeMode.Unknown;
-            status.TwinCat.ObservedAtUtc = null;
-            status.TwinCat.Alert = null;
-            return status;
-        });
+        _observations.ConfigureRuntimes(targets);
         Wake();
     }
 
@@ -123,45 +185,16 @@ internal sealed class AdsRuntimeMonitor : IDisposable
         {
             while (!cancellationToken.IsCancellationRequested)
             {
-                RuntimeTarget? target;
-                lock (_sync)
-                {
-                    target = _target;
-                }
-
-                if (target is not null)
-                {
-                    await PollAsync(
-                        target,
-                        cancellationToken).ConfigureAwait(false);
-                }
-
-                await DelayAsync(cancellationToken).ConfigureAwait(false);
+                await PollAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                await DelayAsync(cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException) when (
             cancellationToken.IsCancellationRequested)
         {
-            // Normal host shutdown may cancel a queued ADS read.
-        }
-    }
-
-    public AdsRuntimeDiagnostics GetSystemDiagnostics()
-    {
-        lock (_sync)
-        {
-            return CloneDiagnostics(_systemDiagnostics);
-        }
-    }
-
-    public IReadOnlyList<AdsRuntimeDiagnostics>
-        GetPlcDiagnostics()
-    {
-        lock (_sync)
-        {
-            return _plcDiagnostics
-                .Select(CloneDiagnostics)
-                .ToArray();
+            // Bounded ADS calls finish before cancellation completes.
         }
     }
 
@@ -177,79 +210,115 @@ internal sealed class AdsRuntimeMonitor : IDisposable
     }
 
     private async Task PollAsync(
-        RuntimeTarget target,
         CancellationToken cancellationToken)
     {
-        AdsRuntimeStatusReadResult system =
-            await ReadAsync(
-                target.AmsNetId,
-                AdsRuntimeStatusReader.SystemServicePort,
-                cancellationToken).ConfigureAwait(false);
-        system.Diagnostics.RuntimeName =
-            SystemRuntimeName;
+        AdsStateReadResult system = await ReadAsync(
+                AdsStateReader.SystemServicePort,
+                cancellationToken)
+            .ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        List<RuntimeObservation> observations = new()
+        ProfileObservationSnapshot snapshot;
+        if (system.Succeeded)
         {
-            new RuntimeObservation(
-                SystemRuntimeName,
-                isSystem: true,
-                system),
-        };
-        if (system.Diagnostics.ErrorCode is null
-            && (system.Status.Mode == RuntimeMode.Run
-                || system.Status.Mode == RuntimeMode.Exception))
+            TargetSystemObservation observation =
+                CreateTargetObservation(system);
+            snapshot =
+                _observations.PublishTarget(observation);
+            PublishTargetEvent(observation);
+        }
+        else
         {
-            Task<RuntimeObservation>[] reads =
-                target.PlcTargets
-                    .Select(plc => ReadPlcAsync(
-                        target.AmsNetId,
-                        plc,
-                        cancellationToken))
-                    .ToArray();
-            if (reads.Length != 0)
-            {
-                observations.AddRange(
-                    await Task.WhenAll(reads)
-                        .ConfigureAwait(false));
-            }
+            snapshot =
+                _observations.MarkTargetReadFailed(
+                    system.ObservedAtUtc,
+                    system.Error!);
+            PublishTargetEvent(snapshot.Target);
+            LogReadFailure(
+                "Target System Service",
+                system);
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+        IReadOnlyList<PlcRuntimeTarget> targets;
         lock (_sync)
         {
-            if (_target is null
-                || !string.Equals(
-                    _target.Signature,
-                    target.Signature,
-                    StringComparison.Ordinal))
+            targets = _plcTargets.ToArray();
+        }
+
+        if (snapshot.Target.Freshness
+                == ObservationFreshness.Fresh
+            && snapshot.Target.State
+                == TargetSystemState.Run)
+        {
+            Task<PlcRead>[] reads = targets
+                .Select(target => ReadPlcAsync(
+                    target,
+                    cancellationToken))
+                .ToArray();
+            PlcRead[] results = reads.Length == 0
+                ? Array.Empty<PlcRead>()
+                : await Task.WhenAll(reads)
+                    .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            foreach (PlcRead result in results)
             {
-                return;
+                if (result.Read.Succeeded)
+                {
+                    PlcRuntimeObservation observation =
+                        CreatePlcObservation(
+                            result.Target,
+                            result.Read);
+                    snapshot =
+                        _observations.PublishPlc(
+                            observation);
+                    PublishPlcEvent(observation);
+                }
+                else
+                {
+                    snapshot =
+                        _observations.MarkPlcReadFailed(
+                            result.Target.RuntimeId,
+                            result.Target.AdsPort,
+                            result.Read.ObservedAtUtc,
+                            result.Read.Error!);
+                    PublishPlcEvent(
+                        snapshot.PlcRuntimes.Single(
+                            runtime => string.Equals(
+                                runtime.RuntimeId,
+                                result.Target.RuntimeId,
+                                StringComparison
+                                    .OrdinalIgnoreCase)));
+                    LogReadFailure(
+                        result.Target.RuntimeId,
+                        result.Read);
+                }
+            }
+        }
+        else
+        {
+            DateTimeOffset attemptedAtUtc =
+                system.ObservedAtUtc;
+            foreach (PlcRuntimeTarget target in targets)
+            {
+                snapshot =
+                    _observations.MarkPlcNotObserved(
+                        target.RuntimeId,
+                        target.AdsPort,
+                        attemptedAtUtc);
+                PublishPlcEvent(
+                    snapshot.PlcRuntimes.Single(
+                        runtime => string.Equals(
+                            runtime.RuntimeId,
+                            target.RuntimeId,
+                            StringComparison.OrdinalIgnoreCase)));
             }
         }
 
-        PublishObservations(
-            target.Signature,
-            observations);
+        PublishDivergenceEvent(_observations.Read());
     }
 
-    private async Task<RuntimeObservation> ReadPlcAsync(
-        string amsNetId,
-        PlcRuntimeTarget plc,
-        CancellationToken cancellationToken)
-    {
-        AdsRuntimeStatusReadResult result =
-            await ReadAsync(
-                amsNetId,
-                plc.AdsPort,
-                cancellationToken).ConfigureAwait(false);
-        result.Diagnostics.RuntimeName = plc.Name;
-        return new RuntimeObservation(
-            plc.Name,
-            isSystem: false,
-            result);
-    }
-
-    private Task<AdsRuntimeStatusReadResult> ReadAsync(
-        string amsNetId,
+    private Task<AdsStateReadResult> ReadAsync(
         int port,
         CancellationToken cancellationToken)
     {
@@ -258,369 +327,323 @@ internal sealed class AdsRuntimeMonitor : IDisposable
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 return _probe.Read(
-                    amsNetId,
+                    _amsNetId,
                     port,
                     _readTimeout);
             },
             cancellationToken);
     }
 
-    private void PublishObservations(
-        string targetSignature,
-        IReadOnlyList<RuntimeObservation> observations)
+    private async Task<PlcRead> ReadPlcAsync(
+        PlcRuntimeTarget target,
+        CancellationToken cancellationToken)
     {
+        AdsStateReadResult read = await ReadAsync(
+                target.AdsPort,
+                cancellationToken)
+            .ConfigureAwait(false);
+        return new PlcRead(target, read);
+    }
+
+    private TargetSystemObservation CreateTargetObservation(
+        AdsStateReadResult read)
+    {
+        return new TargetSystemObservation
+        {
+            Profile = _profile,
+            AmsNetId = read.AmsNetId,
+            Port = read.Port,
+            RawAdsState = read.RawAdsState,
+            RawAdsStateName = read.RawAdsStateName,
+            RawDeviceState = read.RawDeviceState,
+            State = AdsStateMapper.MapSystemService(
+                read.RawAdsState!.Value),
+            ObservedAtUtc = read.ObservedAtUtc,
+            Freshness = ObservationFreshness.Fresh,
+        };
+    }
+
+    private PlcRuntimeObservation CreatePlcObservation(
+        PlcRuntimeTarget target,
+        AdsStateReadResult read)
+    {
+        return new PlcRuntimeObservation
+        {
+            Profile = _profile,
+            RuntimeId = target.RuntimeId,
+            Project = target.Project,
+            Instance = target.Instance,
+            AmsNetId = read.AmsNetId,
+            Port = read.Port,
+            RawAdsState = read.RawAdsState,
+            RawAdsStateName = read.RawAdsStateName,
+            RawDeviceState = read.RawDeviceState,
+            State = AdsStateMapper.MapPlcRuntime(
+                read.RawAdsState!.Value),
+            ObservedAtUtc = read.ObservedAtUtc,
+            Freshness = ObservationFreshness.Fresh,
+        };
+    }
+
+    private void PublishXaeEvent(
+        XaeTwinCatSystemObservation? observation)
+    {
+        if (observation is null)
+        {
+            return;
+        }
+
+        Dictionary<string, string> properties = new()
+        {
+            ["profile"] = _profile,
+            ["source"] = observation.Source.ToString(),
+            ["selectedTarget"] =
+                observation.SelectedTarget ?? "unknown",
+            ["state"] = observation.State.ToString(),
+            ["rawState"] =
+                observation.RawState ?? "unknown",
+            ["freshness"] =
+                observation.Freshness.ToString(),
+            ["errorCode"] =
+                observation.Error?.Code ?? "none",
+        };
+        PublishChangedEvent(
+            "xae",
+            observation.Error is null
+                ? GatewayEventTypes.XaeSystemStateChanged
+                : GatewayEventTypes.XaeSystemStateReadFailed,
+            GatewayComponent.Xae,
+            "xae.systemState.observe",
+            observation.Error is null
+                ? "XAE TwinCAT system observation changed."
+                : "XAE TwinCAT system observation is unavailable.",
+            properties,
+            observation.ObservedAtUtc,
+            observation.Error);
+    }
+
+    private void PublishTargetEvent(
+        TargetSystemObservation observation)
+    {
+        Dictionary<string, string> properties =
+            CreateAdsProperties(
+                observation.AmsNetId,
+                observation.Port,
+                observation.State.ToString(),
+                observation.RawAdsState,
+                observation.RawAdsStateName,
+                observation.RawDeviceState,
+                observation.Freshness,
+                observation.Error);
+        properties["profile"] = _profile;
+        PublishChangedEvent(
+            "target",
+            observation.Error is null
+                ? GatewayEventTypes.TargetSystemStateChanged
+                : GatewayEventTypes
+                    .TargetSystemStateReadFailed,
+            GatewayComponent.Target,
+            "ads.target.observe",
+            observation.Error is null
+                ? "Target System Service observation changed."
+                : "Target System Service observation is unavailable.",
+            properties,
+            observation.ObservedAtUtc,
+            observation.Error);
+    }
+
+    private void PublishPlcEvent(
+        PlcRuntimeObservation observation)
+    {
+        Dictionary<string, string> properties =
+            CreateAdsProperties(
+                observation.AmsNetId,
+                observation.Port,
+                observation.State.ToString(),
+                observation.RawAdsState,
+                observation.RawAdsStateName,
+                observation.RawDeviceState,
+                observation.Freshness,
+                observation.Error);
+        properties["profile"] = _profile;
+        properties["runtimeId"] = observation.RuntimeId;
+        properties["project"] =
+            observation.Project ?? "unknown";
+        PublishChangedEvent(
+            $"plc:{observation.RuntimeId}",
+            observation.Error is null
+                ? GatewayEventTypes.PlcRuntimeStateChanged
+                : GatewayEventTypes
+                    .PlcRuntimeStateReadFailed,
+            GatewayComponent.Plc,
+            "ads.plc.observe",
+            observation.Error is null
+                ? $"PLC runtime '{observation.RuntimeId}' observation changed."
+                : $"PLC runtime '{observation.RuntimeId}' observation is unavailable.",
+            properties,
+            observation.ObservedAtUtc,
+            observation.Error);
+    }
+
+    private void PublishChangedEvent(
+        string key,
+        string type,
+        GatewayComponent component,
+        string stage,
+        string message,
+        Dictionary<string, string> properties,
+        DateTimeOffset occurredAtUtc,
+        ObservationError? observationError)
+    {
+        string signature = string.Join(
+            "|",
+            properties.OrderBy(
+                    pair => pair.Key,
+                    StringComparer.Ordinal)
+                .Select(pair =>
+                    $"{pair.Key}={pair.Value}"));
         lock (_sync)
         {
-            if (_target is null
-                || !string.Equals(
-                    _target.Signature,
-                    targetSignature,
+            if (_lastSignatures.TryGetValue(
+                    key,
+                    out string? previous)
+                && string.Equals(
+                    previous,
+                    signature,
                     StringComparison.Ordinal))
             {
                 return;
             }
 
-            PublishObservationsLocked(observations);
+            _lastSignatures[key] = signature;
         }
+
+        DiagnosticSeverity severity =
+            observationError is not null
+                ? DiagnosticSeverity.Warning
+                : properties.TryGetValue(
+                        "state",
+                        out string? state)
+                    && string.Equals(
+                        state,
+                        "Exception",
+                        StringComparison.Ordinal)
+                        ? DiagnosticSeverity.Error
+                        : DiagnosticSeverity.Info;
+        GatewayError? error = observationError is null
+            ? null
+            : new GatewayError
+            {
+                Code = observationError.Code,
+                Message = observationError.Message,
+                Retryable = observationError.Retryable,
+                Component = component,
+                Stage = stage,
+                SideEffectsStarted = false,
+            };
+        _events.Record(
+            new GatewayEvent
+            {
+                Type = type,
+                Severity = severity,
+                Stage = stage,
+                Message = message,
+                Error = error,
+                Properties = properties,
+            },
+            occurredAtUtc);
+        Action<ILogger, string, string, Exception?> log =
+            severity == DiagnosticSeverity.Error
+                ? LogError
+                : observationError is not null
+                    ? LogWarning
+                    : LogInformation;
+        log(
+            _logger,
+            message,
+            FormatProperties(properties),
+            null);
     }
 
-    private void PublishObservationsLocked(
-        IReadOnlyList<RuntimeObservation> observations)
+    private void PublishDivergenceEvent(
+        ProfileObservationSnapshot snapshot)
     {
-        foreach (RuntimeObservation observation in observations)
-        {
-            string signature = CreateSignature(
-                observation.Result);
-            bool changed;
-            RuntimeMode? previousMode = null;
-            lock (_sync)
-            {
-                changed = !_lastSignatures.TryGetValue(
-                        observation.Result.Diagnostics.Port,
-                        out string? previous)
-                    || !string.Equals(
-                        previous,
-                        signature,
-                        StringComparison.Ordinal);
-                if (changed)
-                {
-                    previousMode = TryReadMode(previous);
-                    _lastSignatures[
-                        observation.Result.Diagnostics.Port] =
-                            signature;
-                }
-            }
-
-            if (!changed)
-            {
-                continue;
-            }
-
-            DateTimeOffset occurredAtUtc =
-                observation.Result.Diagnostics.ReadAtUtc
-                ?? DateTimeOffset.UtcNow;
-            GatewayEvent gatewayEvent = CreateEvent(
-                observation,
-                previousMode);
-            long cursor = _events.Record(
-                gatewayEvent,
-                occurredAtUtc);
-            _lastEventCursors[
-                observation.Result.Diagnostics.Port] =
-                    cursor;
-            LogTransition(
-                observation,
-                previousMode);
-        }
-
-        RuntimeObservation system = observations[0];
-        RuntimeObservation[] plcs = observations
-            .Skip(1)
-            .ToArray();
-        RuntimeMode aggregateMode =
-            AggregateMode(system, plcs);
-        RuntimeAlert? alert = CreateAlert(
-            system,
-            plcs,
-            _lastEventCursors,
-            _errorListSnapshots.Read());
-        DateTimeOffset? observedAtUtc = observations
-            .Select(observation =>
-                observation.Result.Diagnostics.ReadAtUtc)
-            .Where(value => value.HasValue)
-            .Max();
+        bool diverged = snapshot.Divergence is not null;
         lock (_sync)
         {
-            _systemDiagnostics =
-                CloneDiagnostics(system.Result.Diagnostics);
-            _plcDiagnostics = plcs
-                .Select(observation =>
-                    CloneDiagnostics(
-                        observation.Result.Diagnostics))
-                .ToArray();
-            alert = PreserveAlertIdentity(alert);
-            _currentAlert =
-                CloneAlert(alert);
+            if (_diverged == diverged)
+            {
+                return;
+            }
+
+            _diverged = diverged;
         }
 
-        RuntimeAlert? statusAlert = CloneAlert(alert);
-        _status.Update(status =>
+        StateObservationDivergence? detail =
+            snapshot.Divergence;
+        Dictionary<string, string> properties = new()
         {
-            status.TwinCat.Started =
-                system.Result.Status.Started;
-            status.TwinCat.Mode = aggregateMode;
-            status.TwinCat.SystemMode =
-                system.Result.Status.Mode;
-            status.TwinCat.ObservedAtUtc =
-                observedAtUtc;
-            status.TwinCat.Alert = statusAlert;
-            return status;
-        });
-    }
-
-    private RuntimeAlert? PreserveAlertIdentity(
-        RuntimeAlert? candidate)
-    {
-        string? signature = candidate is null
-            ? null
-            : string.Join(
-                "|",
-                candidate.Code,
-                candidate.RuntimeName ?? string.Empty,
-                candidate.AdsPort?.ToString(
-                    CultureInfo.InvariantCulture)
-                    ?? string.Empty);
-        if (candidate is not null
-            && string.Equals(
-                signature,
-                _currentAlertSignature,
-                StringComparison.Ordinal)
-            && _currentAlert is not null)
-        {
-            candidate.OccurredAtUtc =
-                _currentAlert.OccurredAtUtc;
-            candidate.EventCursor =
-                _currentAlert.EventCursor;
-        }
-
-        _currentAlertSignature = signature;
-        return candidate;
-    }
-
-    private static RuntimeMode AggregateMode(
-        RuntimeObservation system,
-        IReadOnlyList<RuntimeObservation> plcs)
-    {
-        if (system.Result.Diagnostics.ErrorCode is not null)
-        {
-            return RuntimeMode.Unknown;
-        }
-
-        if (system.Result.Status.Mode == RuntimeMode.Exception
-            || plcs.Any(plc =>
-                plc.Result.Status.Mode
-                    == RuntimeMode.Exception))
-        {
-            return RuntimeMode.Exception;
-        }
-
-        if (system.Result.Status.Mode != RuntimeMode.Run)
-        {
-            return system.Result.Status.Mode;
-        }
-
-        return plcs.Any(plc =>
-                plc.Result.Diagnostics.ErrorCode is not null)
-            ? RuntimeMode.Unknown
-            : RuntimeMode.Run;
-    }
-
-    private static RuntimeAlert? CreateAlert(
-        RuntimeObservation system,
-        IReadOnlyList<RuntimeObservation> plcs,
-        IReadOnlyDictionary<int, long> transitionCursors,
-        IReadOnlyList<BuildDiagnostic> xaeMessages)
-    {
-        if (system.Result.Diagnostics.ErrorCode is not null)
-        {
-            return CreateAlert(
-                "RUNTIME_UNAVAILABLE",
-                DiagnosticSeverity.Warning,
-                "The selected TwinCAT runtime is unavailable.",
-                system,
-                transitionCursors);
-        }
-
-        RuntimeObservation? plcException = plcs
-            .FirstOrDefault(plc =>
-                plc.Result.Status.Mode
-                    == RuntimeMode.Exception);
-        if (plcException is not null)
-        {
-            return CreateAlert(
-                "PLC_RUNTIME_EXCEPTION",
-                DiagnosticSeverity.Error,
-                $"PLC runtime '{plcException.Name}' is in Exception.",
-                plcException,
-                transitionCursors,
-                XaeRuntimeExceptionDetails.Select(
-                    xaeMessages,
-                    plcException.Name,
-                    plcException.Result.Diagnostics.Port));
-        }
-
-        if (system.Result.Status.Mode == RuntimeMode.Exception)
-        {
-            return CreateAlert(
-                "RUNTIME_EXCEPTION",
-                DiagnosticSeverity.Error,
-                "The TwinCAT runtime is in Exception.",
-                system,
-                transitionCursors,
-                XaeRuntimeExceptionDetails.Select(
-                    xaeMessages,
-                    system.Name,
-                    system.Result.Diagnostics.Port));
-        }
-
-        RuntimeObservation? unavailablePlc = plcs
-            .FirstOrDefault(plc =>
-                plc.Result.Diagnostics.ErrorCode is not null);
-        if (unavailablePlc is not null)
-        {
-            return CreateAlert(
-                "PLC_RUNTIME_UNAVAILABLE",
-                DiagnosticSeverity.Warning,
-                $"PLC runtime '{unavailablePlc.Name}' is unavailable.",
-                unavailablePlc,
-                transitionCursors);
-        }
-
-        return null;
-    }
-
-    private static RuntimeAlert CreateAlert(
-        string code,
-        DiagnosticSeverity severity,
-        string message,
-        RuntimeObservation observation,
-        IReadOnlyDictionary<int, long> transitionCursors,
-        string? details = null)
-    {
-        int port = observation.Result.Diagnostics.Port;
-        transitionCursors.TryGetValue(
-            port,
-            out long cursor);
-        return new RuntimeAlert
-        {
-            Code = code,
-            Severity = severity,
-            Message = message,
-            Details = details,
-            OccurredAtUtc =
-                observation.Result.Diagnostics.ReadAtUtc
-                ?? DateTimeOffset.UtcNow,
-            EventCursor = cursor,
-            RuntimeName = observation.Name,
-            AdsPort = port,
-        };
-    }
-
-    private static GatewayEvent CreateEvent(
-        RuntimeObservation observation,
-        RuntimeMode? previousMode)
-    {
-        AdsRuntimeStatusReadResult result =
-            observation.Result;
-        bool failed =
-            result.Diagnostics.ErrorCode is not null;
-        DiagnosticSeverity severity = failed
-            ? DiagnosticSeverity.Warning
-            : result.Status.Mode == RuntimeMode.Exception
-                ? DiagnosticSeverity.Error
-                : result.Status.Mode == RuntimeMode.Unknown
-                    ? DiagnosticSeverity.Warning
-                    : DiagnosticSeverity.Info;
-        Dictionary<string, string> properties =
-            CreateProperties(observation);
-        properties["previousMode"] =
-            previousMode?.ToString() ?? "unknown";
-        return new GatewayEvent
-        {
-            Type = failed
-                ? GatewayEventTypes.RuntimeStatusReadFailed
-                : GatewayEventTypes.RuntimeStateChanged,
-            Severity = severity,
-            Stage = "ads.runtimeMonitor",
-            Message = failed
-                ? $"Could not read runtime '{observation.Name}' on ADS port {result.Diagnostics.Port}."
-                : $"Runtime '{observation.Name}' changed to {result.Status.Mode}.",
-            Error = failed
-                ? new GatewayError
-                {
-                    Code = ErrorCodes.TwinCatStateUnknown,
-                    Message =
-                        $"Could not read runtime '{observation.Name}'.",
-                    Retryable = true,
-                    Stage = "ads.runtimeMonitor",
-                }
-                : null,
-            Properties = properties,
-        };
-    }
-
-    private void LogTransition(
-        RuntimeObservation observation,
-        RuntimeMode? previousMode)
-    {
-        bool failed =
-            observation.Result.Diagnostics.ErrorCode is not null;
-        Dictionary<string, string> properties =
-            CreateProperties(observation);
-        properties["previousMode"] =
-            previousMode?.ToString() ?? "unknown";
-        _logger.Write(
-            failed
-                || observation.Result.Status.Mode
-                    == RuntimeMode.Exception
-                ? LogLevel.Warning
-                : LogLevel.Information,
-            failed
-                ? "ads.runtime_status.failed"
-                : "ads.runtime_state.changed",
-            failed
-                ? $"Could not read runtime '{observation.Name}'."
-                : $"Runtime '{observation.Name}' changed to "
-                    + $"{observation.Result.Status.Mode}.",
-            properties: properties,
-            exception: observation.Result.Failure);
-    }
-
-    private static Dictionary<string, string> CreateProperties(
-        RuntimeObservation observation)
-    {
-        AdsRuntimeStatusReadResult result =
-            observation.Result;
-        return new Dictionary<string, string>
-        {
-            ["runtimeName"] = observation.Name,
-            ["runtimeKind"] =
-                observation.IsSystem ? "system" : "plc",
-            ["amsNetId"] =
-                result.Diagnostics.AmsNetId ?? "unknown",
-            ["adsPort"] =
-                result.Diagnostics.Port.ToString(
-                    CultureInfo.InvariantCulture),
-            ["mode"] = result.Status.Mode.ToString(),
-            ["adsState"] =
-                result.Diagnostics.AdsState ?? "unknown",
-            ["deviceState"] =
-                result.Diagnostics.DeviceState?.ToString(
-                    CultureInfo.InvariantCulture)
+            ["profile"] = _profile,
+            ["amsNetId"] = _amsNetId,
+            ["xaeObserved"] =
+                detail?.XaeObserved.ToString()
+                ?? snapshot.Xae?.State.ToString()
                 ?? "unknown",
-            ["errorCode"] =
-                result.Diagnostics.ErrorCode ?? "none",
+            ["systemServiceObserved"] =
+                detail?.SystemServiceObserved.ToString()
+                ?? snapshot.Target.State.ToString(),
         };
+        _events.Record(
+            new GatewayEvent
+            {
+                Type = diverged
+                    ? GatewayEventTypes
+                        .StateObservationsDiverged
+                    : GatewayEventTypes
+                        .StateObservationsConverged,
+                Severity = diverged
+                    ? DiagnosticSeverity.Warning
+                    : DiagnosticSeverity.Info,
+                Stage = "target.state.compare",
+                Message = diverged
+                    ? "XAE and direct Target observations diverged."
+                    : "XAE and direct Target observations no longer diverge.",
+                Error = diverged
+                    ? new GatewayError
+                    {
+                        Code =
+                            ErrorCodes.StateObservationsDiverged,
+                        Message =
+                            "XAE and direct Target observations diverged.",
+                        Retryable = true,
+                        Component = GatewayComponent.Target,
+                        Stage = "target.state.compare",
+                        SideEffectsStarted = false,
+                    }
+                    : null,
+                Properties = properties,
+            },
+            detail?.SystemServiceObservedAtUtc
+                ?? DateTimeOffset.UtcNow);
+    }
+
+    private void LogReadFailure(
+        string device,
+        AdsStateReadResult read)
+    {
+        LogWarning(
+            _logger,
+            $"Could not read state for '{device}'.",
+            FormatProperties(new Dictionary<string, string>
+            {
+                ["profile"] = _profile,
+                ["amsNetId"] = read.AmsNetId,
+                ["adsPort"] = read.Port.ToString(
+                    CultureInfo.InvariantCulture),
+                ["errorCode"] =
+                    read.Error?.Code ?? "unknown",
+            }),
+            read.Failure);
     }
 
     private IReadOnlyList<PlcRuntimeTarget> DiscoverPlcTargets(
@@ -634,40 +657,81 @@ internal sealed class AdsRuntimeMonitor : IDisposable
         try
         {
             return TwinCatRuntimeTargetDiscovery.Discover(
-                twinCatProjectPath!);
+                twinCatProjectPath!,
+                _tcUnitRuntimeId,
+                _tcUnitPort);
         }
         catch (Exception exception) when (
             exception is IOException
             || exception is UnauthorizedAccessException
             || exception is System.Xml.XmlException)
         {
-            _logger.Write(
-                LogLevel.Warning,
-                "ads.runtime_targets.failed",
+            LogWarning(
+                _logger,
                 "Could not discover PLC runtime ports from the selected TwinCAT project.",
-                properties: new Dictionary<string, string>
+                FormatProperties(new Dictionary<string, string>
                 {
+                    ["profile"] = _profile,
                     ["twinCatProjectPath"] =
                         twinCatProjectPath!,
-                },
-                exception: exception);
+                }),
+                exception);
             return Array.Empty<PlcRuntimeTarget>();
         }
+    }
+
+    private static Dictionary<string, string>
+        CreateAdsProperties(
+        string amsNetId,
+        int port,
+        string state,
+        int? rawAdsState,
+        string? rawAdsStateName,
+        int? rawDeviceState,
+        ObservationFreshness freshness,
+        ObservationError? error)
+    {
+        return new Dictionary<string, string>
+        {
+            ["amsNetId"] = amsNetId,
+            ["adsPort"] = port.ToString(
+                CultureInfo.InvariantCulture),
+            ["state"] = state,
+            ["rawAdsState"] =
+                rawAdsState?.ToString(
+                    CultureInfo.InvariantCulture)
+                ?? "unknown",
+            ["rawAdsStateName"] =
+                rawAdsStateName ?? "unknown",
+            ["rawDeviceState"] =
+                rawDeviceState?.ToString(
+                    CultureInfo.InvariantCulture)
+                ?? "unknown",
+            ["freshness"] = freshness.ToString(),
+            ["errorCode"] = error?.Code ?? "none",
+        };
+    }
+
+    private static string FormatProperties(
+        IReadOnlyDictionary<string, string> properties)
+    {
+        return string.Join(
+            ", ",
+            properties
+                .OrderBy(
+                    pair => pair.Key,
+                    StringComparer.Ordinal)
+                .Select(pair =>
+                    $"{pair.Key}={pair.Value}"));
     }
 
     private async Task DelayAsync(
         CancellationToken cancellationToken)
     {
-        try
-        {
-            await _wakeSignal.WaitAsync(
+        await _wakeSignal.WaitAsync(
                 _pollInterval,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (
-            cancellationToken.IsCancellationRequested)
-        {
-        }
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private void Wake()
@@ -682,96 +746,18 @@ internal sealed class AdsRuntimeMonitor : IDisposable
         }
     }
 
-    private static string CreateSignature(
-        AdsRuntimeStatusReadResult result)
+    private sealed class PlcRead
     {
-        return string.Join(
-            "|",
-            result.Status.Mode.ToString(),
-            result.Diagnostics.AdsState ?? "unknown",
-            result.Diagnostics.DeviceState?.ToString(
-                CultureInfo.InvariantCulture)
-                ?? "unknown",
-            result.Diagnostics.ErrorCode ?? "none");
-    }
-
-    private static RuntimeMode? TryReadMode(
-        string? signature)
-    {
-        if (string.IsNullOrWhiteSpace(signature))
+        public PlcRead(
+            PlcRuntimeTarget target,
+            AdsStateReadResult read)
         {
-            return null;
+            Target = target;
+            Read = read;
         }
 
-        string raw = signature!.Split('|')[0];
-        return Enum.TryParse(
-            raw,
-            ignoreCase: false,
-            out RuntimeMode mode)
-            ? mode
-            : null;
-    }
+        public PlcRuntimeTarget Target { get; }
 
-    private static AdsRuntimeDiagnostics CloneDiagnostics(
-        AdsRuntimeDiagnostics source)
-    {
-        return new AdsRuntimeDiagnostics
-        {
-            RuntimeName = source.RuntimeName,
-            AmsNetId = source.AmsNetId,
-            Port = source.Port,
-            AdsState = source.AdsState,
-            DeviceState = source.DeviceState,
-            ErrorCode = source.ErrorCode,
-            ReadAtUtc = source.ReadAtUtc,
-        };
-    }
-
-    private static RuntimeAlert? CloneAlert(
-        RuntimeAlert? source)
-    {
-        return GatewayStatusSnapshotStore.CloneRuntimeAlert(
-            source);
-    }
-
-    private sealed class RuntimeTarget
-    {
-        public RuntimeTarget(
-            string amsNetId,
-            IReadOnlyList<PlcRuntimeTarget> plcTargets)
-        {
-            AmsNetId = amsNetId;
-            PlcTargets = plcTargets;
-            Signature = string.Join(
-                "|",
-                new[] { amsNetId }.Concat(
-                    plcTargets.Select(target =>
-                        $"{target.Name}:{target.AdsPort}")));
-        }
-
-        public string AmsNetId { get; }
-
-        public IReadOnlyList<PlcRuntimeTarget> PlcTargets { get; }
-
-        public string Signature { get; }
-    }
-
-    private sealed class RuntimeObservation
-    {
-        public RuntimeObservation(
-            string name,
-            bool isSystem,
-            AdsRuntimeStatusReadResult result)
-        {
-            Name = name;
-            IsSystem = isSystem;
-            Result = result;
-        }
-
-        public string Name { get; }
-
-        public bool IsSystem { get; }
-
-        public AdsRuntimeStatusReadResult Result { get; }
+        public AdsStateReadResult Read { get; }
     }
 }

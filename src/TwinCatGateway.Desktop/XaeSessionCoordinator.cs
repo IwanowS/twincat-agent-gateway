@@ -37,7 +37,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private readonly ILogger<XaeSessionCoordinator> _logger;
     private readonly LocalLogStore _logs;
     private readonly IGatewayEventSink _events;
-    private readonly AdsRuntimeMonitor _runtimeMonitor;
+    private readonly AdsRuntimeMonitor? _runtimeMonitor;
     private readonly XaeErrorListSnapshotStore
         _errorListSnapshots;
     private readonly SourceManifestStore _sourceManifests;
@@ -63,7 +63,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         ILogger<TcUnitRunExecutor> tcUnitLogger,
         LocalLogStore logs,
         IGatewayEventSink events,
-        AdsRuntimeMonitor runtimeMonitor,
+        AdsRuntimeMonitor? runtimeMonitor,
         XaeErrorListSnapshotStore errorListSnapshots,
         SourceManifestStore sourceManifests)
     {
@@ -87,9 +87,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             ?? throw new ArgumentNullException(nameof(logs));
         _events = events
             ?? throw new ArgumentNullException(nameof(events));
-        _runtimeMonitor = runtimeMonitor
-            ?? throw new ArgumentNullException(
-                nameof(runtimeMonitor));
+        _runtimeMonitor = runtimeMonitor;
         _errorListSnapshots = errorListSnapshots
             ?? throw new ArgumentNullException(
                 nameof(errorListSnapshots));
@@ -224,11 +222,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                             .ToList(),
                 },
                 Com = CloneCom(_lastComDiagnostics),
-                Runtime =
-                    _runtimeMonitor.GetSystemDiagnostics(),
-                PlcRuntimes = _runtimeMonitor
-                    .GetPlcDiagnostics()
-                    .ToList(),
             };
         }
     }
@@ -1355,8 +1348,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
         DteInstanceInfo selected = snapshot.SelectedInstance
             ?? throw new InvalidOperationException(
                 "A connected XAE snapshot has no selected instance.");
-        _runtimeMonitor.UpdateTarget(
-            snapshot.TargetAmsNetId,
+        _runtimeMonitor?.PublishXaeObservation(
+            snapshot.TwinCatSystem);
+        _runtimeMonitor?.UpdateProject(
             snapshot.TwinCatProjectPath);
         _status.Update(status =>
         {
@@ -1433,6 +1427,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
         _errorListSnapshots.Replace(
             Array.Empty<BuildDiagnostic>());
+        _runtimeMonitor?.MarkXaeUnavailable(
+            "The selected XAE process exited.");
         _status.Update(status =>
         {
             status.Xae.Connected = false;
@@ -1512,6 +1508,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
         RefreshSourceManifest(CancellationToken.None);
         if (wasConnected && !retainAttachment)
         {
+            _runtimeMonitor?.MarkXaeUnavailable(
+                "The configured XAE session disconnected.");
             _sourceManifests.MarkStale(
                 code ?? ErrorCodes.XaeNotFound,
                 "The source manifest is stale because the configured "
@@ -1789,6 +1787,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 source.ActiveConfiguration,
             ActivePlatform = source.ActivePlatform,
             TargetAmsNetId = source.TargetAmsNetId,
+            TwinCatSystem = CloneTwinCatSystem(
+                source.TwinCatSystem),
             TwinCatProjectPath =
                 source.TwinCatProjectPath,
             LastErrorMessages =
@@ -1803,6 +1803,31 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 .Select(CloneInfo)
                 .ToArray(),
         };
+    }
+
+    private static XaeTwinCatSystemObservation?
+        CloneTwinCatSystem(
+        XaeTwinCatSystemObservation? source)
+    {
+        return source is null
+            ? null
+            : new XaeTwinCatSystemObservation
+            {
+                Source = source.Source,
+                State = source.State,
+                RawState = source.RawState,
+                SelectedTarget = source.SelectedTarget,
+                ObservedAtUtc = source.ObservedAtUtc,
+                Freshness = source.Freshness,
+                Error = source.Error is null
+                    ? null
+                    : new ObservationError
+                    {
+                        Code = source.Error.Code,
+                        Message = source.Error.Message,
+                        Retryable = source.Error.Retryable,
+                    },
+            };
     }
 
     private static BuildDiagnostic CloneBuildDiagnostic(

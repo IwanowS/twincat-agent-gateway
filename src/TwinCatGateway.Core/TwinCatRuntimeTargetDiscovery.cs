@@ -10,16 +10,30 @@ namespace TwinCatGateway.Core;
 public sealed class PlcRuntimeTarget
 {
     public PlcRuntimeTarget(
-        string name,
+        string runtimeId,
+        string? project,
+        string? instance,
         int adsPort)
     {
-        Name = string.IsNullOrWhiteSpace(name)
-            ? $"PLC port {adsPort}"
-            : name;
+        RuntimeId = string.IsNullOrWhiteSpace(runtimeId)
+            ? throw new ArgumentException(
+                "Runtime id is required.",
+                nameof(runtimeId))
+            : runtimeId;
+        Project = string.IsNullOrWhiteSpace(project)
+            ? null
+            : project;
+        Instance = string.IsNullOrWhiteSpace(instance)
+            ? null
+            : instance;
         AdsPort = adsPort;
     }
 
-    public string Name { get; }
+    public string RuntimeId { get; }
+
+    public string? Project { get; }
+
+    public string? Instance { get; }
 
     public int AdsPort { get; }
 }
@@ -27,7 +41,9 @@ public sealed class PlcRuntimeTarget
 public static class TwinCatRuntimeTargetDiscovery
 {
     public static IReadOnlyList<PlcRuntimeTarget> Discover(
-        string twinCatProjectPath)
+        string twinCatProjectPath,
+        string? configuredRuntimeId = null,
+        int? configuredRuntimePort = null)
     {
         if (string.IsNullOrWhiteSpace(twinCatProjectPath))
         {
@@ -72,11 +88,19 @@ public static class TwinCatRuntimeTargetDiscovery
                 (string?)project.Attribute("Name");
             if (!targets.ContainsKey(port))
             {
+                string runtimeId =
+                    configuredRuntimePort == port
+                    && !string.IsNullOrWhiteSpace(
+                        configuredRuntimeId)
+                        ? configuredRuntimeId!
+                        : $"plc-{port}";
                 targets.Add(
                     port,
                     new PlcRuntimeTarget(
-                        name ?? string.Empty,
-                        port));
+                        runtimeId,
+                        name,
+                        instance: null,
+                        adsPort: port));
             }
         }
 

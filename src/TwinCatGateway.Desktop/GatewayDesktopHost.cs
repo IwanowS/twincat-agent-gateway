@@ -23,6 +23,7 @@ public sealed class GatewayDesktopHost : IDisposable
     private readonly CapabilityEvaluator _capabilities;
     private readonly CapabilitySnapshotStore _capabilitySnapshots;
     private readonly SourceManifestStore? _sourceManifests;
+    private readonly ProfileObservationStore? _observations;
     private readonly AdsRuntimeMonitor? _runtimeMonitor;
     private readonly XaeSessionCoordinator? _xaeCoordinator;
     private Task? _serverTask;
@@ -57,6 +58,11 @@ public sealed class GatewayDesktopHost : IDisposable
             : new SourceManifestStore(
                 ActiveProfile.Name,
                 ActiveProfile.Xae.Solution);
+        _observations = ActiveProfile?.Target is null
+            ? null
+            : new ProfileObservationStore(
+                ActiveProfile.Name,
+                ActiveProfile.Target.AmsNetId);
 
         OperationCapabilityPreflight? preflight =
             hostConfiguration.Profiles is null
@@ -94,14 +100,18 @@ public sealed class GatewayDesktopHost : IDisposable
         _events = new GatewayEventJournal(_status);
         XaeErrorListSnapshotStore errorListSnapshots =
             new();
-        _runtimeMonitor = ActiveProfile is null
+        _runtimeMonitor = ActiveProfile?.Target is null
             ? null
             : new AdsRuntimeMonitor(
-                _status,
+                _observations!,
                 _logging.CreateLogger<AdsRuntimeMonitor>(),
                 _events,
-                CreateMonitoringConfiguration(ActiveProfile),
-                errorListSnapshots: errorListSnapshots);
+                ActiveProfile.Name,
+                ActiveProfile.Target.AmsNetId,
+                ActiveProfile.Target.PollIntervalMilliseconds,
+                ActiveProfile.Target.ReadTimeoutMilliseconds,
+                ActiveProfile.Target.TcUnit?.RuntimeId,
+                ActiveProfile.Target.TcUnit?.AdsPort);
         OperationStore operations = new();
         _queue = new OperationQueue(
             operations,
@@ -119,7 +129,7 @@ public sealed class GatewayDesktopHost : IDisposable
                 _logging.CreateLogger<TcUnitRunExecutor>(),
                 logs,
                 _events,
-                _runtimeMonitor!,
+                _runtimeMonitor,
                 errorListSnapshots,
                 _sourceManifests!);
         Func<GatewayDiagnosticsResult>? diagnosticsProvider =
@@ -633,18 +643,4 @@ public sealed class GatewayDesktopHost : IDisposable
         }
     }
 
-    private static TargetMonitoringConfiguration
-        CreateMonitoringConfiguration(
-            ResolvedProfile? profile)
-    {
-        return new TargetMonitoringConfiguration
-        {
-            PollIntervalMilliseconds =
-                profile?.Target?.PollIntervalMilliseconds
-                ?? 1000,
-            ReadTimeoutMilliseconds =
-                profile?.Target?.ReadTimeoutMilliseconds
-                ?? 500,
-        };
-    }
 }

@@ -21,13 +21,6 @@ public sealed class GatewayEventPage
     public bool HistoryTruncated { get; set; }
 }
 
-public interface IGatewayEventSink
-{
-    long Record(
-        GatewayEvent gatewayEvent,
-        DateTimeOffset occurredAtUtc);
-}
-
 public sealed class GatewayEventJournal : IGatewayEventSink
 {
     private readonly object _sync = new();

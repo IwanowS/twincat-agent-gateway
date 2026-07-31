@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Microsoft.Extensions.Logging.Abstractions;
+using TwinCAT.Ads;
 using TwinCatGateway.Ads;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
@@ -15,262 +17,334 @@ namespace TwinCatGateway.IntegrationTests;
 public sealed class AdsRuntimeMonitorTests
 {
     [Fact]
-    public async Task PollsSystemAndPlcsAndDeduplicatesTransitions()
+    public async Task PublishesIndependentTargetAndPlcObservations()
     {
         using TemporaryDirectory temporary = new();
-        string project = temporary.WriteTwinCatProject();
-        GatewayStatusSnapshotStore status = new(
-            GatewayStatusSnapshotStore.CreateInitial("test"));
-        GatewayEventJournal events = new(status);
+        ProfileObservationStore store = CreateStore();
         FakeProbe probe = new();
-        probe.SetMode(10000, RuntimeMode.Run);
-        probe.SetMode(851, RuntimeMode.Run);
-        probe.SetMode(852, RuntimeMode.Exception);
-        XaeErrorListSnapshotStore errorListSnapshots =
-            new();
-        errorListSnapshots.Replace(
-            new[]
-            {
-                new BuildDiagnostic
-                {
-                    Severity = DiagnosticSeverity.Error,
-                    Source = "xae-error-list",
-                    Message =
-                        "Page Fault in PlcProject2 on ADS port 852.",
-                },
-            });
-        using GatewayLoggingSession logging =
-            GatewayLoggingSession.Create(temporary.Path);
-        using AdsRuntimeMonitor monitor = new(
-            status,
-            logging.CreateLogger<AdsRuntimeMonitor>(),
-            events,
-            CreateConfiguration(),
+        probe.SetState(10000, AdsState.Run);
+        probe.SetState(851, AdsState.Run);
+        probe.SetState(852, AdsState.Exception);
+        RecordingEventSink events = new();
+        using AdsRuntimeMonitor monitor = CreateMonitor(
+            store,
             probe,
-            errorListSnapshots);
-        monitor.UpdateTarget(
-            "192.168.3.31.1.1",
-            project);
-        using CancellationTokenSource cancellation = new();
-        Task monitorTask = monitor.RunAsync(cancellation.Token);
-        try
-        {
-            await WaitUntilAsync(
-                () =>
-                    status.Read().TwinCat.Mode
-                        == RuntimeMode.Exception);
-
-            GatewayStatusResult faulted = status.Read();
-            Assert.Equal(
-                RuntimeMode.Run,
-                faulted.TwinCat.SystemMode);
-            Assert.Equal(
-                "PLC_RUNTIME_EXCEPTION",
-                faulted.TwinCat.Alert?.Code);
-            Assert.Equal(
-                "PlcProject2",
-                faulted.TwinCat.Alert?.RuntimeName);
-            Assert.Equal(
-                852,
-                faulted.TwinCat.Alert?.AdsPort);
-            Assert.Equal(
-                "Page Fault in PlcProject2 on ADS port 852.",
-                faulted.TwinCat.Alert?.Details);
-            Assert.True(
-                faulted.TwinCat.Alert?.EventCursor > 0);
-            Assert.Equal(
-                2,
-                monitor.GetPlcDiagnostics().Count);
-            long faultCursor =
-                faulted.TwinCat.Alert!.EventCursor;
-            await Task.Delay(300);
-            Assert.Equal(
-                faultCursor,
-                status.Read().TwinCat.Alert?.EventCursor);
-
-            probe.SetMode(852, RuntimeMode.Run);
-            await WaitUntilAsync(
-                () =>
-                    status.Read().TwinCat.Mode
-                        == RuntimeMode.Run
-                    && status.Read().TwinCat.Alert is null);
-            long recoveredCursor =
-                status.Read().LatestEventCursor;
-            await Task.Delay(300);
-
-            Assert.Equal(
-                recoveredCursor,
-                status.Read().LatestEventCursor);
-            GatewayEventPage page = events.ReadAfter(
-                eventStreamId: null,
-                afterCursor: 0,
-                maximumCount: 20);
-            Assert.Contains(
-                page.Events,
-                gatewayEvent =>
-                    gatewayEvent.Severity
-                        == DiagnosticSeverity.Error
-                    && gatewayEvent.Properties[
-                        "runtimeName"]
-                        == "PlcProject2");
-        }
-        finally
-        {
-            cancellation.Cancel();
-            await monitorTask;
-        }
-    }
-
-    [Fact]
-    public async Task EnrichesExistingExceptionAlertWithoutNewTransition()
-    {
-        using TemporaryDirectory temporary = new();
-        string project = temporary.WriteTwinCatProject();
-        GatewayStatusSnapshotStore status = new(
-            GatewayStatusSnapshotStore.CreateInitial("test"));
-        GatewayEventJournal events = new(status);
-        FakeProbe probe = new();
-        probe.SetMode(10000, RuntimeMode.Run);
-        probe.SetMode(851, RuntimeMode.Run);
-        probe.SetMode(852, RuntimeMode.Exception);
-        XaeErrorListSnapshotStore errorListSnapshots =
-            new();
-        using GatewayLoggingSession logging =
-            GatewayLoggingSession.Create(temporary.Path);
-        using AdsRuntimeMonitor monitor = new(
-            status,
-            logging.CreateLogger<AdsRuntimeMonitor>(),
-            events,
-            CreateConfiguration(),
-            probe,
-            errorListSnapshots);
-        monitor.UpdateTarget(
-            "192.168.3.31.1.1",
-            project);
-        using CancellationTokenSource cancellation = new();
-        Task monitorTask = monitor.RunAsync(cancellation.Token);
-        try
-        {
-            await WaitUntilAsync(
-                () =>
-                    status.Read().TwinCat.Alert?.Code
-                        == "PLC_RUNTIME_EXCEPTION");
-            RuntimeAlert initialAlert =
-                Assert.IsType<RuntimeAlert>(
-                    status.Read().TwinCat.Alert);
-            Assert.Null(initialAlert.Details);
-            long initialCursor = initialAlert.EventCursor;
-            DateTimeOffset initialOccurrence =
-                initialAlert.OccurredAtUtc;
-            long initialLatestCursor =
-                status.Read().LatestEventCursor;
-
-            errorListSnapshots.Replace(
-                new[]
-                {
-                    new BuildDiagnostic
-                    {
-                        Severity = DiagnosticSeverity.Error,
-                        Source = "xae-error-list",
-                        Message = "Exception Code: 0xc0000005. "
-                            + "Page Fault in PlcProject2 on ADS port 852.",
-                    },
-                });
-            await WaitUntilAsync(
-                () =>
-                    status.Read().TwinCat.Alert?.Details
-                        is not null);
-
-            RuntimeAlert enrichedAlert =
-                Assert.IsType<RuntimeAlert>(
-                    status.Read().TwinCat.Alert);
-            Assert.Equal(
-                initialCursor,
-                enrichedAlert.EventCursor);
-            Assert.Equal(
-                initialOccurrence,
-                enrichedAlert.OccurredAtUtc);
-            Assert.Equal(
-                initialLatestCursor,
-                status.Read().LatestEventCursor);
-            Assert.Contains(
-                "Page Fault",
-                enrichedAlert.Details,
-                StringComparison.OrdinalIgnoreCase);
-            Assert.Contains(
-                "0xc0000005",
-                enrichedAlert.Details,
-                StringComparison.OrdinalIgnoreCase);
-        }
-        finally
-        {
-            cancellation.Cancel();
-            await monitorTask;
-        }
-    }
-
-    [Fact]
-    public async Task ReportsDisconnectAndRecoversWithoutPollingPlcs()
-    {
-        using TemporaryDirectory temporary = new();
-        GatewayStatusSnapshotStore status = new(
-            GatewayStatusSnapshotStore.CreateInitial("test"));
-        GatewayEventJournal events = new(status);
-        FakeProbe probe = new();
-        probe.SetFailure(
-            10000,
-            "TargetUnreachable");
-        using GatewayLoggingSession logging =
-            GatewayLoggingSession.Create(temporary.Path);
-        using AdsRuntimeMonitor monitor = new(
-            status,
-            logging.CreateLogger<AdsRuntimeMonitor>(),
-            events,
-            CreateConfiguration(),
-            probe);
-        monitor.UpdateTarget(
-            "192.168.3.31.1.1",
+            events);
+        monitor.UpdateProject(
             temporary.WriteTwinCatProject());
         using CancellationTokenSource cancellation = new();
-        Task monitorTask = monitor.RunAsync(cancellation.Token);
+        Task task = monitor.RunAsync(cancellation.Token);
         try
         {
             await WaitUntilAsync(
                 () =>
-                    status.Read().TwinCat.Alert?.Code
-                        == "RUNTIME_UNAVAILABLE");
-            Assert.Equal(
-                RuntimeMode.Unknown,
-                status.Read().TwinCat.Mode);
-            Assert.Equal(
-                0,
-                probe.ReadCount(851));
-            Assert.Equal(
-                0,
-                probe.ReadCount(852));
+                {
+                    ProfileObservationSnapshot snapshot =
+                        monitor.Read();
+                    return snapshot.Target.State
+                            == TargetSystemState.Run
+                        && snapshot.PlcRuntimes.Count == 2
+                        && snapshot.PlcRuntimes.Any(
+                            runtime =>
+                                runtime.State
+                                == PlcRuntimeState.Exception);
+                });
 
-            probe.SetMode(10000, RuntimeMode.Config);
-            await WaitUntilAsync(
-                () =>
-                    status.Read().TwinCat.Mode
-                        == RuntimeMode.Config
-                    && status.Read().TwinCat.Alert is null);
+            ProfileObservationSnapshot result =
+                monitor.Read();
+            Assert.Equal(
+                TargetSystemState.Run,
+                result.Target.State);
+            Assert.Equal(
+                PlcRuntimeState.Exception,
+                result.PlcRuntimes.Single(
+                    runtime => runtime.Port == 852).State);
+            Assert.Equal(
+                TimeSpan.FromMilliseconds(100),
+                probe.LastTimeout(10000));
+            int eventCount = events.Events.Count;
+            await Task.Delay(150);
+            Assert.Equal(eventCount, events.Events.Count);
+            Assert.Contains(
+                events.Events,
+                    gatewayEvent =>
+                    gatewayEvent.Type
+                        == GatewayEventTypes
+                            .PlcRuntimeStateChanged
+                    && gatewayEvent.Properties["runtimeId"]
+                        == "verification");
         }
         finally
         {
             cancellation.Cancel();
-            await monitorTask;
+            await task;
         }
     }
 
-    private static RuntimeMonitoringConfiguration
-        CreateConfiguration()
+    [Fact]
+    public async Task ConfigPublishesUnavailablePlcsWithoutReadingThem()
     {
-        return new RuntimeMonitoringConfiguration
+        using TemporaryDirectory temporary = new();
+        ProfileObservationStore store = CreateStore();
+        FakeProbe probe = new();
+        probe.SetState(10000, AdsState.Reconfig);
+        RecordingEventSink events = new();
+        using AdsRuntimeMonitor monitor = CreateMonitor(
+            store,
+            probe,
+            events);
+        monitor.UpdateProject(
+            temporary.WriteTwinCatProject());
+        using CancellationTokenSource cancellation = new();
+        Task task = monitor.RunAsync(cancellation.Token);
+        try
         {
-            PollIntervalMilliseconds = 100,
-            ReadTimeoutMilliseconds = 100,
-        };
+            await WaitUntilAsync(
+                () =>
+                {
+                    ProfileObservationSnapshot snapshot =
+                        monitor.Read();
+                    return snapshot.Target.State
+                            == TargetSystemState.Config
+                        && snapshot.PlcRuntimes.Count == 2
+                        && snapshot.PlcRuntimes.All(
+                            runtime =>
+                                runtime.Freshness
+                                == ObservationFreshness
+                                    .Unavailable);
+                });
+
+            ProfileObservationSnapshot snapshot =
+                monitor.Read();
+            Assert.All(
+                snapshot.PlcRuntimes,
+                runtime =>
+                {
+                    Assert.Equal(
+                        ObservationFreshness.Unavailable,
+                        runtime.Freshness);
+                    Assert.Equal(
+                        ErrorCodes.PlcStateNotObserved,
+                        runtime.Error?.Code);
+                });
+            Assert.Equal(0, probe.ReadCount(851));
+            Assert.Equal(0, probe.ReadCount(852));
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await task;
+        }
+    }
+
+    [Fact]
+    public async Task DirectAdsContinuesWhenXaeIsUnavailable()
+    {
+        ProfileObservationStore store = CreateStore();
+        FakeProbe probe = new();
+        probe.SetState(10000, AdsState.Run);
+        RecordingEventSink events = new();
+        using AdsRuntimeMonitor monitor = CreateMonitor(
+            store,
+            probe,
+            events);
+        monitor.MarkXaeUnavailable(
+            "XAE is disconnected.");
+        using CancellationTokenSource cancellation = new();
+        Task task = monitor.RunAsync(cancellation.Token);
+        try
+        {
+            await WaitUntilAsync(
+                () => monitor.Read().Target.Freshness
+                    == ObservationFreshness.Fresh);
+
+            ProfileObservationSnapshot snapshot =
+                monitor.Read();
+            Assert.Equal(
+                ObservationFreshness.Unavailable,
+                snapshot.Xae?.Freshness);
+            Assert.Equal(
+                TargetSystemState.Run,
+                snapshot.Target.State);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await task;
+        }
+    }
+
+    [Fact]
+    public async Task InitialFailureRecoversWithoutAggregateState()
+    {
+        ProfileObservationStore store = CreateStore();
+        FakeProbe probe = new();
+        probe.SetFailure(10000);
+        RecordingEventSink events = new();
+        using AdsRuntimeMonitor monitor = CreateMonitor(
+            store,
+            probe,
+            events);
+        using CancellationTokenSource cancellation = new();
+        Task task = monitor.RunAsync(cancellation.Token);
+        try
+        {
+            await WaitUntilAsync(
+                () => monitor.Read().Target.Freshness
+                    == ObservationFreshness.Unavailable);
+
+            probe.SetState(10000, AdsState.Run);
+            await WaitUntilAsync(
+                () => monitor.Read().Target.Freshness
+                        == ObservationFreshness.Fresh
+                    && monitor.Read().Target.State
+                        == TargetSystemState.Run);
+
+            Assert.Contains(
+                events.Events,
+                gatewayEvent =>
+                    gatewayEvent.Type
+                        == GatewayEventTypes
+                            .TargetSystemStateReadFailed);
+            Assert.Contains(
+                events.Events,
+                gatewayEvent =>
+                    gatewayEvent.Type
+                        == GatewayEventTypes
+                            .TargetSystemStateChanged);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await task;
+        }
+    }
+
+    [Fact]
+    public async Task AlreadyCancelledMonitorDoesNotReadOrPublish()
+    {
+        ProfileObservationStore store = CreateStore();
+        FakeProbe probe = new();
+        probe.SetState(10000, AdsState.Run);
+        RecordingEventSink events = new();
+        using AdsRuntimeMonitor monitor = CreateMonitor(
+            store,
+            probe,
+            events);
+        using CancellationTokenSource cancellation = new();
+        cancellation.Cancel();
+
+        await monitor.RunAsync(cancellation.Token);
+
+        Assert.Equal(0, probe.ReadCount(10000));
+        Assert.Empty(events.Events);
+        Assert.Equal(
+            ObservationFreshness.Unknown,
+            monitor.Read().Target.Freshness);
+    }
+
+    [Fact]
+    public async Task CancellationDuringReadDoesNotPublish()
+    {
+        ProfileObservationStore store = CreateStore();
+        FakeProbe probe = new();
+        using ManualResetEventSlim readEntered = new();
+        using ManualResetEventSlim releaseRead = new();
+        probe.SetBlockingState(
+            10000,
+            AdsState.Run,
+            readEntered,
+            releaseRead);
+        RecordingEventSink events = new();
+        using AdsRuntimeMonitor monitor = CreateMonitor(
+            store,
+            probe,
+            events);
+        using CancellationTokenSource cancellation = new();
+        Task task = monitor.RunAsync(cancellation.Token);
+
+        Assert.True(readEntered.Wait(TimeSpan.FromSeconds(3)));
+        cancellation.Cancel();
+        releaseRead.Set();
+        await task;
+
+        Assert.Empty(events.Events);
+        Assert.Equal(
+            ObservationFreshness.Unknown,
+            monitor.Read().Target.Freshness);
+    }
+
+    [Fact]
+    public async Task PublishesDivergenceAndConvergenceTransitions()
+    {
+        ProfileObservationStore store = CreateStore();
+        FakeProbe probe = new();
+        probe.SetState(10000, AdsState.Reconfig);
+        RecordingEventSink events = new();
+        using AdsRuntimeMonitor monitor = CreateMonitor(
+            store,
+            probe,
+            events);
+        monitor.PublishXaeObservation(
+            new XaeTwinCatSystemObservation
+            {
+                State = TargetSystemState.Run,
+                RawState = "IsTwinCATStarted=true",
+                SelectedTarget = AmsNetId,
+                ObservedAtUtc = DateTimeOffset.UtcNow,
+                Freshness = ObservationFreshness.Fresh,
+            });
+        using CancellationTokenSource cancellation = new();
+        Task task = monitor.RunAsync(cancellation.Token);
+        try
+        {
+            await WaitUntilAsync(
+                () => events.Events.Any(
+                    gatewayEvent =>
+                        gatewayEvent.Type
+                            == GatewayEventTypes
+                                .StateObservationsDiverged));
+
+            probe.SetState(10000, AdsState.Run);
+            await WaitUntilAsync(
+                () => events.Events.Any(
+                    gatewayEvent =>
+                        gatewayEvent.Type
+                            == GatewayEventTypes
+                                .StateObservationsConverged));
+
+            Assert.Null(monitor.Read().Divergence);
+        }
+        finally
+        {
+            cancellation.Cancel();
+            await task;
+        }
+    }
+
+    private static AdsRuntimeMonitor CreateMonitor(
+        ProfileObservationStore store,
+        IAdsStateProbe probe,
+        IGatewayEventSink events)
+    {
+        return new AdsRuntimeMonitor(
+            store,
+            NullLogger<AdsRuntimeMonitor>.Instance,
+            events,
+            "bench",
+            AmsNetId,
+            pollIntervalMilliseconds: 25,
+            readTimeoutMilliseconds: 100,
+            tcUnitRuntimeId: "verification",
+            tcUnitPort: 852,
+            probe: probe);
+    }
+
+    private static ProfileObservationStore CreateStore()
+    {
+        return new ProfileObservationStore(
+            "bench",
+            AmsNetId);
     }
 
     private static async Task WaitUntilAsync(
@@ -285,23 +359,25 @@ public sealed class AdsRuntimeMonitorTests
                 return;
             }
 
-            await Task.Delay(25);
+            await Task.Delay(20);
         }
 
         Assert.True(condition(), "Condition was not reached.");
     }
 
-    private sealed class FakeProbe :
-        IAdsRuntimeStatusProbe
+    private sealed class FakeProbe : IAdsStateProbe
     {
         private readonly ConcurrentDictionary<
             int,
-            Func<AdsRuntimeStatusReadResult>> _results =
+            Func<string, AdsStateReadResult>> _results =
                 new();
         private readonly ConcurrentDictionary<int, int>
             _readCounts = new();
+        private readonly ConcurrentDictionary<
+            int,
+            TimeSpan> _lastTimeouts = new();
 
-        public AdsRuntimeStatusReadResult Read(
+        public AdsStateReadResult Read(
             string amsNetId,
             int port,
             TimeSpan timeout)
@@ -310,47 +386,64 @@ public sealed class AdsRuntimeMonitorTests
                 port,
                 1,
                 (_, count) => count + 1);
-            AdsRuntimeStatusReadResult result =
-                _results[port]();
-            result.Diagnostics.AmsNetId = amsNetId;
-            result.Diagnostics.Port = port;
-            result.Diagnostics.ReadAtUtc =
-                DateTimeOffset.UtcNow;
-            return result;
+            _lastTimeouts[port] = timeout;
+            return _results[port](amsNetId);
         }
 
-        public void SetMode(
-            int port,
-            RuntimeMode mode)
+        public void SetState(int port, AdsState state)
         {
-            _results[port] = () =>
-                new AdsRuntimeStatusReadResult(
-                    new TwinCatStatus
-                    {
-                        Started = mode == RuntimeMode.Run
-                            || mode == RuntimeMode.Exception,
-                        Mode = mode,
-                    },
-                    new AdsRuntimeDiagnostics
-                    {
-                        AdsState = mode.ToString(),
-                    });
+            _results[port] = amsNetId =>
+                new AdsStateReadResult(
+                    amsNetId,
+                    port,
+                    DateTimeOffset.UtcNow,
+                    (int)state,
+                    state.ToString(),
+                    rawDeviceState: 2,
+                    error: null,
+                    failure: null);
         }
 
-        public void SetFailure(
-            int port,
-            string errorCode)
+        public void SetFailure(int port)
         {
-            _results[port] = () =>
-                new AdsRuntimeStatusReadResult(
-                    new TwinCatStatus
+            _results[port] = amsNetId =>
+                new AdsStateReadResult(
+                    amsNetId,
+                    port,
+                    DateTimeOffset.UtcNow,
+                    rawAdsState: null,
+                    rawAdsStateName: null,
+                    rawDeviceState: null,
+                    new ObservationError
                     {
-                        Mode = RuntimeMode.Unknown,
+                        Code =
+                            ErrorCodes.AdsStateReadFailed,
+                        Message = "ADS state read failed.",
+                        Retryable = true,
                     },
-                    new AdsRuntimeDiagnostics
-                    {
-                        ErrorCode = errorCode,
-                    });
+                    failure: null);
+        }
+
+        public void SetBlockingState(
+            int port,
+            AdsState state,
+            ManualResetEventSlim readEntered,
+            ManualResetEventSlim releaseRead)
+        {
+            _results[port] = amsNetId =>
+            {
+                readEntered.Set();
+                releaseRead.Wait(TimeSpan.FromSeconds(3));
+                return new AdsStateReadResult(
+                    amsNetId,
+                    port,
+                    DateTimeOffset.UtcNow,
+                    (int)state,
+                    state.ToString(),
+                    rawDeviceState: 2,
+                    error: null,
+                    failure: null);
+            };
         }
 
         public int ReadCount(int port)
@@ -362,8 +455,34 @@ public sealed class AdsRuntimeMonitorTests
                 : 0;
         }
 
+        public TimeSpan LastTimeout(int port)
+        {
+            return _lastTimeouts[port];
+        }
+
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class RecordingEventSink :
+        IGatewayEventSink
+    {
+        private long _cursor;
+
+        public ConcurrentQueue<GatewayEvent> Events { get; } =
+            new();
+
+        public long Record(
+            GatewayEvent gatewayEvent,
+            DateTimeOffset occurredAtUtc)
+        {
+            gatewayEvent.Cursor =
+                Interlocked.Increment(ref _cursor);
+            gatewayEvent.OccurredAtUtc = occurredAtUtc;
+            Events.Enqueue(gatewayEvent);
+
+            return gatewayEvent.Cursor;
         }
     }
 
@@ -391,8 +510,8 @@ public sealed class AdsRuntimeMonitorTests
                 <TcSmProject>
                   <Project>
                     <Plc>
-                      <Project Name="PlcProject1" AmsPort="851" />
-                      <Project Name="PlcProject2" AmsPort="852" />
+                      <Project Name="MachinePlc" AmsPort="851" />
+                      <Project Name="Tests" AmsPort="852" />
                     </Plc>
                   </Project>
                 </TcSmProject>
@@ -402,7 +521,12 @@ public sealed class AdsRuntimeMonitorTests
 
         public void Dispose()
         {
-            Directory.Delete(Path, recursive: true);
+            if (Directory.Exists(Path))
+            {
+                Directory.Delete(Path, recursive: true);
+            }
         }
     }
+
+    private const string AmsNetId = "192.168.3.31.1.1";
 }
