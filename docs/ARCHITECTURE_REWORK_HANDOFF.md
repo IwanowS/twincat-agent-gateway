@@ -337,3 +337,64 @@ UI redesign.
 
 The user-modified tracked `twincat-gateway.json` and all `.session/` contents
 remain unstaged and excluded from every S9 commit.
+
+## 2026-08-01 — S9 corrective stand continuation
+
+The operator granted delete access and changed the TcUnit report share from
+the administrative `\\WIN-T077ADA\c\...` path to
+`\\WIN-T077ADA\TwinCAT\3.1\Boot\tcunit_xunit_testresults.xml`. The checkout
+Gateway was restarted with the explicit user configuration. Same-user ROT and
+v2 resources confirmed exactly one `TcXaeShell.DTE.15.0` session for the
+fixture solution, AMS `192.168.3.31.1.1`, confirmed synchronization, zero
+dirty documents, and fresh Target/PLC Run before the next operation.
+
+The combined S8 harness reached the native **Activate Configuration** dialog,
+but its dialog supervisor timed out with "did not present the expected
+activation confirmation dialog" while the dialog was visibly present. The
+operator cancelled it, restarted XAE after a separate project-load issue, and
+explicitly deferred investigation. No Target restart or accepted two-report
+TcUnit chain followed, so S8 remains pending.
+
+The first S6 PLC Rebuild attempt then crashed checkout Gateway PID `35412`.
+Windows Application evidence recorded `0xc0000005` in `ntdll.dll`, with the
+managed stack entering
+`IVsSolutionBuildManager2.StartUpdateSpecificProjectConfigurations`. XAE PID
+`13488` remained alive and exact-solution visible in ROT. The corrective commits
+are:
+
+- `ba91b6d` — replace the unsafe mixed hierarchy/configuration array call with
+  a single-project VSSDK request and add explicit Clean/Rebuild flag tests;
+- `1dc7e43` — align the public `detail=full` value with the generated MCP
+  schema and CLI help;
+- `e08244e` — remove nullable COM arguments after the first replacement failed
+  closed with `0x800706F4` and exact operation ID
+  `500150efd9e6436c8b6c4aad140212d0` before side effects.
+
+After `e08244e`, logical-project Rebuild passed with operation
+`c4d027e4a5f24fc78db1cdf48eea4f31`, zero errors/warnings, and no expected
+project noise. Solution-scope Build passed with operation
+`d169aa159499482bb726f52df0dcde98`, also with zero errors/warnings and no
+noise.
+
+For the compile-error/external-reload gate, the exact original bytes of
+`PlcProject2/POUs/MAIN.TcPOU` were recorded as SHA-256
+`CDD0C403E864CA670B29073999E6D5A59354A14209DD92A622CB2EDE053222B5`.
+A temporary `f1 := ;` edit produced expected `BUILD_FAILED` operation
+`0c952f7cb46e474b9f669b48567a8b0b` with the exact file, line 12, and
+`Expression expected instead of ';'`. The file was restored from current HEAD
+after line-ending normalization was detected, the exact original hash and
+clean Git status were re-confirmed, and clean reload/build operation
+`c0d5a67aca4e44a08b17a407bf408e2f` passed with zero errors/warnings.
+
+Final read-only evidence retained Gateway PID `49612`, attached XAE PID
+`13488`, the exact fixture solution, confirmed synchronization, zero dirty
+documents/dialogs, and fresh Run for Target System Service plus PLC ports 851
+and 852. The full solution build remained zero warnings/errors; the XAE build
+event suite is 9/9 and contract serialization is 29/29 on both net8.0 and
+net48.
+
+S6 remains pending only for an operator-created dirty XAE document, a real
+`.tsproj` noise occurrence, and the guarded PLC Exception workflow. S8 remains
+pending by operator direction. The user-owned `twincat-gateway.json` and
+`.session/` remain unstaged. XAE and checkout Gateway are intentionally left
+open and attached.

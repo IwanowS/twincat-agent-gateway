@@ -130,10 +130,10 @@ real-XAE gates.
 | S3 | Source discovery manifest | yes | covered by tracked migration suite: 82/82 | not required | accepted locally |
 | S4 | Separate XAE/System Service/PLC states | yes | observation suite: 59 passed, 1 skipped | exact fixture provenance captured by S7 checkpoint | accepted |
 | S5 | Operator locks and XAE close consent backend | yes | exact-ID cancellation and lock/capability coverage pass in tracked v2 suites | not required | accepted locally |
-| S6 | XAE build scope and policy cutover | yes | production-TFM compile passes; migration 82/82; XAE event suite 7/7 | checkout v2 PlcProject2 Build passed; remaining matrix pending | pending |
+| S6 | XAE build scope and policy cutover | yes | production-TFM compile passes; migration 82/82; XAE event suite 9/9 | checkout v2 Build/Rebuild, solution scope, logical selection, compile error, external reload, and Run gates passed; dirty document, real `.tsproj` noise, and PLC Exception remain | pending |
 | S7 | Target Config/start-restart | yes | target suite: 23/23; Contracts: 26/26 on net8.0 and net48 | exact fixture cycle passed | accepted |
-| S8 | Activation and TcUnit verification unification | yes | activation-verification suite: 12/12; Contracts: 28/28 on net8.0 and net48 | checkout v2 reached TcUnit baseline; blocked before activation by report delete access | pending |
-| S9 | MCP tools/resources and operation journal cutover | yes | full solution 0 warnings/errors; Unit 176/176; MCP v2 20/20; contract net8/net48 28/28 | checkout v2 PLC Build passed; S8 stopped before activation because TcUnit report delete access was denied | accepted locally |
+| S8 | Activation and TcUnit verification unification | yes | activation-verification suite: 12/12; Contracts: 29/29 on net8.0 and net48 | checkout v2 reached the native activation confirmation after report-path correction; the operator deferred the XAE/dialog issue | pending |
+| S9 | MCP tools/resources and operation journal cutover | yes | full solution 0 warnings/errors; Unit 176/176; MCP v2 20/20; contract net8/net48 29/29 | checkout v2 object surface and expanded safe S6 matrix passed; S8 remains deferred | accepted locally |
 | S10 | Desktop UI redesign | no | pending | pending | pending |
 | S11 | Skills, project template, installed docs, packaging | no | pending | pending | pending |
 | S12 | Full regression and real-XAE acceptance | no | pending | pending | pending |
@@ -750,9 +750,16 @@ MCP adapter contains no v1 public names.
 - The checkout-built S9 real-XAE harness validates exact config/solution/DTE,
   confirmed synchronization, zero dirty documents, exact operation IDs, two
   distinct fresh TcUnit artifacts, and a final fresh direct Target Run. It is
-  opt-in. Its exact-profile `PlcProject2` Build passed on the stand. The S8
-  chain stopped safely before activation when the Gateway user could not delete
-  the configured existing TcUnit report; Target remained fresh Run.
+  opt-in. Its exact-profile `PlcProject2` Build passed on the stand. After the
+  report path and delete access were corrected, the S8 chain reached the native
+  activation confirmation, but the harness did not recognize the visible
+  dialog. The operator cancelled and deferred that XAE/dialog issue; Target
+  remained fresh Run.
+- Corrective stand work then fixed the PLC Rebuild VSSDK path after one native
+  access violation and one fail-closed COM argument error. Exact-profile PLC
+  Rebuild, solution Build, expected PLC compile failure, byte-for-byte source
+  restoration, external reload, and a final clean PLC Build passed. Dirty-XAE,
+  real `.tsproj` noise, PLC Exception, and the combined S8 chain remain open.
 - S10 remains open: the Desktop compiles and consumes v2 state, but the planned
   object-oriented UI redesign is not part of S9 acceptance.
 
