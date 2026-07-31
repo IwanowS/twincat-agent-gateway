@@ -920,75 +920,34 @@ public sealed class XaeSession : IDisposable
     }
 
     public async Task<XaeBuildExecutionResult> ExecuteBuildAsync(
+        string solutionPath,
         BuildAction action,
+        XaeBuildScope scope,
+        string? project,
         IEnumerable<string>? changedPaths,
         TimeSpan timeout,
         CancellationToken cancellationToken)
     {
         return await ExecuteBuildAsync(
+            solutionPath,
             action,
+            scope,
+            project,
             changedPaths,
-            configuration: null,
-            platform: null,
-            timeout,
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task<XaeBuildExecutionResult> ExecuteBuildAsync(
-        BuildAction action,
-        IEnumerable<string>? changedPaths,
-        string? configuration,
-        string? platform,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
-    {
-        return await ExecuteBuildAsync(
-            action,
-            changedPaths,
-            configuration,
-            platform,
             ExternalChangePolicy.ReloadModified,
-            discardDirtyDocuments: false,
-            allowDirtyDocumentDiscard: false,
             autoSynchronizeBeforeOperation: true,
-            timeout,
-            cancellationToken).ConfigureAwait(false);
-    }
-
-    public async Task<XaeBuildExecutionResult> ExecuteBuildAsync(
-        BuildAction action,
-        IEnumerable<string>? changedPaths,
-        string? configuration,
-        string? platform,
-        ExternalChangePolicy externalChangePolicy,
-        bool discardDirtyDocuments,
-        bool allowDirtyDocumentDiscard,
-        bool autoSynchronizeBeforeOperation,
-        TimeSpan timeout,
-        CancellationToken cancellationToken)
-    {
-        return await ExecuteBuildAsync(
-            action,
-            changedPaths,
-            configuration,
-            platform,
-            externalChangePolicy,
-            discardDirtyDocuments,
-            allowDirtyDocumentDiscard,
-            autoSynchronizeBeforeOperation,
             beforeBuild: null,
             timeout,
             cancellationToken).ConfigureAwait(false);
     }
 
-    public async Task<XaeBuildExecutionResult> ExecuteBuildAsync(
+    internal async Task<XaeBuildExecutionResult> ExecuteBuildAsync(
+        string solutionPath,
         BuildAction action,
+        XaeBuildScope scope,
+        string? project,
         IEnumerable<string>? changedPaths,
-        string? configuration,
-        string? platform,
         ExternalChangePolicy externalChangePolicy,
-        bool discardDirtyDocuments,
-        bool allowDirtyDocumentDiscard,
         bool autoSynchronizeBeforeOperation,
         Action<bool>? beforeBuild,
         TimeSpan timeout,
@@ -1001,14 +960,21 @@ public sealed class XaeSession : IDisposable
                 ? await SynchronizeExternalChangesAsync(
                     changedPaths,
                     externalChangePolicy,
-                    discardDirtyDocuments,
-                    allowDirtyDocumentDiscard,
+                    discardDirtyDocuments: false,
+                    allowDirtyDocumentDiscard: false,
                     force: false,
                     GetRemaining(
                         deadlineUtc,
                         "xae.build.synchronize"),
                     cancellationToken).ConfigureAwait(false)
                 : ExternalChangeSynchronizationResult.None;
+        TwinCatProjectGraphSnapshot graph = ResolveProjectGraph(
+            solutionPath,
+            cancellationToken);
+        ResolvedXaeBuildTarget target = XaeBuildTargetResolver.Resolve(
+            graph,
+            scope,
+            project);
         bool synchronizationSideEffectsStarted =
             synchronization.SynchronizedDocuments.Count != 0
             || synchronization.DiscardedDocuments.Count != 0;
@@ -1019,8 +985,7 @@ public sealed class XaeSession : IDisposable
             await _dispatcher.InvokeAsync(
                 () => StartBuildOnSta(
                     action,
-                    configuration,
-                    platform),
+                    target),
                 GetRemaining(
                     deadlineUtc,
                     "xae.build.start"),
@@ -1056,6 +1021,25 @@ public sealed class XaeSession : IDisposable
             await TryAbortActiveBuildAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    internal async Task SelectBuildConfigurationAsync(
+        string? configuration,
+        string? platform,
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        ThrowIfDisposed();
+        await _dispatcher.InvokeAsync(
+            () =>
+            {
+                ApplyBuildConfigurationOnSta(
+                    configuration,
+                    platform);
+                return true;
+            },
+            timeout,
+            cancellationToken).ConfigureAwait(false);
     }
 
     public ComDiagnostics GetComDiagnostics()
@@ -2271,8 +2255,7 @@ public sealed class XaeSession : IDisposable
 
     private Task<XaeBuildEventEvidence> StartBuildOnSta(
         BuildAction action,
-        string? configuration,
-        string? platform)
+        ResolvedXaeBuildTarget target)
     {
         if (_activeBuild is not null)
         {
@@ -2283,9 +2266,6 @@ public sealed class XaeSession : IDisposable
                 stage: "xae.build.start");
         }
 
-        ApplyBuildConfigurationOnSta(
-            configuration,
-            platform);
         DTE2 dte = _dte
             ?? throw new GatewayOperationException(
                 ErrorCodes.XaeNotFound,
@@ -2295,6 +2275,9 @@ public sealed class XaeSession : IDisposable
         _activeBuild = XaeBuildEventLease.Start(
             dte,
             action,
+            target.Scope,
+            target.Project,
+            target.ProjectFile,
             _workspaceFileChangeGuard);
         return _activeBuild.Completion;
     }
@@ -3062,7 +3045,7 @@ public sealed class XaeSession : IDisposable
         }
     }
 
-    private static T QueryService<T>(
+    internal static T QueryService<T>(
         DTE2 dte,
         Guid service)
         where T : class

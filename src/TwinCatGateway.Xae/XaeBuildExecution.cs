@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using EnvDTE;
 using EnvDTE80;
+using Microsoft.VisualStudio.Shell.Interop;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
 
@@ -14,6 +16,8 @@ public sealed class XaeBuildExecutionResult
 {
     internal XaeBuildExecutionResult(
         BuildAction action,
+        XaeBuildScope scope,
+        string? project,
         long durationMs,
         int failedProjects,
         vsBuildState buildState,
@@ -26,6 +30,8 @@ public sealed class XaeBuildExecutionResult
         XaeAcceptedProjectGraphChanges? acceptedProjectChanges = null)
     {
         Action = action;
+        Scope = scope;
+        Project = project;
         DurationMs = durationMs;
         FailedProjects = failedProjects;
         BuildState = buildState;
@@ -39,6 +45,10 @@ public sealed class XaeBuildExecutionResult
     }
 
     public BuildAction Action { get; }
+
+    public XaeBuildScope Scope { get; }
+
+    public string? Project { get; }
 
     public long DurationMs { get; }
 
@@ -79,21 +89,23 @@ internal sealed class XaeBuildEventLease : IDisposable
     private readonly SolutionBuild _solutionBuild;
     private readonly XaeOutputSnapshot _outputSnapshot;
     private readonly XaeProjectFileChangeLease _projectFileLease;
-    private readonly bool _requireSolutionScope;
+    private readonly XaeBuildScope? _expectedScope;
+    private readonly string? _project;
     private readonly IReadOnlyList<BuildDiagnostic>
         _errorListBaseline = Array.Empty<BuildDiagnostic>();
-    private vsBuildAction _expectedAction;
     private bool _disposed;
 
     private XaeBuildEventLease(
         DTE2 dte,
         BuildAction requestedAction,
-        bool requireSolutionScope,
+        XaeBuildScope? expectedScope,
+        string? project,
         IXaeProjectFileChangeGuard? workspaceGuard)
     {
         _dte = dte;
         _requestedAction = requestedAction;
-        _requireSolutionScope = requireSolutionScope;
+        _expectedScope = expectedScope;
+        _project = project;
         _events = dte.Events;
         _buildEvents = _events.BuildEvents;
         _solution = dte.Solution;
@@ -138,6 +150,9 @@ internal sealed class XaeBuildEventLease : IDisposable
     public static XaeBuildEventLease Start(
         DTE2 dte,
         BuildAction action,
+        XaeBuildScope scope,
+        string? project,
+        string? projectFile,
         IXaeProjectFileChangeGuard? workspaceGuard = null)
     {
         XaeBuildEventLease? lease = null;
@@ -146,9 +161,10 @@ internal sealed class XaeBuildEventLease : IDisposable
             lease = new XaeBuildEventLease(
                 dte,
                 action,
-                requireSolutionScope: true,
+                scope,
+                project,
                 workspaceGuard);
-            lease.StartFirstPhase();
+            lease.StartFirstPhase(scope, projectFile);
             return lease;
         }
         catch
@@ -169,9 +185,9 @@ internal sealed class XaeBuildEventLease : IDisposable
             lease = new XaeBuildEventLease(
                 dte,
                 action,
-                requireSolutionScope: false,
+                expectedScope: null,
+                project: null,
                 workspaceGuard);
-            lease.SetExpectedAction();
             return lease;
         }
         catch
@@ -240,6 +256,8 @@ internal sealed class XaeBuildEventLease : IDisposable
         }
         return new XaeBuildExecutionResult(
             _requestedAction,
+            _expectedScope ?? XaeBuildScope.Solution,
+            _project,
             _stopwatch.ElapsedMilliseconds,
             failedProjects,
             _solutionBuild.BuildState,
@@ -288,7 +306,9 @@ internal sealed class XaeBuildEventLease : IDisposable
         }
     }
 
-    private void StartFirstPhase()
+    private void StartFirstPhase(
+        XaeBuildScope scope,
+        string? projectFile)
     {
         if (_solutionBuild.BuildState
             == vsBuildState.vsBuildStateInProgress)
@@ -300,7 +320,36 @@ internal sealed class XaeBuildEventLease : IDisposable
                 stage: "xae.build.start");
         }
 
-        SetExpectedAction();
+        if (scope == XaeBuildScope.Plc)
+        {
+            if (string.IsNullOrWhiteSpace(projectFile))
+            {
+                throw new ArgumentException(
+                    "PLC scope requires an exact project file.",
+                    nameof(projectFile));
+            }
+
+            string exactProjectFile = projectFile!;
+
+            if (_requestedAction == BuildAction.Build)
+            {
+                _solutionBuild.BuildProject(
+                    GetActiveSolutionConfiguration(),
+                    exactProjectFile,
+                    WaitForBuildToFinish: false);
+            }
+            else
+            {
+                StartSpecificProjectUpdate(
+                    _dte,
+                    exactProjectFile,
+                    clean: true,
+                    build: _requestedAction == BuildAction.Rebuild);
+            }
+
+            return;
+        }
+
         switch (_requestedAction)
         {
             case BuildAction.Build:
@@ -321,28 +370,13 @@ internal sealed class XaeBuildEventLease : IDisposable
         }
     }
 
-    private void SetExpectedAction()
-    {
-        _expectedAction = _requestedAction switch
-        {
-            BuildAction.Build =>
-                vsBuildAction.vsBuildActionBuild,
-            BuildAction.Clean =>
-                vsBuildAction.vsBuildActionClean,
-            BuildAction.Rebuild =>
-                vsBuildAction.vsBuildActionRebuildAll,
-            _ => throw new ArgumentOutOfRangeException(
-                nameof(_requestedAction)),
-        };
-    }
-
     private void OnBuildDone(
         vsBuildScope scope,
         vsBuildAction action)
     {
-        if (!IsCompletionEvent(
-                _requireSolutionScope,
-                _expectedAction,
+        if (!XaeBuildEventMatcher.IsCompletionEvent(
+                _expectedScope,
+                _requestedAction,
                 scope,
                 action,
                 _solutionBuild.BuildState))
@@ -363,30 +397,81 @@ internal sealed class XaeBuildEventLease : IDisposable
         }
     }
 
-    internal static bool IsCompletionEvent(
-        bool requireSolutionScope,
-        vsBuildAction expectedAction,
-        vsBuildScope scope,
-        vsBuildAction action,
-        vsBuildState buildState)
+    private string GetActiveSolutionConfiguration()
     {
-        if (action != expectedAction)
+        SolutionConfiguration active =
+            _solutionBuild.ActiveConfiguration;
+        try
         {
-            return false;
+            string name = active.Name;
+            string? platform =
+                (active as SolutionConfiguration2)?.PlatformName;
+            return string.IsNullOrWhiteSpace(platform)
+                ? name
+                : $"{name}|{platform}";
         }
-
-        if (requireSolutionScope
-            && (action == vsBuildAction.vsBuildActionBuild
-                || action
-                    == vsBuildAction.vsBuildActionRebuildAll)
-            && scope != vsBuildScope.vsBuildScopeSolution)
+        finally
         {
-            return false;
+            ComObject.Release(active);
         }
+    }
 
-        return (requireSolutionScope
-                && action != vsBuildAction.vsBuildActionClean)
-            || buildState == vsBuildState.vsBuildStateDone;
+    private static void StartSpecificProjectUpdate(
+        DTE2 dte,
+        string projectFile,
+        bool clean,
+        bool build)
+    {
+        IVsSolution? solution = null;
+        IVsSolutionBuildManager2? buildManager = null;
+        IVsHierarchy? hierarchy = null;
+        IVsProjectCfg? projectConfiguration = null;
+        try
+        {
+            solution = XaeSession.QueryService<IVsSolution>(
+                dte,
+                typeof(SVsSolution).GUID);
+            Marshal.ThrowExceptionForHR(
+                solution.GetProjectOfUniqueName(
+                    projectFile,
+                    out hierarchy));
+            buildManager =
+                XaeSession.QueryService<IVsSolutionBuildManager2>(
+                    dte,
+                    typeof(SVsSolutionBuildManager).GUID);
+            IVsProjectCfg[] active = new IVsProjectCfg[1];
+            Marshal.ThrowExceptionForHR(
+                buildManager.FindActiveProjectCfg(
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    hierarchy,
+                    active));
+            projectConfiguration = active[0]
+                ?? throw new GatewayOperationException(
+                    ErrorCodes.BuildConfigurationNotFound,
+                    "The active PLC project configuration is unavailable.",
+                    stage: "xae.build.start",
+                    component: GatewayComponent.Xae);
+            uint[]? cleanFlags = clean ? new uint[1] : null;
+            uint[]? buildFlags = build ? new uint[1] : null;
+            Marshal.ThrowExceptionForHR(
+                buildManager.StartUpdateSpecificProjectConfigurations(
+                    1,
+                    new[] { hierarchy },
+                    new IVsCfg[] { projectConfiguration },
+                    cleanFlags,
+                    buildFlags,
+                    rgdwDeployFlags: null,
+                    dwFlags: 0,
+                    fSuppressUI: 0));
+        }
+        finally
+        {
+            ComObject.Release(projectConfiguration);
+            ComObject.Release(hierarchy);
+            ComObject.Release(buildManager);
+            ComObject.Release(solution);
+        }
     }
 
     private static bool IsEquivalentDiagnostic(

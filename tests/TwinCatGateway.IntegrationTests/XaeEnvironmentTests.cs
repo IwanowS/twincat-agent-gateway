@@ -316,12 +316,18 @@ public sealed class XaeEnvironmentTests
                 ? "Release"
                 : "Debug";
 
+            await session.SelectBuildConfigurationAsync(
+                requestedConfiguration,
+                platform,
+                TimeSpan.FromSeconds(10),
+                CancellationToken.None);
             XaeBuildExecutionResult build =
                 await session.ExecuteBuildAsync(
+                    solution,
                     BuildAction.Build,
+                    XaeBuildScope.Solution,
+                    project: null,
                     changedPaths: null,
-                    requestedConfiguration,
-                    platform,
                     TimeSpan.FromSeconds(60),
                     CancellationToken.None);
 
@@ -341,12 +347,10 @@ public sealed class XaeEnvironmentTests
                 ignoreCase: true);
             GatewayOperationException exception =
                 await Assert.ThrowsAsync<GatewayOperationException>(
-                    () => session.ExecuteBuildAsync(
-                        BuildAction.Build,
-                        changedPaths: null,
-                        configuration: "Missing configuration",
+                    () => session.SelectBuildConfigurationAsync(
+                        "Missing configuration",
                         platform,
-                        TimeSpan.FromSeconds(60),
+                        TimeSpan.FromSeconds(10),
                         CancellationToken.None));
             Assert.Equal(
                 ErrorCodes.BuildConfigurationNotFound,

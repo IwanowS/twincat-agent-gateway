@@ -46,7 +46,10 @@ public sealed class XaeExternalEditTests
             {
                 XaeBuildExecutionResult build =
                     await session.ExecuteBuildAsync(
+                        copy.SolutionPath,
                         action,
+                        XaeBuildScope.Solution,
+                        project: null,
                         changedPaths: null,
                         TimeSpan.FromSeconds(60),
                         CancellationToken.None);
@@ -111,7 +114,10 @@ public sealed class XaeExternalEditTests
                     "bToggle := ;"));
             XaeBuildExecutionResult build =
                 await session.ExecuteBuildAsync(
+                    copy.SolutionPath,
                     BuildAction.Build,
+                    XaeBuildScope.Solution,
+                    project: null,
                     changedPaths: null,
                     TimeSpan.FromSeconds(60),
                     CancellationToken.None);
@@ -342,7 +348,10 @@ public sealed class XaeExternalEditTests
                 XaeWindowProbe.FindModalDialogs(processId);
             XaeBuildExecutionResult build =
                 await session.ExecuteBuildAsync(
+                    copy.SolutionPath,
                     BuildAction.Build,
+                    XaeBuildScope.Solution,
+                    project: null,
                     changedPaths: null,
                     TimeSpan.FromSeconds(60),
                     CancellationToken.None);
@@ -424,7 +433,10 @@ public sealed class XaeExternalEditTests
             GatewayOperationException blocked =
                 await Assert.ThrowsAsync<GatewayOperationException>(
                     () => attachedSession.ExecuteBuildAsync(
+                        copy.SolutionPath,
                         BuildAction.Build,
+                        XaeBuildScope.Solution,
+                        project: null,
                         changedPaths: null,
                         TimeSpan.FromSeconds(60),
                         CancellationToken.None));
