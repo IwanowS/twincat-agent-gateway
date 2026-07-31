@@ -106,7 +106,7 @@ public sealed class GatewayDesktopHost : IDisposable
 
         _status = new GatewayStatusSnapshotStore(
             GatewayStatusSnapshotStore.CreateInitial(version));
-        _events = new GatewayEventJournal(_status);
+        _events = new GatewayEventJournal();
         XaeErrorListSnapshotStore errorListSnapshots =
             new();
         _runtimeMonitor = ActiveProfile?.Target is null
@@ -145,10 +145,10 @@ public sealed class GatewayDesktopHost : IDisposable
                 _sourceManifests!,
                 _xaeCloseConsent,
                 _capabilitySnapshots);
-        Func<GatewayDiagnosticsResult>? diagnosticsProvider =
+        XaeOpenOperationExecutor? xaeOpenExecutor =
             _xaeCoordinator is null
                 ? null
-                : _xaeCoordinator.CreateDiagnostics;
+                : _xaeCoordinator.ExecuteXaeOpenAsync;
         XaeBuildOperationExecutor? xaeBuildExecutor =
             _xaeCoordinator is null
                 ? null
@@ -195,12 +195,11 @@ public sealed class GatewayDesktopHost : IDisposable
             _queue,
             logs,
             _events,
-            diagnosticsProvider,
-            xaeBuildExecutor,
-            activationExecutor,
-            ActiveProfile,
-            preflight,
-            _capabilities,
+            xaeBuildExecutor: xaeBuildExecutor,
+            activationExecutor: activationExecutor,
+            activeProfile: ActiveProfile,
+            preflight: preflight,
+            capabilities: _capabilities,
             clock: null,
             tcUnitPreparationExecutor:
                 tcUnitPreparationExecutor,
@@ -217,7 +216,8 @@ public sealed class GatewayDesktopHost : IDisposable
                 ? null
                 : () => _xaeCloseConsent.ReadProcessId(
                     ActiveProfile!.Name),
-            operationCancellation: _operationCancellation);
+            operationCancellation: _operationCancellation,
+            xaeOpenExecutor: xaeOpenExecutor);
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
             _capabilities,
@@ -236,19 +236,23 @@ public sealed class GatewayDesktopHost : IDisposable
             (operationId, exception) =>
                 _logger.RecordException(operationId, exception));
 
-        GatewayStatusResult initial = _status.Read();
-        initial.Gateway.State = StartupError is null
-            ? GatewayState.Disconnected
-            : GatewayState.Faulted;
-        initial.Gateway.Ready = StartupError is null;
-        initial.Gateway.ConfigurationPath =
-            ConfigurationPath;
-        initial.Gateway.ActiveProfile =
-            ActiveProfile?.Name;
-        initial.Gateway.SolutionPath =
-            ActiveProfile?.Xae.Solution;
-        initial.Gateway.LaunchSource = LaunchSource;
-        initial.Gateway.UiMode = EffectiveUiMode;
+        GatewayStateSnapshot initial = _status.Read();
+        initial.State = StartupError is null
+            ? GatewayProcessState.Ready
+            : GatewayProcessState.Faulted;
+        initial.ConfigurationPath = ConfigurationPath;
+        initial.ActiveProfile = ActiveProfile?.Name;
+        initial.JournalId = _events.JournalId;
+        initial.LatestEventCursor = _events.LatestCursor;
+        initial.ObservedAtUtc = DateTimeOffset.UtcNow;
+        initial.Error = StartupError is null
+            ? null
+            : new ObservationError
+            {
+                Code = ErrorCodes.GatewayNotReady,
+                Message = StartupError,
+                Retryable = false,
+            };
         _status.Replace(initial);
     }
 

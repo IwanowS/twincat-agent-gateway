@@ -1,8 +1,11 @@
+using System;
+using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Client;
 using TwinCatGateway.Contracts;
+using TwinCatGateway.Core;
 using TwinCatGateway.Ipc;
 using Xunit;
 
@@ -72,5 +75,64 @@ public sealed class IpcV2Tests
             GatewayJson.CreateSerializerOptions());
 
         Assert.Contains("\"profile\":\"fixture\"", json);
+    }
+
+    [Fact]
+    public async Task PreflightFailureReceivesExactJournaledOperationId()
+    {
+        string logRoot = Path.Combine(
+            Path.GetTempPath(),
+            "twincat-gateway-s9-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            OperationStore operations = new();
+            GatewayEventJournal journal = new();
+            using OperationQueue queue = new(operations, gatewayEventSink: journal);
+            GatewayApplicationService service = new(
+                "test",
+                new GatewayStatusSnapshotStore(
+                    GatewayStatusSnapshotStore.CreateInitial("test")),
+                operations,
+                queue,
+                new LocalLogStore(logRoot),
+                journal);
+
+            OperationHandle handle = service.EnqueuePreflightFailure(
+                OperationKind.XaeBuild,
+                "fixture",
+                new GatewayOperationException(
+                    ErrorCodes.CapabilityDisabled,
+                    "Build capability is disabled.",
+                    stage: "xae.build.admission",
+                    component: GatewayComponent.Xae,
+                    sideEffectsStarted: false));
+            OperationResult<object> result =
+                await service.WaitForOperationAsync<object>(
+                    handle.OperationId,
+                    CancellationToken.None);
+
+            Assert.False(result.Ok);
+            Assert.False(string.IsNullOrWhiteSpace(result.OperationId));
+            Assert.Equal(result.OperationId, result.Error!.OperationId);
+            Assert.Equal(
+                result.OperationId,
+                Assert.Single(
+                    journal.ReadAfter(
+                        journal.JournalId,
+                        0,
+                        10,
+                        operationId: result.OperationId)
+                    .Events,
+                    gatewayEvent =>
+                        gatewayEvent.Severity == DiagnosticSeverity.Error)
+                .OperationId);
+        }
+        finally
+        {
+            if (Directory.Exists(logRoot))
+            {
+                Directory.Delete(logRoot, recursive: true);
+            }
+        }
     }
 }

@@ -49,6 +49,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TwinCatGateway.OperationJou
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TwinCatGateway.IpcV2MigrationTests", "tests\TwinCatGateway.MigrationTests\IpcV2\TwinCatGateway.IpcV2MigrationTests.csproj", "{D825956A-96D1-4CEE-9DD5-18C7F699CEF8}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TwinCatGateway.McpToolsV2MigrationTests", "tests\TwinCatGateway.MigrationTests\McpToolsV2\TwinCatGateway.McpToolsV2MigrationTests.csproj", "{EEEF4D42-1DB0-4575-839D-465DA2C1C883}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -138,6 +140,10 @@ Global
 		{D825956A-96D1-4CEE-9DD5-18C7F699CEF8}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{D825956A-96D1-4CEE-9DD5-18C7F699CEF8}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{D825956A-96D1-4CEE-9DD5-18C7F699CEF8}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EEEF4D42-1DB0-4575-839D-465DA2C1C883}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EEEF4D42-1DB0-4575-839D-465DA2C1C883}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EEEF4D42-1DB0-4575-839D-465DA2C1C883}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EEEF4D42-1DB0-4575-839D-465DA2C1C883}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{FEE2207A-719C-4347-99FB-C5FEEE6AF58C} = {3CAEB818-FE53-4616-AEA0-7AAA7EC5F699}
@@ -161,5 +167,6 @@ Global
 		{4E348DBA-2F90-44D0-BDEB-8F822334668A} = {D23141BA-3005-422B-82C8-8357A01C7C12}
 		{05863DE0-DB71-442B-AA97-9E3D9D43226F} = {4E348DBA-2F90-44D0-BDEB-8F822334668A}
 		{D825956A-96D1-4CEE-9DD5-18C7F699CEF8} = {4E348DBA-2F90-44D0-BDEB-8F822334668A}
+		{EEEF4D42-1DB0-4575-839D-465DA2C1C883} = {4E348DBA-2F90-44D0-BDEB-8F822334668A}
 	EndGlobalSection
 EndGlobal

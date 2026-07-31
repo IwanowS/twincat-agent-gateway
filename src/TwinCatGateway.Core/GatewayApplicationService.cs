@@ -13,6 +13,11 @@ public delegate Task<XaeBuildResult> XaeBuildOperationExecutor(
     XaeBuildParameters parameters,
     CancellationToken cancellationToken);
 
+public delegate Task<XaeOpenResult> XaeOpenOperationExecutor(
+    string operationId,
+    XaeOpenParameters parameters,
+    CancellationToken cancellationToken);
+
 public delegate Task<ActivationResult> ActivationOperationExecutor(
     string operationId,
     ActivateParameters parameters,
@@ -51,6 +56,7 @@ public sealed class GatewayApplicationService
     private readonly OperationQueue _queue;
     private readonly LocalLogStore _logs;
     private readonly XaeBuildOperationExecutor? _xaeBuildExecutor;
+    private readonly XaeOpenOperationExecutor? _xaeOpenExecutor;
     private readonly ActivationOperationExecutor? _activationExecutor;
     private readonly SynchronizeOperationExecutor? _synchronizeExecutor;
     private readonly CloseXaeOperationExecutor? _closeXaeExecutor;
@@ -99,7 +105,8 @@ public sealed class GatewayApplicationService
         CloseXaeOperationExecutor? closeXaeExecutor = null,
         SourceManifestStore? sourceManifests = null,
         Func<int?>? xaeProcessIdProvider = null,
-        OperationCancellationService? operationCancellation = null)
+        OperationCancellationService? operationCancellation = null,
+        XaeOpenOperationExecutor? xaeOpenExecutor = null)
     {
         if (version is null)
         {
@@ -116,6 +123,7 @@ public sealed class GatewayApplicationService
         _logs = logs
             ?? throw new ArgumentNullException(nameof(logs));
         _xaeBuildExecutor = xaeBuildExecutor;
+        _xaeOpenExecutor = xaeOpenExecutor;
         _activationExecutor = activationExecutor;
         _synchronizeExecutor = synchronizeExecutor;
         _closeXaeExecutor = closeXaeExecutor;
@@ -230,6 +238,56 @@ public sealed class GatewayApplicationService
                 retryable: true,
                 stage: "xae.errorList.read");
         return provider(parameters, cancellationToken);
+    }
+
+    public OperationHandle StartXaeOpen(XaeOpenParameters parameters)
+    {
+        if (parameters is null)
+        {
+            throw new ArgumentNullException(nameof(parameters));
+        }
+
+        if (_xaeOpenExecutor is null || _activeProfile is null)
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.GatewayNotReady,
+                "The XAE open executor is unavailable.",
+                retryable: true,
+                stage: "xae.open.enqueue",
+                component: GatewayComponent.Xae,
+                sideEffectsStarted: false);
+        }
+
+        if (!string.Equals(
+                parameters.Profile,
+                _activeProfile.Name,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileNotFound,
+                $"Project profile '{parameters.Profile}' was not found.",
+                stage: "xae.open.admission",
+                component: GatewayComponent.Profile,
+                sideEffectsStarted: false);
+        }
+
+        XaeOpenParameters captured = new()
+        {
+            Profile = parameters.Profile,
+        };
+        return _queue.Enqueue(
+            OperationKind.XaeOpen,
+            async (operationId, cancellationToken) =>
+            {
+                XaeOpenResult result = await _xaeOpenExecutor(
+                        operationId,
+                        captured,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                return OperationExecutionResult.Success(result);
+            },
+            TimeSpan.FromSeconds(60),
+            _activeProfile.Name);
     }
 
     public OperationHandle StartXaeBuild(XaeBuildParameters parameters)
@@ -712,6 +770,33 @@ public sealed class GatewayApplicationService
         };
     }
 
+    public OperationHandle EnqueuePreflightFailure(
+        OperationKind kind,
+        string? profile,
+        GatewayOperationException exception)
+    {
+        if (exception is null)
+        {
+            throw new ArgumentNullException(nameof(exception));
+        }
+
+        return _queue.Enqueue(
+            kind,
+            (operationId, _) =>
+            {
+                GatewayError error = ToGatewayError(
+                    operationId,
+                    exception,
+                    GetOperationComponent(kind),
+                    GetOperationStage(kind) + ".preflight");
+                return Task.FromResult(
+                    OperationExecutionResult.Failure(
+                        error,
+                        resources: error.Resources));
+            },
+            profile: profile);
+    }
+
     public async Task<OperationResult<TResult>> WaitForOperationAsync<TResult>(
         string operationId,
         CancellationToken cancellationToken)
@@ -813,6 +898,7 @@ public sealed class GatewayApplicationService
 
     private static string GetOperationStage(OperationKind kind) => kind switch
     {
+        OperationKind.XaeOpen => "xae.open",
         OperationKind.XaeBuild => "xae.build",
         OperationKind.Activate => "xae.activate",
         OperationKind.Synchronize => "xae.synchronize",

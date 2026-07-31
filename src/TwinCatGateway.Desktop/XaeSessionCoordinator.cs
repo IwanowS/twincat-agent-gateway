@@ -14,6 +14,7 @@ using TwinCatGateway.Core;
 using TwinCatGateway.Ipc;
 using TwinCatGateway.Xae;
 using XaeSessionSnapshot = TwinCatGateway.Xae.XaeSessionSnapshot;
+using XaeSessionSnapshotContract = TwinCatGateway.Contracts.XaeSessionSnapshot;
 
 namespace TwinCatGateway.Desktop;
 
@@ -109,7 +110,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             _profile,
             (operationId, xml) => _logs.WriteText(
                 operationId,
-                ResourceKind.TestReport,
+                OperationArtifactKind.TestXunit,
                 xml),
             tcUnitLogger,
             _events);
@@ -208,39 +209,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
             }
 
             await DelayAsync(cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    public GatewayDiagnosticsResult CreateDiagnostics()
-    {
-        lock (_sync)
-        {
-            return new GatewayDiagnosticsResult
-            {
-                DteInstances = _lastSnapshot.DiscoveredInstances
-                    .Select(CloneInfo)
-                    .ToList(),
-                Xae = new XaeDiagnostics
-                {
-                    SysManagerAvailable =
-                        _lastSnapshot.SysManagerAvailable,
-                    ActiveConfiguration =
-                        _lastSnapshot.ActiveConfiguration,
-                    ActivePlatform =
-                        _lastSnapshot.ActivePlatform,
-                    Target = CreateTarget(_lastSnapshot),
-                    LastErrorMessages =
-                        MergeLastErrorMessages(),
-                    InspectionIssues =
-                        _lastSnapshot.DiagnosticIssues.ToList(),
-                    LastHResult = _lastHResult,
-                    UnsynchronizedFiles =
-                        _lastSnapshot.UnsynchronizedFiles
-                            .Select(CreateUnsynchronizedFileInfo)
-                            .ToList(),
-                },
-                Com = CloneCom(_lastComDiagnostics),
-            };
         }
     }
 
@@ -407,13 +375,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
         const int maximumDiagnostics = 50;
         ResourceReference log = _logs.WriteText(
             operationId,
-            ResourceKind.BuildLog,
+            OperationArtifactKind.Build,
             FormatBuildOutput(execution.Output));
         ResourceReference? projectNoise = execution.ProjectChanges.Count == 0
             ? null
             : _logs.WriteText(
                 operationId,
-                ResourceKind.ProjectNoise,
+                OperationArtifactKind.ProjectNoise,
                 FormatProjectChanges(execution.ProjectChanges));
         List<ProjectChangeSummary> expectedProjectNoise =
             execution.ProjectChanges
@@ -697,9 +665,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
         VerifyTarget(
             snapshot,
             "activation.preflight");
-        AdsRuntimeStatusReadResult runtime =
-            ReadRuntimeStatus(snapshot);
-        RuntimeMode initialRuntimeMode = runtime.Status.Mode;
+        TargetSystemObservation runtime =
+            await ReadDirectTargetObservationAsync(
+                    TimeSpan.FromSeconds(3),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        TargetSystemState initialRuntimeMode = runtime.State;
         SynchronizeResult synchronizationResult = new()
         {
             Ok = true,
@@ -834,14 +805,17 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 activationBuild);
         if (!compile.Ok)
         {
-            runtime = ReadRuntimeStatus(snapshot);
+            runtime = await ReadDirectTargetObservationAsync(
+                    TimeSpan.FromSeconds(3),
+                    cancellationToken)
+                .ConfigureAwait(false);
             long failedDurationMs = Math.Max(
                 0,
                 (long)(DateTimeOffset.UtcNow - startedAtUtc)
                     .TotalMilliseconds);
             ResourceReference failedLog = _logs.WriteText(
                 operationId,
-                ResourceKind.ActivationLog,
+                OperationArtifactKind.XaeMessages,
                 FormatActivationLog(
                     operationId,
                     expectedAmsNetId,
@@ -912,11 +886,14 @@ internal sealed class XaeSessionCoordinator : IDisposable
             targetObservation = await WaitForDirectTargetRunAsync(
                 deadlineUtc,
                 cancellationToken).ConfigureAwait(false);
-            runtime = ReadRuntimeStatus(snapshot);
+            runtime = targetObservation;
         }
         else
         {
-            runtime = ReadRuntimeStatus(snapshot);
+            runtime = await ReadDirectTargetObservationAsync(
+                    TimeSpan.FromSeconds(3),
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         snapshot = await dialogScope.ObserveAsync(
@@ -969,7 +946,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 .TotalMilliseconds);
         ResourceReference log = _logs.WriteText(
             operationId,
-            ResourceKind.ActivationLog,
+            OperationArtifactKind.XaeMessages,
             FormatActivationLog(
                 operationId,
                 expectedAmsNetId,
@@ -1264,6 +1241,102 @@ internal sealed class XaeSessionCoordinator : IDisposable
             DateTimeOffset.UtcNow);
     }
 
+    public async Task<XaeOpenResult> ExecuteXaeOpenAsync(
+        string operationId,
+        XaeOpenParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        if (!string.Equals(
+                parameters.Profile,
+                _profile.Name,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            throw new GatewayOperationException(
+                ErrorCodes.ProfileNotFound,
+                $"Project profile '{parameters.Profile}' was not found.",
+                stage: "xae.open.admission",
+                component: GatewayComponent.Profile,
+                sideEffectsStarted: false);
+        }
+
+        lock (_sync)
+        {
+            _lastErrorMessage = null;
+        }
+        Interlocked.Exchange(ref _autoLaunchSuppressed, 0);
+        RequestReconnect();
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(55);
+        while (DateTimeOffset.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            XaeSessionSnapshot snapshot;
+            string? lastError;
+            lock (_sync)
+            {
+                snapshot = CloneSnapshot(_lastSnapshot);
+                lastError = _lastErrorMessage;
+            }
+
+            if (snapshot.Connected && snapshot.SelectedInstance is not null)
+            {
+                return new XaeOpenResult
+                {
+                    Attached = !snapshot.LaunchedByGateway,
+                    Launched = snapshot.LaunchedByGateway,
+                    State = CreateContractSnapshot(snapshot),
+                };
+            }
+
+            if (!string.IsNullOrWhiteSpace(lastError)
+                && Volatile.Read(ref _reconnectRequested) == 0)
+            {
+                throw new GatewayOperationException(
+                    ErrorCodes.XaeLaunchFailed,
+                    "XAE could not be opened: " + lastError,
+                    retryable: true,
+                    stage: "xae.open.attach",
+                    component: GatewayComponent.Xae,
+                    sideEffectsStarted: null);
+            }
+
+            await Task.Delay(50, cancellationToken).ConfigureAwait(false);
+        }
+
+        throw new GatewayOperationException(
+            ErrorCodes.ComCallTimeout,
+            "XAE open did not reach an attached postcondition before the deadline.",
+            retryable: true,
+            stage: "xae.open.verify",
+            component: GatewayComponent.Xae,
+            sideEffectsStarted: null);
+    }
+
+    private XaeSessionSnapshotContract CreateContractSnapshot(
+        XaeSessionSnapshot snapshot)
+    {
+        DteInstanceInfo selected = snapshot.SelectedInstance!;
+        return new XaeSessionSnapshotContract
+        {
+            Profile = _profile.Name,
+            ProcessId = selected.ProcessId,
+            Ownership = snapshot.Ownership,
+            DteAvailable = snapshot.Connected,
+            ProgId = selected.ProgId,
+            Version = selected.Version,
+            Solution = selected.Solution,
+            SolutionLoaded = !string.IsNullOrWhiteSpace(selected.Solution),
+            ActiveConfiguration = snapshot.ActiveConfiguration,
+            ActivePlatform = snapshot.ActivePlatform,
+            SynchronizationState = snapshot.SynchronizationState,
+            Errors = snapshot.DiagnosticIssues
+                .Concat(snapshot.LastErrorMessages)
+                .Distinct(StringComparer.Ordinal)
+                .ToList(),
+            TwinCatSystem = CloneTwinCatSystem(snapshot.TwinCatSystem),
+            ObservedAtUtc = DateTimeOffset.UtcNow,
+        };
+    }
+
     public async Task<TestResult> ExecuteTcUnitAsync(
         string operationId,
         TcUnitRunPreparation preparation,
@@ -1517,11 +1590,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
     {
         _status.Update(status =>
         {
-            if (status.Gateway.State != GatewayState.Stopping)
-            {
-                status.Gateway.State = GatewayState.Attaching;
-            }
-
+            status.ObservedAtUtc = DateTimeOffset.UtcNow;
             return status;
         });
     }
@@ -1562,23 +1631,12 @@ internal sealed class XaeSessionCoordinator : IDisposable
             snapshot.TwinCatProjectPath);
         _status.Update(status =>
         {
-            if (status.Gateway.State != GatewayState.Stopping
-                && status.CurrentOperation is null)
+            if (status.State != GatewayProcessState.Stopping
+                && status.CurrentOperationId is null)
             {
-                status.Gateway.State = GatewayState.Ready;
+                status.State = GatewayProcessState.Ready;
             }
-
-            status.Xae.Connected = true;
-            status.Xae.Version = selected.Version;
-            status.Xae.Solution = selected.Solution;
-            status.Xae.AgentWorkspaceOwned =
-                snapshot.AgentWorkspaceOwned;
-            status.Xae.DiscardedDocumentCount =
-                snapshot.DiscardedDocumentCount;
-            status.Xae.SynchronizationState =
-                snapshot.SynchronizationState;
-            status.Xae.DirtyDocumentCount =
-                snapshot.DirtyDocumentCount;
+            status.ObservedAtUtc = DateTimeOffset.UtcNow;
             return status;
         });
         if (logConnection)
@@ -1643,14 +1701,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
             "The selected XAE process exited.");
         _status.Update(status =>
         {
-            status.Xae.Connected = false;
-            status.Xae.Version = null;
-            status.Xae.Solution = null;
-            status.Xae.AgentWorkspaceOwned = false;
-            status.Xae.DiscardedDocumentCount = 0;
-            status.Xae.SynchronizationState =
-                SynchronizationState.Uninitialized;
-            status.Xae.DirtyDocumentCount = 0;
+            status.ObservedAtUtc = DateTimeOffset.UtcNow;
             return status;
         });
         Dictionary<string, string> properties = new()
@@ -1814,8 +1865,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
             || hResult == RpcEServerCallRetryLater;
     }
 
-    internal static GatewayStatusResult ApplyFailureStatus(
-        GatewayStatusResult status,
+    internal static GatewayStateSnapshot ApplyFailureStatus(
+        GatewayStateSnapshot status,
         XaeSessionSnapshot snapshot,
         string? code,
         bool retainAttachment)
@@ -1830,43 +1881,11 @@ internal sealed class XaeSessionCoordinator : IDisposable
             throw new ArgumentNullException(nameof(snapshot));
         }
 
-        if (status.Gateway.State != GatewayState.Stopping)
+        if (status.State != GatewayProcessState.Stopping)
         {
-            status.Gateway.State = retainAttachment
-                ? GatewayState.Faulted
-                : code == ErrorCodes.XaeNotFound
-                    ? GatewayState.Disconnected
-                    : GatewayState.Faulted;
+            status.State = GatewayProcessState.Ready;
         }
-
-        if (retainAttachment)
-        {
-            status.Xae.Connected = true;
-            status.Xae.Version =
-                snapshot.SelectedInstance?.Version
-                ?? status.Xae.Version;
-            status.Xae.Solution =
-                snapshot.SelectedInstance?.Solution
-                ?? status.Xae.Solution;
-            status.Xae.AgentWorkspaceOwned =
-                snapshot.AgentWorkspaceOwned;
-            status.Xae.DiscardedDocumentCount =
-                snapshot.DiscardedDocumentCount;
-            status.Xae.SynchronizationState =
-                snapshot.SynchronizationState;
-            status.Xae.DirtyDocumentCount =
-                snapshot.DirtyDocumentCount;
-            return status;
-        }
-
-        status.Xae.Connected = false;
-        status.Xae.Version = null;
-        status.Xae.Solution = null;
-        status.Xae.AgentWorkspaceOwned = false;
-        status.Xae.DiscardedDocumentCount = 0;
-        status.Xae.SynchronizationState =
-            SynchronizationState.Uninitialized;
-        status.Xae.DirtyDocumentCount = 0;
+        status.ObservedAtUtc = DateTimeOffset.UtcNow;
         return status;
     }
 
@@ -2358,89 +2377,9 @@ internal sealed class XaeSessionCoordinator : IDisposable
             "activate" => OperationKind.Activate,
             "targetconfig" => OperationKind.TargetConfig,
             "targetstartrestart" => OperationKind.TargetStartRestart,
-            "opensolution" => OperationKind.OpenSolution,
+            "opensolution" => OperationKind.XaeOpen,
             _ => null,
         };
-    }
-
-    private async Task<AdsRuntimeStatusReadResult>
-        WaitForRuntimeModeAsync(
-            string amsNetId,
-            RuntimeMode expectedMode,
-            DateTimeOffset deadlineUtc,
-            string errorCode,
-            string errorMessage,
-            string stage,
-            CancellationToken cancellationToken,
-            bool failOnException = false)
-    {
-        while (DateTimeOffset.UtcNow < deadlineUtc)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            TimeSpan remaining =
-                deadlineUtc - DateTimeOffset.UtcNow;
-            TimeSpan readTimeout = remaining
-                < TimeSpan.FromSeconds(3)
-                ? remaining
-                : TimeSpan.FromSeconds(3);
-            if (readTimeout > TimeSpan.Zero)
-            {
-                AdsRuntimeStatusReadResult runtime =
-                    AdsRuntimeStatusReader.Read(
-                        amsNetId,
-                        readTimeout);
-                if (runtime.Diagnostics.ErrorCode is null
-                    && runtime.Status.Mode == expectedMode)
-                {
-                    return runtime;
-                }
-
-                if (runtime.Diagnostics.ErrorCode is null
-                    && failOnException)
-                {
-                    string? details = null;
-                    if (runtime.Status.Mode
-                        == RuntimeMode.Exception)
-                    {
-                        details =
-                            await ReadRuntimeExceptionDetailsAsync(
-                                readTimeout,
-                                cancellationToken)
-                                .ConfigureAwait(false);
-                    }
-
-                    throw new GatewayOperationException(
-                        errorCode,
-                        "Activation did not reach Run because the TwinCAT "
-                            + "Target entered Exception.",
-                        details,
-                        retryable: false,
-                        stage: stage,
-                        component: GatewayComponent.Target,
-                        sideEffectsStarted: true);
-                }
-            }
-
-            remaining = deadlineUtc - DateTimeOffset.UtcNow;
-            if (remaining <= TimeSpan.Zero)
-            {
-                break;
-            }
-
-            TimeSpan delay = remaining
-                < TimeSpan.FromMilliseconds(250)
-                ? remaining
-                : TimeSpan.FromMilliseconds(250);
-            await Task.Delay(
-                delay,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        throw new GatewayOperationException(
-            errorCode,
-            errorMessage,
-            retryable: true,
-            stage: stage);
     }
 
     private async Task<string?>
@@ -2569,8 +2508,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 + "requires synchronization.");
         _status.Update(status =>
         {
-            status.Xae.SynchronizationState =
-                SynchronizationState.SyncRequired;
+            status.ObservedAtUtc = DateTimeOffset.UtcNow;
             return status;
         });
     }
@@ -2606,7 +2544,7 @@ internal sealed class XaeSessionCoordinator : IDisposable
         const int maximumDiagnostics = 50;
         ResourceReference log = _logs.WriteText(
             operationId,
-            ResourceKind.BuildLog,
+            OperationArtifactKind.Build,
             FormatBuildOutput(execution.Output));
         return new ActivationCompileResult
         {
@@ -2812,13 +2750,13 @@ internal sealed class XaeSessionCoordinator : IDisposable
     private string FormatActivationLog(
         string operationId,
         string amsNetId,
-        RuntimeMode initialRuntimeMode,
+        TargetSystemState initialRuntimeMode,
         AutostartBootProjectSelection autostartSelection,
         IReadOnlyList<XaeDialogObservation> dialogs,
         ActivationCompileResult compile,
         ActivationFinalTargetMode finalTargetMode,
         bool activeConfigurationVerified,
-        AdsRuntimeStatusReadResult runtime,
+        TargetSystemObservation runtime,
         long durationMs)
     {
         StringBuilder builder = new();
@@ -2859,10 +2797,10 @@ internal sealed class XaeSessionCoordinator : IDisposable
             }
         }
         builder.AppendLine(
-            $"FinalRuntimeMode: {runtime.Status.Mode}");
+            $"FinalRuntimeMode: {runtime.State}");
         builder.AppendLine(
             $"FinalAdsState: "
-                + $"{runtime.Diagnostics.AdsState ?? "unknown"}");
+                + $"{runtime.RawAdsStateName ?? "unknown"}");
         builder.AppendLine($"DurationMs: {durationMs}");
         return builder.ToString();
     }
@@ -2900,31 +2838,6 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 Profile = _profile.Name,
                 Solution = _profile.Xae.Solution,
             });
-    }
-
-    private static AdsRuntimeStatusReadResult ReadRuntimeStatus(
-        XaeSessionSnapshot snapshot)
-    {
-        if (snapshot.TargetAmsNetId is null)
-        {
-            return new AdsRuntimeStatusReadResult(
-                new TwinCatStatus
-                {
-                    Started = null,
-                    Mode = RuntimeMode.Unknown,
-                },
-                new AdsRuntimeDiagnostics
-                {
-                    Port =
-                        AdsRuntimeStatusReader.SystemServicePort,
-                    ErrorCode = "TARGET_NETID_UNAVAILABLE",
-                    ReadAtUtc = DateTimeOffset.UtcNow,
-                });
-        }
-
-        return AdsRuntimeStatusReader.Read(
-            snapshot.TargetAmsNetId,
-            TimeSpan.FromSeconds(3));
     }
 
     private TargetIdentity? CreateTarget(

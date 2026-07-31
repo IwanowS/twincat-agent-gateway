@@ -1,5 +1,14 @@
 namespace TwinCatGateway.Contracts;
 
+public sealed class GatewayLifecycleResult<TResult>
+{
+    public bool Ok { get; set; }
+
+    public TResult? Result { get; set; }
+
+    public GatewayError? Error { get; set; }
+}
+
 public sealed class GatewayStartResult
 {
     public bool Started { get; set; }

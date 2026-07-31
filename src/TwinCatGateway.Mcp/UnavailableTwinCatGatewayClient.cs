@@ -1,42 +1,37 @@
-using System;
 using System.Threading;
 using System.Threading.Tasks;
 using TwinCatGateway.Client;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
+using TwinCatGateway.Ipc;
 
 namespace TwinCatGateway.Mcp;
 
-internal sealed class UnavailableTwinCatGatewayClient
-    : ITwinCatGatewayClient
+internal sealed class UnavailableTwinCatGatewayClient : ITwinCatGatewayClient
 {
     private readonly GatewayError _error;
 
-    private UnavailableTwinCatGatewayClient(
-        GatewayError error)
+    private UnavailableTwinCatGatewayClient(GatewayError error)
     {
         _error = error;
     }
 
     public static ITwinCatGatewayClient Create(
-        GatewayOperationException exception)
-    {
-        return Create(
+        GatewayOperationException exception) =>
+        Create(
             exception.Code,
             exception.Message,
             exception.Retryable,
             exception.Stage,
             exception.Details);
-    }
 
     public static ITwinCatGatewayClient Create(
         string code,
         string message,
         bool retryable,
         string? stage,
-        string? details = null)
-    {
-        return new UnavailableTwinCatGatewayClient(
+        string? details = null) =>
+        new UnavailableTwinCatGatewayClient(
             new GatewayError
             {
                 Code = code,
@@ -44,140 +39,86 @@ internal sealed class UnavailableTwinCatGatewayClient
                 Details = details,
                 Retryable = retryable,
                 Stage = stage,
+                Component = GatewayComponent.Gateway,
+                SideEffectsStarted = false,
             });
-    }
 
-    public Task<GatewayResponse<GatewayStatusResult>>
-        GetStatusAsync(
-            CancellationToken cancellationToken = default)
-    {
-        return Response<GatewayStatusResult>(
-            cancellationToken);
-    }
+    public Task<GatewayStateSnapshot> GetGatewayStateAsync(
+        CancellationToken cancellationToken = default) =>
+        Failure<GatewayStateSnapshot>(cancellationToken);
 
-    public Task<GatewayResponse<HealthResult>>
-        GetHealthAsync(
-            CancellationToken cancellationToken = default)
-    {
-        return Response<HealthResult>(
-            cancellationToken);
-    }
+    public Task<GatewayShutdownResult> ShutdownAsync(
+        CancellationToken cancellationToken = default) =>
+        Failure<GatewayShutdownResult>(cancellationToken);
 
-    public Task<GatewayResponse<GatewayShutdownResult>>
-        ShutdownAsync(
-            CancellationToken cancellationToken = default)
-    {
-        return Response<GatewayShutdownResult>(
-            cancellationToken);
-    }
+    public Task<OperationResult<XaeOpenResult>> OpenXaeAsync(
+        XaeOpenParameters parameters,
+        CancellationToken cancellationToken = default) =>
+        Failure<OperationResult<XaeOpenResult>>(cancellationToken);
 
-    public Task<GatewayResponse<GatewayDiagnosticsResult>>
-        GetDiagnosticsAsync(
-            CancellationToken cancellationToken = default)
-    {
-        return Response<GatewayDiagnosticsResult>(
-            cancellationToken);
-    }
+    public Task<OperationResult<CloseXaeResult>> CloseXaeAsync(
+        CloseXaeParameters parameters,
+        CancellationToken cancellationToken = default) =>
+        Failure<OperationResult<CloseXaeResult>>(cancellationToken);
 
-    public Task<GatewayResponse<XaeMessagesResult>>
-        GetXaeMessagesAsync(
-            GetXaeMessagesParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<XaeMessagesResult>(
-            cancellationToken);
-    }
+    public Task<OperationResult<SynchronizeResult>> SynchronizeXaeAsync(
+        SynchronizeParameters parameters,
+        CancellationToken cancellationToken = default) =>
+        Failure<OperationResult<SynchronizeResult>>(cancellationToken);
 
-    public Task<GatewayResponse<GatewayDiagnosticsResult>>
-        GetDiagnosticsAsync(
-            GetDiagnosticsParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<GatewayDiagnosticsResult>(
-            cancellationToken);
-    }
+    public Task<OperationResult<XaeBuildResult>> BuildXaeAsync(
+        XaeBuildParameters parameters,
+        CancellationToken cancellationToken = default) =>
+        Failure<OperationResult<XaeBuildResult>>(cancellationToken);
 
-    public Task<GatewayResponse<OperationAccepted>>
-        StartXaeBuildAsync(
-            XaeBuildParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<OperationAccepted>(
-            cancellationToken);
-    }
+    public Task<OperationResult<ActivationResult>> ActivateXaeAsync(
+        ActivateParameters parameters,
+        CancellationToken cancellationToken = default) =>
+        Failure<OperationResult<ActivationResult>>(cancellationToken);
 
-    public Task<GatewayResponse<OperationAccepted>>
-        StartActivationAsync(
-            ActivateParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<OperationAccepted>(
-            cancellationToken);
-    }
+    public Task<OperationResult<TargetConfigResult>> ConfigureTargetAsync(
+        TargetConfigParameters parameters,
+        CancellationToken cancellationToken = default) =>
+        Failure<OperationResult<TargetConfigResult>>(cancellationToken);
 
-    public Task<GatewayResponse<OperationAccepted>>
-        StartSynchronizationAsync(
-            SynchronizeParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<OperationAccepted>(
-            cancellationToken);
-    }
+    public Task<OperationResult<TargetStartRestartResult>> StartRestartTargetAsync(
+        TargetStartRestartParameters parameters,
+        CancellationToken cancellationToken = default) =>
+        Failure<OperationResult<TargetStartRestartResult>>(cancellationToken);
 
-    public Task<GatewayResponse<OperationAccepted>>
-        StartCloseXaeAsync(
-            CloseXaeParameters parameters,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<OperationAccepted>(
-            cancellationToken);
-    }
+    public Task<OperationSnapshot<TResult>> GetOperationAsync<TResult>(
+        string operationId,
+        CancellationToken cancellationToken = default) =>
+        Failure<OperationSnapshot<TResult>>(cancellationToken);
 
-    public Task<GatewayResponse<OperationDetails<TResult>>>
-        GetOperationAsync<TResult>(
-            string operationId,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<OperationDetails<TResult>>(
-            cancellationToken);
-    }
+    public Task<OperationCancellationReceipt> CancelOperationAsync(
+        string operationId,
+        CancellationToken cancellationToken = default) =>
+        Failure<OperationCancellationReceipt>(cancellationToken);
 
-    public Task<GatewayResponse<CancelOperationResult>>
-        CancelOperationAsync(
-            string operationId,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<CancelOperationResult>(
-            cancellationToken);
-    }
+    public Task<ResourceContent> GetResourceAsync(
+        string uri,
+        int maximumCharacters = 64 * 1024,
+        long offset = 0,
+        CancellationToken cancellationToken = default) =>
+        Failure<ResourceContent>(cancellationToken);
 
-    public Task<GatewayResponse<ResourceContent>>
-        GetResourceAsync(
-            string uri,
-            int maximumCharacters = 64 * 1024,
-            long offset = 0,
-            CancellationToken cancellationToken = default)
-    {
-        return Response<ResourceContent>(
-            cancellationToken);
-    }
-
-    private Task<GatewayResponse<T>> Response<T>(
+    private Task<TResult> Failure<TResult>(
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(
-            new GatewayResponse<T>
-            {
-                Ok = false,
-                Error = new GatewayError
+        return Task.FromException<TResult>(
+            new GatewayClientException(
+                GatewayClientFailureKind.Transport,
+                new GatewayError
                 {
                     Code = _error.Code,
                     Message = _error.Message,
                     Details = _error.Details,
                     Retryable = _error.Retryable,
                     Stage = _error.Stage,
-                },
-            });
+                    Component = _error.Component,
+                    SideEffectsStarted = false,
+                }));
     }
 }

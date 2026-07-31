@@ -1,11 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.ComponentModel;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
+using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using TwinCatGateway.Client;
 using TwinCatGateway.Contracts;
+using TwinCatGateway.Ipc;
 
 namespace TwinCatGateway.Mcp;
 
@@ -13,27 +17,18 @@ namespace TwinCatGateway.Mcp;
 public sealed class TwinCatTools
 {
     private const int DefaultOperationTimeoutSeconds = 120;
-    private const int ClientTimeoutGraceSeconds = 15;
-
     private readonly GatewayMcpRuntime? _runtime;
     private readonly ITwinCatGatewayClient? _fixedClient;
-    private readonly GatewayOperationPoller? _fixedPoller;
 
     [ActivatorUtilitiesConstructor]
     public TwinCatTools(GatewayMcpRuntime runtime)
     {
-        _runtime = runtime
-            ?? throw new ArgumentNullException(nameof(runtime));
+        _runtime = runtime ?? throw new ArgumentNullException(nameof(runtime));
     }
 
-    public TwinCatTools(
-        ITwinCatGatewayClient client,
-        GatewayOperationPoller poller)
+    public TwinCatTools(ITwinCatGatewayClient client)
     {
-        _fixedClient = client
-            ?? throw new ArgumentNullException(nameof(client));
-        _fixedPoller = poller
-            ?? throw new ArgumentNullException(nameof(poller));
+        _fixedClient = client ?? throw new ArgumentNullException(nameof(client));
     }
 
     [McpServerTool(
@@ -41,48 +36,32 @@ public sealed class TwinCatTools
         ReadOnly = false,
         Destructive = false,
         Idempotent = true,
-        OpenWorld = false)]
-    [Description(
-        "Explicitly start TwinCAT Agent Gateway for the "
-        + "discovered project configuration. Checks project "
-        + "process-control policy and never replaces another "
-        + "project's running gateway.")]
-    public async Task<string> StartGatewayAsync(
-        [Description(
-            "Maximum time to wait for gateway IPC readiness.")]
-        int timeoutSeconds = 30,
+        OpenWorld = false,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(GatewayLifecycleResult<GatewayStartResult>))]
+    [Description("Start or reuse the configured TwinCAT Agent Gateway desktop process.")]
+    public async Task<CallToolResult> StartGatewayAsync(
+        [Description("Optional explicit gateway configuration path.")]
+        string? config = null,
         McpServer? server = null,
         CancellationToken cancellationToken = default)
     {
-        McpGatewayJson.RequirePositive(
-            timeoutSeconds,
-            nameof(timeoutSeconds));
         if (_runtime is null)
         {
-            return McpGatewayJson.Serialize(
-                new GatewayResponse<GatewayStartResult>
-                {
-                    Ok = false,
-                    Error = new GatewayError
-                    {
-                        Code =
-                            ErrorCodes.GatewayStartFailed,
-                        Message =
-                            "Gateway lifecycle runtime is "
-                            + "not configured.",
-                        Stage =
-                            "gateway.start.runtime",
-                    },
-                });
+            return LifecycleFailure<GatewayStartResult>(
+                ErrorCodes.GatewayStartFailed,
+                "Gateway lifecycle runtime is not configured.",
+                "gateway.start.runtime");
         }
 
-        GatewayResponse<GatewayStartResult> response =
+        GatewayLifecycleResult<GatewayStartResult> result =
             await _runtime.StartAsync(
                     server,
-                    TimeSpan.FromSeconds(timeoutSeconds),
+                    NullIfWhiteSpace(config),
+                    TimeSpan.FromSeconds(30),
                     cancellationToken)
                 .ConfigureAwait(false);
-        return McpGatewayJson.Serialize(response);
+        return CreateResult(result, !result.Ok);
     }
 
     [McpServerTool(
@@ -90,471 +69,344 @@ public sealed class TwinCatTools
         ReadOnly = false,
         Destructive = true,
         Idempotent = true,
-        OpenWorld = false)]
-    [Description(
-        "Explicitly close TwinCAT Agent Gateway when the "
-        + "project configuration permits agent shutdown. "
-        + "Does not close a user-owned XAE instance.")]
-    public async Task<string> ShutdownGatewayAsync(
+        OpenWorld = false,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(GatewayLifecycleResult<GatewayShutdownResult>))]
+    [Description("Request graceful Gateway shutdown after its IPC response is written.")]
+    public async Task<CallToolResult> ShutdownGatewayAsync(
         McpServer? server = null,
         CancellationToken cancellationToken = default)
     {
-        GatewayToolSession session =
-            await ResolveSessionAsync(
-                    server,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        GatewayResponse<GatewayShutdownResult> response =
-            await session.Client
-                .ShutdownAsync(cancellationToken)
-                .ConfigureAwait(false);
-        return McpGatewayJson.Serialize(response);
+        try
+        {
+            ITwinCatGatewayClient client =
+                await ResolveClientAsync(server, cancellationToken).ConfigureAwait(false);
+            GatewayShutdownResult result =
+                await client.ShutdownAsync(cancellationToken).ConfigureAwait(false);
+            return CreateResult(
+                new GatewayLifecycleResult<GatewayShutdownResult>
+                {
+                    Ok = true,
+                    Result = result,
+                },
+                isError: false);
+        }
+        catch (GatewayClientException exception)
+        {
+            return CreateResult(
+                new GatewayLifecycleResult<GatewayShutdownResult>
+                {
+                    Ok = false,
+                    Error = exception.Error,
+                },
+                isError: true);
+        }
     }
 
     [McpServerTool(
-        Name = "twincat_status",
-        ReadOnly = true,
+        Name = "twincat_xae_open",
+        ReadOnly = false,
+        Destructive = false,
         Idempotent = true,
-        OpenWorld = false)]
-    [Description(
-        "Return compact gateway, XAE, solution, target, "
-        + "runtime, and last-operation status.")]
-    public async Task<string> GetStatusAsync(
+        OpenWorld = false,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(OperationResult<XaeOpenResult>))]
+    [Description("Ensure the exact configured XAE solution session is attached or launched.")]
+    public Task<CallToolResult> OpenXaeAsync(
+        string profile,
         McpServer? server = null,
-        CancellationToken cancellationToken = default)
-    {
-        GatewayToolSession session =
-            await ResolveSessionAsync(
-                    server,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        GatewayResponse<GatewayStatusResult> response =
-            await session.Client
-                .GetStatusAsync(cancellationToken)
-                .ConfigureAwait(false);
-        return McpGatewayJson.Serialize(response);
-    }
+        CancellationToken cancellationToken = default) =>
+        ExecuteMutationAsync(
+            server: server,
+            cancellationToken: cancellationToken,
+            executeAsync: client => client.OpenXaeAsync(
+                new XaeOpenParameters { Profile = RequireText(profile, nameof(profile)) },
+                cancellationToken));
 
     [McpServerTool(
-        Name = "twincat_get_xae_messages",
-        ReadOnly = true,
-        Idempotent = true,
-        OpenWorld = false)]
-    [Description(
-        "Read the current error and warning entries from the "
-        + "Error List of the exact attached XAE solution.")]
-    public async Task<string> GetXaeMessagesAsync(
-        [Description(
-            "Maximum XAE Error List entries in the response.")]
-        int maximumMessages = 50,
+        Name = "twincat_xae_close",
+        ReadOnly = false,
+        Destructive = true,
+        Idempotent = false,
+        OpenWorld = false,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(OperationResult<CloseXaeResult>))]
+    [Description("Close the exact profile XAE process subject to PID-scoped consent.")]
+    public Task<CallToolResult> CloseXaeAsync(
+        string profile,
+        string saveMode = "prompt",
         McpServer? server = null,
-        CancellationToken cancellationToken = default)
-    {
-        McpGatewayJson.RequirePositive(
-            maximumMessages,
-            nameof(maximumMessages));
-        GatewayToolSession session =
-            await ResolveSessionAsync(
-                    server,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        GatewayResponse<XaeMessagesResult> response =
-            await session.Client.GetXaeMessagesAsync(
-                    new GetXaeMessagesParameters
-                    {
-                        MaximumMessages =
-                            maximumMessages,
-                    },
-                    cancellationToken)
-                .ConfigureAwait(false);
-        return McpGatewayJson.Serialize(response);
-    }
+        CancellationToken cancellationToken = default) =>
+        ExecuteMutationAsync(
+            server: server,
+            cancellationToken: cancellationToken,
+            executeAsync: client => client.CloseXaeAsync(
+                new CloseXaeParameters
+                {
+                    Profile = RequireText(profile, nameof(profile)),
+                    SaveMode = McpGatewayJson.ParseEnum<XaeSaveMode>(
+                        saveMode,
+                        nameof(saveMode)),
+                    TimeoutSeconds = DefaultOperationTimeoutSeconds,
+                },
+                cancellationToken));
 
     [McpServerTool(
-        Name = "twincat_build",
+        Name = "twincat_xae_sync",
+        ReadOnly = false,
         Destructive = false,
         Idempotent = false,
-        OpenWorld = false)]
-    [Description(
-        "Build, rebuild, or clean the configured solution and "
-        + "wait for completion. Scans and policy-checks the selected "
-        + "TwinCAT project graph; changedPaths is only a hint. "
-        + "Never activates TwinCAT.")]
-    public async Task<string> BuildAsync(
-        [Description(
-            "Operator-controlled gateway profile name.")]
+        OpenWorld = false,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(OperationResult<SynchronizeResult>))]
+    [Description("Synchronize the exact XAE project graph with disk.")]
+    public Task<CallToolResult> SynchronizeXaeAsync(
         string profile,
-        [Description(
-            "build, rebuild, or clean. Default is rebuild.")]
+        string[]? changedPaths = null,
+        bool discardDirtyDocuments = false,
+        McpServer? server = null,
+        CancellationToken cancellationToken = default) =>
+        ExecuteMutationAsync(
+            server: server,
+            cancellationToken: cancellationToken,
+            executeAsync: client => client.SynchronizeXaeAsync(
+                new SynchronizeParameters
+                {
+                    Profile = RequireText(profile, nameof(profile)),
+                    ChangedPaths = changedPaths?.ToList() ?? new(),
+                    DiscardDirtyDocuments = discardDirtyDocuments,
+                    TimeoutSeconds = DefaultOperationTimeoutSeconds,
+                },
+                cancellationToken));
+
+    [McpServerTool(
+        Name = "twincat_xae_build",
+        ReadOnly = false,
+        Destructive = false,
+        Idempotent = false,
+        OpenWorld = false,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(OperationResult<XaeBuildResult>))]
+    [Description("Compile one logical PLC project or build the complete solution; never activate.")]
+    public Task<CallToolResult> BuildXaeAsync(
+        string profile,
         string action = "rebuild",
-        [Description(
-            "Optional solution configuration name.")]
-        string? configuration = null,
-        [Description(
-            "Optional solution platform name.")]
-        string? platform = null,
-        [Description(
-            "Externally edited project paths to synchronize "
-            + "before the operation.")]
+        string scope = "plc",
+        string? project = null,
         string[]? changedPaths = null,
-        [Description(
-            "Discard unsaved XAE buffers only when the profile "
-            + "explicitly permits it.")]
-        bool discardDirtyDocuments = false,
-        [Description(
-            "compact or detailed result.")]
         string detail = "compact",
-        [Description(
-            "Gateway operation timeout in seconds.")]
-        int timeoutSeconds =
-            DefaultOperationTimeoutSeconds,
         McpServer? server = null,
-        CancellationToken cancellationToken = default)
-    {
-        McpGatewayJson.RequirePositive(
-            timeoutSeconds,
-            nameof(timeoutSeconds));
-        BuildParameters parameters = new()
-        {
-            Profile = RequireText(profile, nameof(profile)),
-            Action = McpGatewayJson.ParseEnum<BuildAction>(
-                action,
-                nameof(action)),
-            Configuration = NullIfWhiteSpace(configuration),
-            Platform = NullIfWhiteSpace(platform),
-            ChangedPaths =
-                changedPaths is null
-                    ? new()
-                    : new(changedPaths),
-            DiscardDirtyDocuments =
-                discardDirtyDocuments,
-            Detail = McpGatewayJson.ParseEnum<DetailLevel>(
-                detail,
-                nameof(detail)),
-            TimeoutSeconds = timeoutSeconds,
-        };
-
-        GatewayToolSession session =
-            await ResolveSessionAsync(
-                    server,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        GatewayResponse<OperationAccepted> accepted =
-            await session.Client.StartBuildAsync(
-                    parameters,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        if (!accepted.Ok || accepted.Result is null)
-        {
-            return McpGatewayJson.Serialize(accepted);
-        }
-
-        GatewayResponse<OperationDetails<BuildResult>> completed =
-            await session.Poller.WaitAsync<BuildResult>(
-                    accepted.Result.OperationId,
-                    GetClientWaitTimeout(timeoutSeconds),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        return McpGatewayJson.Serialize(completed);
-    }
+        CancellationToken cancellationToken = default) =>
+        ExecuteMutationAsync(
+            server: server,
+            cancellationToken: cancellationToken,
+            executeAsync: client => client.BuildXaeAsync(
+                new XaeBuildParameters
+                {
+                    Profile = RequireText(profile, nameof(profile)),
+                    Action = McpGatewayJson.ParseEnum<BuildAction>(action, nameof(action)),
+                    Scope = McpGatewayJson.ParseEnum<XaeBuildScope>(scope, nameof(scope)),
+                    Project = NullIfWhiteSpace(project),
+                    ChangedPaths = changedPaths?.ToList() ?? new(),
+                    Detail = McpGatewayJson.ParseEnum<DetailLevel>(detail, nameof(detail)),
+                },
+                cancellationToken));
 
     [McpServerTool(
-        Name = "twincat_sync",
+        Name = "twincat_xae_activate",
         ReadOnly = false,
         Destructive = true,
         Idempotent = false,
-        OpenWorld = false)]
-    [Description(
-        "Force XAE to synchronize the selected TwinCAT project graph "
-        + "with disk. Requires profile permission for agent use.")]
-    public async Task<string> SynchronizeAsync(
-        [Description("Operator-controlled gateway profile name.")]
+        OpenWorld = false,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(OperationResult<ActivationResult>))]
+    [Description("Run native XAE activation with optional TcUnit verification.")]
+    public Task<CallToolResult> ActivateXaeAsync(
         string profile,
-        [Description(
-            "Optional changed-path hints; the gateway always scans "
-            + "the authoritative project graph.")]
-        string[]? changedPaths = null,
-        [Description(
-            "Discard unsaved XAE buffers only when the profile "
-            + "explicitly permits it.")]
-        bool discardDirtyDocuments = false,
-        [Description("Gateway operation timeout in seconds.")]
-        int timeoutSeconds =
-            DefaultOperationTimeoutSeconds,
-        McpServer? server = null,
-        CancellationToken cancellationToken = default)
-    {
-        McpGatewayJson.RequirePositive(
-            timeoutSeconds,
-            nameof(timeoutSeconds));
-        SynchronizeParameters parameters = new()
-        {
-            Profile = RequireText(profile, nameof(profile)),
-            ChangedPaths = changedPaths is null
-                ? new()
-                : new(changedPaths),
-            DiscardDirtyDocuments =
-                discardDirtyDocuments,
-            TimeoutSeconds = timeoutSeconds,
-        };
-        GatewayToolSession session =
-            await ResolveSessionAsync(
-                    server,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        GatewayResponse<OperationAccepted> accepted =
-            await session.Client.StartSynchronizationAsync(
-                    parameters,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        if (!accepted.Ok || accepted.Result is null)
-        {
-            return McpGatewayJson.Serialize(accepted);
-        }
-
-        GatewayResponse<OperationDetails<SynchronizeResult>> completed =
-            await session.Poller.WaitAsync<SynchronizeResult>(
-                    accepted.Result.OperationId,
-                    GetClientWaitTimeout(timeoutSeconds),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        return McpGatewayJson.Serialize(completed);
-    }
-
-    [McpServerTool(
-        Name = "twincat_close_xae",
-        ReadOnly = false,
-        Destructive = true,
-        Idempotent = false,
-        OpenWorld = false)]
-    [Description(
-        "Explicitly close the exact XAE process selected by the active "
-        + "gateway profile. Requires allowCloseXae; discard also requires "
-        + "allowDirtyDocumentDiscard.")]
-    public async Task<string> CloseXaeAsync(
-        [Description("save, discard, or prompt.")]
-        string saveMode,
-        McpServer? server = null,
-        CancellationToken cancellationToken = default)
-    {
-        CloseXaeParameters parameters = new()
-        {
-            SaveMode = McpGatewayJson.ParseEnum<XaeSaveMode>(
-                saveMode,
-                nameof(saveMode)),
-            TimeoutSeconds = DefaultOperationTimeoutSeconds,
-        };
-        GatewayToolSession session =
-            await ResolveSessionAsync(
-                    server,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        GatewayResponse<OperationAccepted> accepted =
-            await session.Client.StartCloseXaeAsync(
-                    parameters,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        if (!accepted.Ok || accepted.Result is null)
-        {
-            return McpGatewayJson.Serialize(accepted);
-        }
-
-        GatewayResponse<OperationDetails<CloseXaeResult>> completed =
-            await session.Poller.WaitAsync<CloseXaeResult>(
-                    accepted.Result.OperationId,
-                    GetClientWaitTimeout(
-                        DefaultOperationTimeoutSeconds),
-                    cancellationToken)
-                .ConfigureAwait(false);
-        return McpGatewayJson.Serialize(completed);
-    }
-
-    [McpServerTool(
-        Name = "twincat_activate",
-        Destructive = true,
-        Idempotent = false,
-        OpenWorld = false)]
-    [Description(
-        "Explicitly activate the configured allow-listed remote "
-        + "TwinCAT target and optionally verify it with TcUnit in the same "
-        + "root operation.")]
-    public async Task<string> ActivateAsync(
-        [Description(
-            "Operator-controlled activation profile name.")]
-        string profile,
-        [Description("run or unchanged.")]
         string finalTargetMode = "run",
-        [Description("none or tcunit.")]
         string verification = "none",
-        [Description(
-            "Gateway operation timeout in seconds.")]
-        int timeoutSeconds =
-            DefaultOperationTimeoutSeconds,
+        string[]? changedPaths = null,
         McpServer? server = null,
-        CancellationToken cancellationToken = default)
-    {
-        McpGatewayJson.RequirePositive(
-            timeoutSeconds,
-            nameof(timeoutSeconds));
-        ActivateParameters parameters = new()
-        {
-            Profile = RequireText(profile, nameof(profile)),
-            FinalTargetMode =
-                McpGatewayJson.ParseEnum<ActivationFinalTargetMode>(
-                    finalTargetMode,
-                    nameof(finalTargetMode)),
-            Verification =
-                McpGatewayJson.ParseEnum<VerificationMode>(
-                    verification,
-                    nameof(verification)),
-            TimeoutSeconds = timeoutSeconds,
-        };
-
-        GatewayToolSession session =
-            await ResolveSessionAsync(
-                    server,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        GatewayResponse<OperationAccepted> accepted =
-            await session.Client.StartActivationAsync(
-                    parameters,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        if (!accepted.Ok || accepted.Result is null)
-        {
-            return McpGatewayJson.Serialize(accepted);
-        }
-
-        GatewayResponse<OperationDetails<ActivationResult>>
-            completed =
-                await session.Poller.WaitAsync<ActivationResult>(
-                        accepted.Result.OperationId,
-                        GetClientWaitTimeout(timeoutSeconds),
-                        cancellationToken)
-                    .ConfigureAwait(false);
-        return McpGatewayJson.Serialize(completed);
-    }
+        CancellationToken cancellationToken = default) =>
+        ExecuteMutationAsync(
+            server: server,
+            cancellationToken: cancellationToken,
+            executeAsync: client => client.ActivateXaeAsync(
+                new ActivateParameters
+                {
+                    Profile = RequireText(profile, nameof(profile)),
+                    FinalTargetMode = McpGatewayJson.ParseEnum<ActivationFinalTargetMode>(
+                        finalTargetMode,
+                        nameof(finalTargetMode)),
+                    Verification = McpGatewayJson.ParseEnum<VerificationMode>(
+                        verification,
+                        nameof(verification)),
+                    ChangedPaths = changedPaths?.ToList() ?? new(),
+                    TimeoutSeconds = DefaultOperationTimeoutSeconds,
+                },
+                cancellationToken));
 
     [McpServerTool(
-        Name = "twincat_get_diagnostics",
-        ReadOnly = true,
+        Name = "twincat_target_config",
+        ReadOnly = false,
+        Destructive = true,
         Idempotent = true,
-        OpenWorld = false)]
-    [Description(
-        "Return diagnostics and one page of the unified event "
-        + "stream after a cursor. Use severity filtering for "
-        + "errors without a separate error state.")]
-    public async Task<string> GetDiagnosticsAsync(
-        [Description(
-            "Expected event stream ID from an earlier response, "
-            + "or null on the first read.")]
-        string? eventStreamId = null,
-        [Description(
-            "Return matching events after this cursor.")]
-        long afterCursor = 0,
-        [Description(
-            "Maximum events in this response.")]
-        int maximumEvents = 100,
-        [Description(
-            "all, info, warning, or error.")]
-        string minimumSeverity = "all",
+        OpenWorld = false,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(OperationResult<TargetConfigResult>))]
+    [Description("Transition the exact profile Target System to Config.")]
+    public Task<CallToolResult> ConfigureTargetAsync(
+        string profile,
         McpServer? server = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        ExecuteMutationAsync(
+            server: server,
+            cancellationToken: cancellationToken,
+            executeAsync: client => client.ConfigureTargetAsync(
+                new TargetConfigParameters
+                {
+                    Profile = RequireText(profile, nameof(profile)),
+                },
+                cancellationToken));
+
+    [McpServerTool(
+        Name = "twincat_target_start_restart",
+        ReadOnly = false,
+        Destructive = true,
+        Idempotent = false,
+        OpenWorld = false,
+        UseStructuredContent = true,
+        OutputSchemaType = typeof(OperationResult<TargetStartRestartResult>))]
+    [Description("Start a stopped Target or restart a running Target with optional TcUnit verification.")]
+    public Task<CallToolResult> StartRestartTargetAsync(
+        string profile,
+        string verification = "none",
+        McpServer? server = null,
+        CancellationToken cancellationToken = default) =>
+        ExecuteMutationAsync(
+            server: server,
+            cancellationToken: cancellationToken,
+            executeAsync: client => client.StartRestartTargetAsync(
+                new TargetStartRestartParameters
+                {
+                    Profile = RequireText(profile, nameof(profile)),
+                    Verification = McpGatewayJson.ParseEnum<VerificationMode>(
+                        verification,
+                        nameof(verification)),
+                },
+                cancellationToken));
+
+    private async Task<CallToolResult> ExecuteMutationAsync<TResult>(
+        McpServer? server,
+        Func<ITwinCatGatewayClient, Task<OperationResult<TResult>>> executeAsync,
+        CancellationToken cancellationToken)
     {
-        McpGatewayJson.RequireNonNegative(
-            afterCursor,
-            nameof(afterCursor));
-        McpGatewayJson.RequirePositive(
-            maximumEvents,
-            nameof(maximumEvents));
-        GetDiagnosticsParameters parameters = new()
+        try
         {
-            EventStreamId =
-                NullIfWhiteSpace(eventStreamId),
-            AfterEventCursor = afterCursor,
-            MaximumEvents = maximumEvents,
-            MinimumSeverity =
-                McpGatewayJson.ParseSeverity(
-                    minimumSeverity),
+            ITwinCatGatewayClient client =
+                await ResolveClientAsync(server, cancellationToken).ConfigureAwait(false);
+            OperationResult<TResult> result =
+                await executeAsync(client).ConfigureAwait(false);
+            return CreateResult(result, !result.Ok, result.Resources);
+        }
+        catch (GatewayClientException exception)
+        {
+            OperationResult<TResult> result = new()
+            {
+                Ok = false,
+                Component = exception.Error.Component ?? GatewayComponent.Gateway,
+                Stage = exception.Error.Stage ?? "gateway.connect",
+                Completion = OperationCompletion.Failed,
+                SideEffectsStarted = exception.Error.SideEffectsStarted ?? false,
+                Error = exception.Error,
+                Resources = exception.Error.Resources.ToList(),
+            };
+            return CreateResult(result, isError: true, result.Resources);
+        }
+    }
+
+    private async Task<ITwinCatGatewayClient> ResolveClientAsync(
+        McpServer? server,
+        CancellationToken cancellationToken)
+    {
+        if (_fixedClient is not null)
+        {
+            return _fixedClient;
+        }
+
+        return await (_runtime
+                ?? throw new InvalidOperationException("Gateway MCP runtime is unavailable."))
+            .ResolveClientAsync(server, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static CallToolResult LifecycleFailure<TResult>(
+        string code,
+        string message,
+        string stage) =>
+        CreateResult(
+            new GatewayLifecycleResult<TResult>
+            {
+                Ok = false,
+                Error = new GatewayError
+                {
+                    Code = code,
+                    Message = message,
+                    Stage = stage,
+                    Component = GatewayComponent.Gateway,
+                    SideEffectsStarted = false,
+                },
+            },
+            isError: true);
+
+    private static CallToolResult CreateResult<T>(
+        T value,
+        bool isError,
+        IEnumerable<ResourceReference>? resources = null)
+    {
+        List<ContentBlock> content = new()
+        {
+            new TextContentBlock
+            {
+                Text = McpGatewayJson.Serialize(value),
+            },
         };
-
-        GatewayToolSession session =
-            await ResolveSessionAsync(
-                    server,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        GatewayResponse<GatewayDiagnosticsResult> response =
-            await session.Client.GetDiagnosticsAsync(
-                    parameters,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        return McpGatewayJson.Serialize(response);
-    }
-
-    private async Task<GatewayToolSession>
-        ResolveSessionAsync(
-            McpServer? server,
-            CancellationToken cancellationToken)
-    {
-        if (_fixedClient is not null
-            && _fixedPoller is not null)
+        if (resources is not null)
         {
-            return new GatewayToolSession(
-                _fixedClient,
-                _fixedPoller);
+            content.AddRange(
+                resources
+                    .Where(resource => !string.IsNullOrWhiteSpace(resource.Uri))
+                    .GroupBy(resource => resource.Uri, StringComparer.Ordinal)
+                    .Select(group => group.First())
+                    .Select(resource => (ContentBlock)new ResourceLinkBlock
+                    {
+                        Uri = resource.Uri,
+                        Name = GetResourceName(resource.Uri),
+                        MimeType = resource.MimeType,
+                    }));
         }
 
-        ITwinCatGatewayClient client =
-            await (_runtime
-                    ?? throw new InvalidOperationException(
-                        "Gateway MCP runtime is unavailable."))
-                .ResolveClientAsync(
-                    server,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        return new GatewayToolSession(
-            client,
-            new GatewayOperationPoller(client));
-    }
-
-    private static TimeSpan GetClientWaitTimeout(
-        int operationTimeoutSeconds)
-    {
-        return TimeSpan.FromSeconds(
-            checked(
-                operationTimeoutSeconds
-                + ClientTimeoutGraceSeconds));
-    }
-
-    private static string RequireText(
-        string value,
-        string parameterName)
-    {
-        return string.IsNullOrWhiteSpace(value)
-            ? throw new ModelContextProtocol.McpException(
-                $"{parameterName} is required.")
-            : value;
-    }
-
-    private static string? NullIfWhiteSpace(string? value)
-    {
-        return string.IsNullOrWhiteSpace(value)
-            ? null
-            : value;
-    }
-
-    private sealed class GatewayToolSession
-    {
-        public GatewayToolSession(
-            ITwinCatGatewayClient client,
-            GatewayOperationPoller poller)
+        return new CallToolResult
         {
-            Client = client;
-            Poller = poller;
-        }
-
-        public ITwinCatGatewayClient Client { get; }
-
-        public GatewayOperationPoller Poller { get; }
+            Content = content,
+            StructuredContent = McpGatewayJson.ToElement(value),
+            IsError = isError,
+        };
     }
+
+    private static string GetResourceName(string uri)
+    {
+        int separator = uri.LastIndexOf('/');
+        return separator >= 0 && separator + 1 < uri.Length
+            ? uri.Substring(separator + 1)
+            : uri;
+    }
+
+    private static string RequireText(string value, string parameterName) =>
+        string.IsNullOrWhiteSpace(value)
+            ? throw new ModelContextProtocol.McpException($"{parameterName} is required.")
+            : value;
+
+    private static string? NullIfWhiteSpace(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
 }

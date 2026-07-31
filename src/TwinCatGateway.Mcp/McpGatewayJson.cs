@@ -17,6 +17,11 @@ internal static class McpGatewayJson
         return JsonSerializer.Serialize(value, JsonOptions);
     }
 
+    public static JsonElement ToElement<T>(T value)
+    {
+        return JsonSerializer.SerializeToElement(value, JsonOptions);
+    }
+
     public static TEnum ParseEnum<TEnum>(
         string value,
         string parameterName)

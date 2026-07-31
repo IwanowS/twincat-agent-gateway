@@ -10,6 +10,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using TwinCatGateway.Client;
 using TwinCatGateway.Contracts;
+using TwinCatGateway.Ipc;
 
 namespace TwinCatGateway.Mcp;
 
@@ -261,24 +262,21 @@ public sealed class TwinCatResources
                     server,
                     cancellationToken)
                 .ConfigureAwait(false);
-        GatewayResponse<ResourceContent> response =
-            await client.GetResourceAsync(
+        ResourceContent resource;
+        try
+        {
+            resource = await client.GetResourceAsync(
                     uri,
                     MaximumResourceCharacters,
                     offset: 0,
                     cancellationToken)
                 .ConfigureAwait(false);
-        if (!response.Ok)
+        }
+        catch (GatewayClientException exception)
         {
             throw new McpException(
-                McpGatewayJson.Serialize(response));
+                McpGatewayJson.Serialize(exception.Error));
         }
-
-        ResourceContent resource =
-            response.Result
-            ?? throw new McpException(
-                "Gateway returned a successful resource "
-                + "response without content.");
         JsonObject metadata = new()
         {
             ["gatewayOffset"] = resource.Offset,

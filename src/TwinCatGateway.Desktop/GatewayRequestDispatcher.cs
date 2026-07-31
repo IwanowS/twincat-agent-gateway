@@ -100,14 +100,28 @@ public sealed class GatewayRequestDispatcher
             case GatewayMethods.GatewayState:
                 return _service.GetGatewayState();
 
+            case GatewayMethods.XaeOpen:
+                {
+                    XaeOpenParameters parameters =
+                        request.DeserializeParameters<XaeOpenParameters>(
+                            _serializerOptions);
+                    return await StartOperationAsync<XaeOpenResult>(
+                            OperationKind.XaeOpen,
+                            parameters.Profile,
+                            () => _service.StartXaeOpen(parameters),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
             case GatewayMethods.XaeBuild:
                 {
                     XaeBuildParameters parameters =
                         request.DeserializeParameters<XaeBuildParameters>(
                             _serializerOptions);
-                    OperationHandle handle = _service.StartXaeBuild(parameters);
-                    return await _service.WaitForOperationAsync<XaeBuildResult>(
-                            handle.OperationId,
+                    return await StartOperationAsync<XaeBuildResult>(
+                            OperationKind.XaeBuild,
+                            parameters.Profile,
+                            () => _service.StartXaeBuild(parameters),
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -118,11 +132,12 @@ public sealed class GatewayRequestDispatcher
                         request.DeserializeParameters<
                             SynchronizeParameters>(
                             _serializerOptions);
-                    OperationHandle handle = _service.StartSynchronization(
-                        parameters,
-                        agentRequest: true);
-                    return await _service.WaitForOperationAsync<SynchronizeResult>(
-                            handle.OperationId,
+                    return await StartOperationAsync<SynchronizeResult>(
+                            OperationKind.Synchronize,
+                            parameters.Profile,
+                            () => _service.StartSynchronization(
+                                parameters,
+                                agentRequest: true),
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -133,9 +148,10 @@ public sealed class GatewayRequestDispatcher
                         request.DeserializeParameters<
                             CloseXaeParameters>(
                             _serializerOptions);
-                    OperationHandle handle = _service.StartCloseXae(parameters);
-                    return await _service.WaitForOperationAsync<CloseXaeResult>(
-                            handle.OperationId,
+                    return await StartOperationAsync<CloseXaeResult>(
+                            OperationKind.CloseXae,
+                            parameters.Profile,
+                            () => _service.StartCloseXae(parameters),
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -146,9 +162,10 @@ public sealed class GatewayRequestDispatcher
                         request.DeserializeParameters<
                             ActivateParameters>(
                             _serializerOptions);
-                    OperationHandle handle = _service.StartActivation(parameters);
-                    return await _service.WaitForOperationAsync<ActivationResult>(
-                            handle.OperationId,
+                    return await StartOperationAsync<ActivationResult>(
+                            OperationKind.Activate,
+                            parameters.Profile,
+                            () => _service.StartActivation(parameters),
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -159,9 +176,10 @@ public sealed class GatewayRequestDispatcher
                         request.DeserializeParameters<
                             TargetConfigParameters>(
                             _serializerOptions);
-                    OperationHandle handle = _service.StartTargetConfig(parameters);
-                    return await _service.WaitForOperationAsync<TargetConfigResult>(
-                            handle.OperationId,
+                    return await StartOperationAsync<TargetConfigResult>(
+                            OperationKind.TargetConfig,
+                            parameters.Profile,
+                            () => _service.StartTargetConfig(parameters),
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -172,11 +190,10 @@ public sealed class GatewayRequestDispatcher
                         request.DeserializeParameters<
                             TargetStartRestartParameters>(
                             _serializerOptions);
-                    OperationHandle handle =
-                        _service.StartTargetStartRestart(parameters);
-                    return await _service
-                        .WaitForOperationAsync<TargetStartRestartResult>(
-                            handle.OperationId,
+                    return await StartOperationAsync<TargetStartRestartResult>(
+                            OperationKind.TargetStartRestart,
+                            parameters.Profile,
+                            () => _service.StartTargetStartRestart(parameters),
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -213,5 +230,30 @@ public sealed class GatewayRequestDispatcher
                     ErrorCodes.MethodNotFound,
                     $"Gateway method '{request.Method}' is not available.");
         }
+    }
+
+    private async Task<OperationResult<TResult>> StartOperationAsync<TResult>(
+        OperationKind kind,
+        string? profile,
+        Func<OperationHandle> start,
+        CancellationToken cancellationToken)
+    {
+        OperationHandle handle;
+        try
+        {
+            handle = start();
+        }
+        catch (GatewayOperationException exception)
+        {
+            handle = _service.EnqueuePreflightFailure(
+                kind,
+                profile,
+                exception);
+        }
+
+        return await _service.WaitForOperationAsync<TResult>(
+                handle.OperationId,
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 }

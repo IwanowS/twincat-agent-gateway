@@ -572,7 +572,7 @@ public sealed class OperationQueue : IDisposable
     {
         switch (kind)
         {
-            case OperationKind.OpenSolution:
+            case OperationKind.XaeOpen:
                 return GetSolutionOpenEventType(state);
             case OperationKind.XaeBuild:
                 return GetBuildEventType(state);

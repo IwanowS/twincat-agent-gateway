@@ -2,7 +2,7 @@ namespace TwinCatGateway.Contracts;
 
 public enum OperationKind
 {
-    OpenSolution,
+    XaeOpen,
     XaeBuild,
     Synchronize,
     CloseXae,

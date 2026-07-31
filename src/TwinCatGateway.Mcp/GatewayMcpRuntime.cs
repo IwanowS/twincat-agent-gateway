@@ -12,6 +12,7 @@ using ModelContextProtocol.Server;
 using TwinCatGateway.Client;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
+using TwinCatGateway.Ipc;
 
 namespace TwinCatGateway.Mcp;
 
@@ -146,9 +147,10 @@ public sealed class GatewayMcpRuntime
         }
     }
 
-    public async Task<GatewayResponse<GatewayStartResult>>
+    public async Task<GatewayLifecycleResult<GatewayStartResult>>
         StartAsync(
             McpServer? server,
+            string? explicitConfigurationPath,
             TimeSpan timeout,
             CancellationToken cancellationToken)
     {
@@ -162,7 +164,8 @@ public sealed class GatewayMcpRuntime
         {
             context = await ResolveProjectAsync(
                     server,
-                    cancellationToken)
+                    cancellationToken,
+                    explicitConfigurationPath)
                 .ConfigureAwait(false);
         }
         catch (GatewayOperationException exception)
@@ -291,7 +294,7 @@ public sealed class GatewayMcpRuntime
                         mismatch);
                 }
 
-                GatewayResponse<GatewayStartResult> response =
+                GatewayLifecycleResult<GatewayStartResult> response =
                     await ReadStartResultAsync(
                             record,
                             context,
@@ -339,11 +342,16 @@ public sealed class GatewayMcpRuntime
     private async Task<GatewayProjectContext>
         ResolveProjectAsync(
             McpServer? server,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            string? explicitConfigurationPath = null)
     {
+        string? requestedConfigurationPath =
+            string.IsNullOrWhiteSpace(explicitConfigurationPath)
+                ? _options.ExplicitConfigurationPath
+                : explicitConfigurationPath;
         IReadOnlyCollection<string>? workspaceRoots = null;
         if (string.IsNullOrWhiteSpace(
-                _options.ExplicitConfigurationPath))
+                requestedConfigurationPath))
         {
             workspaceRoots =
                 await GetWorkspaceRootsAsync(
@@ -354,7 +362,7 @@ public sealed class GatewayMcpRuntime
 
         GatewayConfigurationLocation location =
             GatewayConfigurationDiscovery.Discover(
-                _options.ExplicitConfigurationPath,
+                requestedConfigurationPath,
                 workspaceRoots,
                 _options.CurrentDirectory);
         GatewayConfiguration configuration =
@@ -487,7 +495,7 @@ public sealed class GatewayMcpRuntime
         return null;
     }
 
-    private async Task<GatewayResponse<GatewayStartResult>>
+    private async Task<GatewayLifecycleResult<GatewayStartResult>>
         ReadStartResultAsync(
             GatewayInstanceRecord record,
             GatewayProjectContext context,
@@ -498,34 +506,13 @@ public sealed class GatewayMcpRuntime
         {
             ITwinCatGatewayClient client =
                 _clientFactory.Create(record.PipeName);
-            GatewayResponse<GatewayStatusResult> response =
-                await client.GetStatusAsync(
+            GatewayStateSnapshot status =
+                await client.GetGatewayStateAsync(
                         cancellationToken)
                     .ConfigureAwait(false);
-            if (!response.Ok
-                || response.Result is null)
-            {
-                return Failure<GatewayStartResult>(
-                    response.Error
-                    ?? new GatewayError
-                    {
-                        Code =
-                            ErrorCodes.GatewayNotReady,
-                        Message =
-                            "Gateway status is unavailable.",
-                        Retryable = true,
-                        Stage =
-                            "gateway.start.status",
-                    });
-            }
-
-            GatewayStatusResult status = response.Result;
             if (!PathsEqual(
-                    status.Gateway.ConfigurationPath,
-                    context.Location.Path)
-                || !PathsEqual(
-                    status.Gateway.SolutionPath,
-                    context.Profile.Xae.Solution))
+                    status.ConfigurationPath,
+                    context.Location.Path))
             {
                 return Failure<GatewayStartResult>(
                     ErrorCodes
@@ -536,7 +523,7 @@ public sealed class GatewayMcpRuntime
                     stage: "gateway.start.identity");
             }
 
-            if (!status.Gateway.Ready)
+            if (status.State != GatewayProcessState.Ready)
             {
                 return Failure<GatewayStartResult>(
                     ErrorCodes.GatewayNotReady,
@@ -546,7 +533,7 @@ public sealed class GatewayMcpRuntime
                     stage: "gateway.start.status");
             }
 
-            return new GatewayResponse<GatewayStartResult>
+            return new GatewayLifecycleResult<GatewayStartResult>
             {
                 Ok = true,
                 Result = new GatewayStartResult
@@ -557,6 +544,10 @@ public sealed class GatewayMcpRuntime
                     Status = status,
                 },
             };
+        }
+        catch (GatewayClientException exception)
+        {
+            return Failure<GatewayStartResult>(exception.Error);
         }
         catch (Exception exception)
             when (exception is IOException
@@ -599,7 +590,7 @@ public sealed class GatewayMcpRuntime
                 StringComparison.OrdinalIgnoreCase);
     }
 
-    private static GatewayResponse<T> Failure<T>(
+    private static GatewayLifecycleResult<T> Failure<T>(
         GatewayOperationException exception)
     {
         return Failure<T>(
@@ -610,17 +601,17 @@ public sealed class GatewayMcpRuntime
             exception.Details);
     }
 
-    private static GatewayResponse<T> Failure<T>(
+    private static GatewayLifecycleResult<T> Failure<T>(
         GatewayError error)
     {
-        return new GatewayResponse<T>
+        return new GatewayLifecycleResult<T>
         {
             Ok = false,
             Error = error,
         };
     }
 
-    private static GatewayResponse<T> Failure<T>(
+    private static GatewayLifecycleResult<T> Failure<T>(
         string code,
         string message,
         bool retryable,
