@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using TwinCatGateway.Client;
 using TwinCatGateway.Contracts;
 using TwinCatGateway.Core;
+using TwinCatGateway.Desktop;
 using TwinCatGateway.Ipc;
 using Xunit;
 
@@ -126,6 +127,50 @@ public sealed class IpcV2Tests
                     gatewayEvent =>
                         gatewayEvent.Severity == DiagnosticSeverity.Error)
                 .OperationId);
+        }
+        finally
+        {
+            if (Directory.Exists(logRoot))
+            {
+                Directory.Delete(logRoot, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task NonWaitingMutationReturnsReceiptBeforeJournalCompletion()
+    {
+        string logRoot = Path.Combine(Path.GetTempPath(), "twincat-gateway-receipt-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            OperationStore operations = new();
+            GatewayEventJournal journal = new();
+            using OperationQueue queue = new(operations, gatewayEventSink: journal);
+            GatewayApplicationService service = new(
+                "test",
+                new GatewayStatusSnapshotStore(GatewayStatusSnapshotStore.CreateInitial("test")),
+                operations,
+                queue,
+                new LocalLogStore(logRoot),
+                journal);
+            GatewayRequestDispatcher dispatcher = new(
+                service,
+                new CapabilityEvaluator(new GatewayConfiguration()));
+            GatewayProtocolHandler handler = new(dispatcher.DispatchAsync);
+
+            string json = await handler.HandleAsync(
+                "{\"protocolVersion\":" + ProtocolVersion.Current
+                    + ",\"requestId\":\"req-receipt\",\"method\":\"xaeBuild\","
+                    + "\"params\":{\"profile\":\"missing\"},\"wait\":false}",
+                CancellationToken.None);
+
+            using JsonDocument document = JsonDocument.Parse(json);
+            string operationId = document.RootElement
+                .GetProperty("result")
+                .GetProperty("operationId")
+                .GetString()!;
+            Assert.False(string.IsNullOrWhiteSpace(operationId));
+            Assert.NotNull(operations.Get(operationId));
         }
         finally
         {

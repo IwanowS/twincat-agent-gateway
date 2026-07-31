@@ -1646,10 +1646,8 @@ internal sealed class XaeSessionCoordinator : IDisposable
 
     private bool HasActiveChangingOperation()
     {
-        OperationSummary? operation = _status.Read().CurrentOperation;
-        return operation is not null
-            && (operation.State == OperationState.Queued
-                || operation.State == OperationState.Running);
+        return !string.IsNullOrWhiteSpace(
+            _status.Read().CurrentOperationId);
     }
 
     private void PublishAttaching()
@@ -2798,6 +2796,23 @@ internal sealed class XaeSessionCoordinator : IDisposable
                 && observation.State == TargetSystemState.Run)
             {
                 return observation;
+            }
+            if (observation.Freshness == ObservationFreshness.Fresh
+                && observation.Error is null
+                && observation.State == TargetSystemState.Exception)
+            {
+                string? details = await ReadRuntimeExceptionDetailsAsync(
+                        readTimeout,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                throw new GatewayOperationException(
+                    ErrorCodes.TargetTransitionFailed,
+                    "Activation did not reach Run because the Target entered Exception.",
+                    details: details,
+                    retryable: false,
+                    stage: "activation.targetTransition",
+                    component: GatewayComponent.Target,
+                    sideEffectsStarted: true);
             }
             await Task.Delay(
                 TimeSpan.FromMilliseconds(250),

@@ -22,9 +22,6 @@ internal static class CliProgram
 
     private const string DefaultPipeName =
         "TwinCatAgentGateway";
-    private const int DefaultOperationTimeoutSeconds = 120;
-    private const int ClientTimeoutGraceSeconds = 15;
-
     private static readonly JsonSerializerOptions JsonOptions =
         GatewayJson.CreateSerializerOptions();
 
@@ -32,27 +29,17 @@ internal static class CliProgram
         Usage:
           twincat-gateway [--pipe NAME] status
           twincat-gateway [--pipe NAME] diagnostics [options]
-          twincat-gateway [--pipe NAME] xae-messages [options]
+          twincat-gateway [--pipe NAME] xae-messages --profile NAME
           twincat-gateway [--pipe NAME] build --profile NAME [options]
           twincat-gateway [--pipe NAME] activate --profile NAME [options]
           twincat-gateway [--pipe NAME] resource --uri URI [options]
 
-        diagnostics options:
-          --event-stream-id ID
-          --after-cursor NUMBER
-          --max-events NUMBER
-          --minimum-severity info|warning|error
-
-        xae-messages options:
-          --max-messages NUMBER
-
         build options:
           --action build|rebuild|clean
-          --configuration NAME
-          --platform NAME
+          --scope plc|solution
+          --project LOGICAL_NAME
           --changed PATH              Repeat for multiple changed paths.
-          --detail compact|detailed
-          --timeout SECONDS
+          --detail compact|full
 
         activate options:
           --final-target-mode run|unchanged
@@ -90,11 +77,9 @@ internal static class CliProgram
                 clientFactory(global.PipeName)
                 ?? throw new InvalidOperationException(
                     "The CLI client factory returned null.");
-            GatewayOperationPoller poller = new(client);
             return await ExecuteAsync(
                     global.CommandArguments,
                     client,
-                    poller,
                     output,
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -126,7 +111,6 @@ internal static class CliProgram
     private static Task<int> ExecuteAsync(
         string[] args,
         ITwinCatGatewayClient client,
-        GatewayOperationPoller poller,
         TextWriter output,
         CancellationToken cancellationToken)
     {
@@ -158,13 +142,11 @@ internal static class CliProgram
             "build" => ExecuteBuildAsync(
                 commandArguments,
                 client,
-                poller,
                 output,
                 cancellationToken),
             "activate" => ExecuteActivationAsync(
                 commandArguments,
                 client,
-                poller,
                 output,
                 cancellationToken),
             "resource" => ExecuteResourceAsync(
@@ -184,12 +166,12 @@ internal static class CliProgram
         CancellationToken cancellationToken)
     {
         OptionBag.Parse(args);
-        GatewayResponse<GatewayStatusResult> response =
-            await client.GetStatusAsync(cancellationToken)
+        GatewayStateSnapshot response =
+            await client.GetGatewayStateAsync(cancellationToken)
                 .ConfigureAwait(false);
         await WriteJsonAsync(output, response)
             .ConfigureAwait(false);
-        return GatewayExitCode(response.Ok);
+        return SuccessExitCode;
     }
 
     private static async Task<int> ExecuteDiagnosticsAsync(
@@ -198,50 +180,15 @@ internal static class CliProgram
         TextWriter output,
         CancellationToken cancellationToken)
     {
-        OptionBag options = OptionBag.Parse(
-            args,
-            "--event-stream-id",
-            "--after-cursor",
-            "--max-events",
-            "--minimum-severity");
-        GetDiagnosticsParameters parameters = new()
-        {
-            EventStreamId =
-                options.GetOptional("--event-stream-id"),
-        };
-        if (options.GetOptional("--after-cursor")
-            is string cursor)
-        {
-            parameters.AfterEventCursor = ParseNonNegativeLong(
-                cursor,
-                "--after-cursor");
-        }
-
-        if (options.GetOptional("--max-events")
-            is string maximumEvents)
-        {
-            parameters.MaximumEvents = ParsePositiveInt(
-                maximumEvents,
-                "--max-events");
-        }
-
-        if (options.GetOptional("--minimum-severity")
-            is string severity)
-        {
-            parameters.MinimumSeverity =
-                ParseEnum<DiagnosticSeverity>(
-                    severity,
-                    "--minimum-severity");
-        }
-
-        GatewayResponse<GatewayDiagnosticsResult> response =
-            await client.GetDiagnosticsAsync(
-                    parameters,
-                    cancellationToken)
+        OptionBag.Parse(args);
+        ResourceContent response =
+            await client.GetResourceAsync(
+                    "twincat-gateway://diagnostics",
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         await WriteJsonAsync(output, response)
             .ConfigureAwait(false);
-        return GatewayExitCode(response.Ok);
+        return SuccessExitCode;
     }
 
     private static async Task<int> ExecuteXaeMessagesAsync(
@@ -250,33 +197,21 @@ internal static class CliProgram
         TextWriter output,
         CancellationToken cancellationToken)
     {
-        OptionBag options = OptionBag.Parse(
-            args,
-            "--max-messages");
-        GetXaeMessagesParameters parameters = new();
-        if (options.GetOptional("--max-messages")
-            is string maximumMessages)
-        {
-            parameters.MaximumMessages =
-                ParsePositiveInt(
-                    maximumMessages,
-                    "--max-messages");
-        }
-
-        GatewayResponse<XaeMessagesResult> response =
-            await client.GetXaeMessagesAsync(
-                    parameters,
-                    cancellationToken)
+        OptionBag options = OptionBag.Parse(args, "--profile");
+        string profile = Uri.EscapeDataString(options.GetRequired("--profile"));
+        ResourceContent response =
+            await client.GetResourceAsync(
+                    $"twincat-xae://profile/{profile}/messages/current",
+                    cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         await WriteJsonAsync(output, response)
             .ConfigureAwait(false);
-        return GatewayExitCode(response.Ok);
+        return SuccessExitCode;
     }
 
     private static async Task<int> ExecuteBuildAsync(
         string[] args,
         ITwinCatGatewayClient client,
-        GatewayOperationPoller poller,
         TextWriter output,
         CancellationToken cancellationToken)
     {
@@ -284,17 +219,14 @@ internal static class CliProgram
             args,
             "--profile",
             "--action",
-            "--configuration",
-            "--platform",
+            "--scope",
+            "--project",
             "--changed",
-            "--detail",
-            "--timeout");
-        BuildParameters parameters = new()
+            "--detail");
+        XaeBuildParameters parameters = new()
         {
             Profile = options.GetRequired("--profile"),
-            Configuration =
-                options.GetOptional("--configuration"),
-            Platform = options.GetOptional("--platform"),
+            Project = options.GetOptional("--project"),
             ChangedPaths = options.GetMany("--changed"),
         };
         if (options.GetOptional("--action") is string action)
@@ -304,6 +236,13 @@ internal static class CliProgram
                 "--action");
         }
 
+        if (options.GetOptional("--scope") is string scope)
+        {
+            parameters.Scope = ParseEnum<XaeBuildScope>(
+                scope,
+                "--scope");
+        }
+
         if (options.GetOptional("--detail") is string detail)
         {
             parameters.Detail = ParseEnum<DetailLevel>(
@@ -311,43 +250,19 @@ internal static class CliProgram
                 "--detail");
         }
 
-        if (options.GetOptional("--timeout") is string timeout)
-        {
-            parameters.TimeoutSeconds = ParsePositiveInt(
-                timeout,
-                "--timeout");
-        }
-
-        GatewayResponse<OperationAccepted> accepted =
-            await client.StartBuildAsync(
+        OperationResult<XaeBuildResult> completed =
+            await client.BuildXaeAsync(
                     parameters,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        if (!accepted.Ok || accepted.Result is null)
-        {
-            await WriteJsonAsync(output, accepted)
-                .ConfigureAwait(false);
-            return OperationFailedExitCode;
-        }
-
-        GatewayResponse<OperationDetails<BuildResult>> completed =
-            await poller.WaitAsync<BuildResult>(
-                    accepted.Result.OperationId,
-                    GetClientWaitTimeout(
-                        parameters.TimeoutSeconds),
                     cancellationToken)
                 .ConfigureAwait(false);
         await WriteJsonAsync(output, completed)
             .ConfigureAwait(false);
-        return OperationExitCode(
-            completed,
-            completed.Result?.Result?.Ok);
+        return OperationExitCode(completed);
     }
 
     private static async Task<int> ExecuteActivationAsync(
         string[] args,
         ITwinCatGatewayClient client,
-        GatewayOperationPoller poller,
         TextWriter output,
         CancellationToken cancellationToken)
     {
@@ -386,31 +301,14 @@ internal static class CliProgram
                 "--timeout");
         }
 
-        GatewayResponse<OperationAccepted> accepted =
-            await client.StartActivationAsync(
+        OperationResult<ActivationResult> completed =
+            await client.ActivateXaeAsync(
                     parameters,
                     cancellationToken)
                 .ConfigureAwait(false);
-        if (!accepted.Ok || accepted.Result is null)
-        {
-            await WriteJsonAsync(output, accepted)
-                .ConfigureAwait(false);
-            return OperationFailedExitCode;
-        }
-
-        GatewayResponse<OperationDetails<ActivationResult>>
-            completed =
-                await poller.WaitAsync<ActivationResult>(
-                        accepted.Result.OperationId,
-                        GetClientWaitTimeout(
-                            parameters.TimeoutSeconds),
-                        cancellationToken)
-                    .ConfigureAwait(false);
         await WriteJsonAsync(output, completed)
             .ConfigureAwait(false);
-        return OperationExitCode(
-            completed,
-            completed.Result?.Result?.Ok);
+        return OperationExitCode(completed);
     }
 
     private static async Task<int> ExecuteResourceAsync(
@@ -437,7 +335,7 @@ internal static class CliProgram
                         rawMaximum,
                         "--max-characters")
                     : 64 * 1024;
-        GatewayResponse<ResourceContent> response =
+        ResourceContent response =
             await client.GetResourceAsync(
                     options.GetRequired("--uri"),
                     maximumCharacters,
@@ -446,7 +344,7 @@ internal static class CliProgram
                 .ConfigureAwait(false);
         await WriteJsonAsync(output, response)
             .ConfigureAwait(false);
-        return GatewayExitCode(response.Ok);
+        return SuccessExitCode;
     }
 
     private static GlobalArguments ParseGlobalArguments(
@@ -491,33 +389,11 @@ internal static class CliProgram
             showHelp: false);
     }
 
-    private static TimeSpan GetClientWaitTimeout(
-        int? operationTimeoutSeconds)
-    {
-        int timeoutSeconds =
-            operationTimeoutSeconds
-            ?? DefaultOperationTimeoutSeconds;
-        return TimeSpan.FromSeconds(
-            checked(
-                timeoutSeconds
-                + ClientTimeoutGraceSeconds));
-    }
-
-    private static int GatewayExitCode(bool ok)
-    {
-        return ok
-            ? SuccessExitCode
-            : OperationFailedExitCode;
-    }
-
     private static int OperationExitCode<TResult>(
-        GatewayResponse<OperationDetails<TResult>> response,
-        bool? resultOk)
+        OperationResult<TResult> response)
     {
         return response.Ok
-            && response.Result?.Operation.State
-                == OperationState.Succeeded
-            && resultOk == true
+            && response.Completion == OperationCompletion.Succeeded
                 ? SuccessExitCode
                 : OperationFailedExitCode;
     }

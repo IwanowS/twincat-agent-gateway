@@ -94,17 +94,17 @@ internal sealed class GatewayLoggingSession : IDisposable
         CurrentLogFileTracker currentPath = new();
         SerilogLogger serilogLogger = new LoggerConfiguration()
             .MinimumLevel.Is(
-                ToSerilogLevel(configuration.LogMinimumLevel))
+                ToSerilogLevel(configuration.Gateway.Logging.MinimumLevel))
             .Enrich.FromLogContext()
             .WriteTo.File(
                 new CompactJsonFormatter(),
                 path,
                 rollingInterval: RollingInterval.Infinite,
                 fileSizeLimitBytes:
-                    configuration.LogFileSizeLimitBytes,
+                    configuration.Gateway.Logging.FileSizeLimitBytes,
                 rollOnFileSizeLimit: true,
                 retainedFileCountLimit:
-                    configuration.LogRetainedFileCountLimit,
+                    configuration.Gateway.Logging.RetainedFileCountLimit,
                 shared: false,
                 buffered: false,
                 hooks: currentPath)

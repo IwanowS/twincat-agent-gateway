@@ -220,10 +220,16 @@ public sealed class GatewayDesktopHost : IDisposable
             xaeOpenExecutor: xaeOpenExecutor,
             capabilitySnapshots: _capabilitySnapshots,
             profileObservations: _observations,
-            xaeStateProvider: _xaeCoordinator?.ReadXaeState,
-            xaeDiagnosticsProvider: _xaeCoordinator?.ReadXaeDiagnostics,
+            xaeStateProvider: _xaeCoordinator is null
+                ? null
+                : new Func<XaeSessionSnapshot>(_xaeCoordinator.ReadXaeState),
+            xaeDiagnosticsProvider: _xaeCoordinator is null
+                ? null
+                : new Func<XaeDiagnosticsSnapshot>(_xaeCoordinator.ReadXaeDiagnostics),
             xaeMessagesSnapshotProvider:
-                _xaeCoordinator?.ReadXaeMessagesSnapshot);
+                _xaeCoordinator is null
+                    ? null
+                    : new Func<XaeMessagesResult>(_xaeCoordinator.ReadXaeMessagesSnapshot));
         GatewayRequestDispatcher dispatcher = new(
             ApplicationService,
             _capabilities,
@@ -279,6 +285,24 @@ public sealed class GatewayDesktopHost : IDisposable
 
     public OperationCancellationService OperationCancellation =>
         _operationCancellation;
+
+    internal XaeSessionSnapshot ReadXaeState() =>
+        _xaeCoordinator?.ReadXaeState()
+        ?? new XaeSessionSnapshot
+        {
+            Profile = ActiveProfile?.Name ?? string.Empty,
+            ObservedAtUtc = DateTimeOffset.UtcNow,
+        };
+
+    internal XaeDiagnosticsSnapshot ReadXaeDiagnostics() =>
+        _xaeCoordinator?.ReadXaeDiagnostics()
+        ?? new XaeDiagnosticsSnapshot
+        {
+            Profile = ActiveProfile?.Name ?? string.Empty,
+        };
+
+    internal ProfileObservationSnapshot? ReadProfileObservations() =>
+        _observations?.Read();
 
     public IReadOnlyList<CapabilityState> SetOperatorLock(
         string profile,
@@ -493,8 +517,8 @@ public sealed class GatewayDesktopHost : IDisposable
 
         _status.Update(status =>
         {
-            status.Gateway.State = GatewayState.Stopping;
-            status.Gateway.Ready = false;
+            status.State = GatewayProcessState.Stopping;
+            status.ObservedAtUtc = DateTimeOffset.UtcNow;
             return status;
         });
         _events.Record(
@@ -570,7 +594,8 @@ public sealed class GatewayDesktopHost : IDisposable
             _logger.RecordException("ipc-server", exception);
             _status.Update(status =>
             {
-                status.Gateway.State = GatewayState.Faulted;
+                status.State = GatewayProcessState.Faulted;
+                status.ObservedAtUtc = DateTimeOffset.UtcNow;
                 return status;
             });
             GatewayError error = new()

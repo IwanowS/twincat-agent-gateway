@@ -77,7 +77,7 @@ public partial class App : Application
                             ActiveProfile =
                                 _host.ActiveProfile?.Name,
                             SolutionPath =
-                                _host.ActiveProfile?.Solution,
+                                _host.ActiveProfile?.Xae.Solution,
                             LaunchSource = _host.LaunchSource,
                             UiMode = _host.EffectiveUiMode,
                         });

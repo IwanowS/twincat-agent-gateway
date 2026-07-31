@@ -66,3 +66,10 @@ public sealed class OperationCancellationReceipt
 
     public bool CancellationRequested { get; set; }
 }
+
+public sealed class OperationReceipt
+{
+    public string OperationId { get; set; } = string.Empty;
+
+    public OperationState State { get; set; } = OperationState.Queued;
+}

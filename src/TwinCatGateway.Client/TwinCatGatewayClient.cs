@@ -44,12 +44,9 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(parameters);
-        return _client.SendAsync<
-            XaeOpenParameters,
-            OperationResult<XaeOpenResult>>(
+        return ExecuteOperationAsync<XaeOpenParameters, XaeOpenResult>(
             GatewayMethods.XaeOpen,
             parameters,
-            wait: true,
             cancellationToken);
     }
 
@@ -59,12 +56,9 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        return _client.SendAsync<
-            XaeBuildParameters,
-            OperationResult<XaeBuildResult>>(
+        return ExecuteOperationAsync<XaeBuildParameters, XaeBuildResult>(
             GatewayMethods.XaeBuild,
             parameters,
-            wait: true,
             cancellationToken);
     }
 
@@ -74,12 +68,9 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
             CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(parameters);
-        return _client.SendAsync<
-            SynchronizeParameters,
-            OperationResult<SynchronizeResult>>(
+        return ExecuteOperationAsync<SynchronizeParameters, SynchronizeResult>(
             GatewayMethods.XaeSynchronize,
             parameters,
-            wait: true,
             cancellationToken);
     }
 
@@ -90,12 +81,9 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        return _client.SendAsync<
-            ActivateParameters,
-            OperationResult<ActivationResult>>(
+        return ExecuteOperationAsync<ActivateParameters, ActivationResult>(
             GatewayMethods.XaeActivate,
             parameters,
-            wait: true,
             cancellationToken);
     }
 
@@ -106,12 +94,9 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        return _client.SendAsync<
-            CloseXaeParameters,
-            OperationResult<CloseXaeResult>>(
+        return ExecuteOperationAsync<CloseXaeParameters, CloseXaeResult>(
             GatewayMethods.XaeClose,
             parameters,
-            wait: true,
             cancellationToken);
     }
 
@@ -122,12 +107,9 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        return _client.SendAsync<
-            TargetConfigParameters,
-            OperationResult<TargetConfigResult>>(
+        return ExecuteOperationAsync<TargetConfigParameters, TargetConfigResult>(
             GatewayMethods.TargetConfig,
             parameters,
-            wait: true,
             cancellationToken);
     }
 
@@ -138,12 +120,9 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
     {
         ArgumentNullException.ThrowIfNull(parameters);
 
-        return _client.SendAsync<
-            TargetStartRestartParameters,
-            OperationResult<TargetStartRestartResult>>(
+        return ExecuteOperationAsync<TargetStartRestartParameters, TargetStartRestartResult>(
             GatewayMethods.TargetStartRestart,
             parameters,
-            wait: true,
             cancellationToken);
     }
 
@@ -196,4 +175,79 @@ public sealed class TwinCatGatewayClient : ITwinCatGatewayClient
             wait: true,
             cancellationToken);
     }
+
+    private async Task<OperationResult<TResult>> ExecuteOperationAsync<TParameters, TResult>(
+        string method,
+        TParameters parameters,
+        CancellationToken cancellationToken)
+    {
+        OperationReceipt handle = await _client.SendAsync<TParameters, OperationReceipt>(
+                method,
+                parameters,
+                wait: false,
+                cancellationToken)
+            .ConfigureAwait(false);
+        try
+        {
+            OperationSnapshot<TResult> snapshot =
+                await new GatewayOperationPoller(this).WaitAsync<TResult>(
+                        handle.OperationId,
+                        TimeSpan.FromHours(24),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            return CreateOperationResult(snapshot);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            using CancellationTokenSource cancellationDeadline =
+                new(TimeSpan.FromSeconds(5));
+            await CancelOperationAsync(
+                    handle.OperationId,
+                    cancellationDeadline.Token)
+                .ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private static OperationResult<TResult> CreateOperationResult<TResult>(
+        OperationSnapshot<TResult> snapshot)
+    {
+        OperationRecord operation = snapshot.Operation;
+        return new OperationResult<TResult>
+        {
+            Ok = operation.State == OperationState.Succeeded,
+            OperationId = operation.OperationId,
+            Component = operation.Error?.Component ?? GetComponent(operation.Kind),
+            Stage = operation.Error?.Stage ?? GetStage(operation.Kind),
+            Completion = operation.State switch
+            {
+                OperationState.Succeeded => OperationCompletion.Succeeded,
+                OperationState.TimedOut => OperationCompletion.TimedOut,
+                OperationState.Cancelled => OperationCompletion.Cancelled,
+                _ => OperationCompletion.Failed,
+            },
+            SideEffectsStarted = operation.Error?.SideEffectsStarted ?? false,
+            Result = snapshot.Result,
+            Error = operation.Error,
+            Diagnostics = operation.Diagnostics,
+            Resources = operation.Resources,
+        };
+    }
+
+    private static GatewayComponent GetComponent(OperationKind kind) =>
+        kind is OperationKind.TargetConfig or OperationKind.TargetStartRestart
+            ? GatewayComponent.Target
+            : GatewayComponent.Xae;
+
+    private static string GetStage(OperationKind kind) => kind switch
+    {
+        OperationKind.XaeOpen => "xae.open",
+        OperationKind.XaeBuild => "xae.build",
+        OperationKind.Activate => "xae.activate",
+        OperationKind.Synchronize => "xae.synchronize",
+        OperationKind.CloseXae => "xae.close",
+        OperationKind.TargetConfig => "target.config",
+        OperationKind.TargetStartRestart => "target.startRestart",
+        _ => "operation",
+    };
 }

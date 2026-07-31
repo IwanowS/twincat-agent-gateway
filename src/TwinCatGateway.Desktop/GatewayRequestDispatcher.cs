@@ -109,6 +109,7 @@ public sealed class GatewayRequestDispatcher
                             OperationKind.XaeOpen,
                             parameters.Profile,
                             () => _service.StartXaeOpen(parameters),
+                            request.Wait,
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -122,6 +123,7 @@ public sealed class GatewayRequestDispatcher
                             OperationKind.XaeBuild,
                             parameters.Profile,
                             () => _service.StartXaeBuild(parameters),
+                            request.Wait,
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -138,6 +140,7 @@ public sealed class GatewayRequestDispatcher
                             () => _service.StartSynchronization(
                                 parameters,
                                 agentRequest: true),
+                            request.Wait,
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -152,6 +155,7 @@ public sealed class GatewayRequestDispatcher
                             OperationKind.CloseXae,
                             parameters.Profile,
                             () => _service.StartCloseXae(parameters),
+                            request.Wait,
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -166,6 +170,7 @@ public sealed class GatewayRequestDispatcher
                             OperationKind.Activate,
                             parameters.Profile,
                             () => _service.StartActivation(parameters),
+                            request.Wait,
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -180,6 +185,7 @@ public sealed class GatewayRequestDispatcher
                             OperationKind.TargetConfig,
                             parameters.Profile,
                             () => _service.StartTargetConfig(parameters),
+                            request.Wait,
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -194,6 +200,7 @@ public sealed class GatewayRequestDispatcher
                             OperationKind.TargetStartRestart,
                             parameters.Profile,
                             () => _service.StartTargetStartRestart(parameters),
+                            request.Wait,
                             cancellationToken)
                         .ConfigureAwait(false);
                 }
@@ -232,10 +239,11 @@ public sealed class GatewayRequestDispatcher
         }
     }
 
-    private async Task<OperationResult<TResult>> StartOperationAsync<TResult>(
+    private async Task<object> StartOperationAsync<TResult>(
         OperationKind kind,
         string? profile,
         Func<OperationHandle> start,
+        bool wait,
         CancellationToken cancellationToken)
     {
         OperationHandle handle;
@@ -249,6 +257,15 @@ public sealed class GatewayRequestDispatcher
                 kind,
                 profile,
                 exception);
+        }
+
+        if (!wait)
+        {
+            return new OperationReceipt
+            {
+                OperationId = handle.OperationId,
+                State = handle.State,
+            };
         }
 
         return await _service.WaitForOperationAsync<TResult>(

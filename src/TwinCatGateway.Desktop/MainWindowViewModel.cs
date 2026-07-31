@@ -62,7 +62,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     private bool _isVerboseEvents;
     private string _selectedOperationKind = AllFilter;
     private string _selectedOperationState = AllFilter;
-    private RuntimeMode _runtimeMode = RuntimeMode.Unknown;
+    private TargetSystemState _targetState = TargetSystemState.Unknown;
 
     public MainWindowViewModel(GatewayDesktopHost host)
     {
@@ -313,7 +313,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
                 + "to Config?\n\n"
                 + $"Profile: {profile?.Name ?? "unknown"}\n"
                 + $"Target: {target}\n"
-                + $"Current observed state: {_runtimeMode}\n\n"
+                + $"Current observed state: {_targetState}\n\n"
                 + "This is an explicit Target state change. If the "
                 + "Target is already in Config, no command is sent.";
         }
@@ -354,25 +354,24 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    public OperationAccepted StartBuild()
+    public OperationHandle StartBuild()
     {
         ResolvedProfile profile =
             RequireActiveProfile();
         EnsureNoActiveOperation();
-        OperationAccepted accepted =
-            _host.ApplicationService.StartBuild(
-                new BuildParameters
+        OperationHandle accepted =
+            _host.ApplicationService.StartXaeBuild(
+                new XaeBuildParameters
                 {
                     Profile = profile.Name,
                     Action = SelectedBuildAction,
                     Detail = DetailLevel.Compact,
-                    TimeoutSeconds = 120,
                 });
         Refresh();
         return accepted;
     }
 
-    public OperationAccepted StartActivation()
+    public OperationHandle StartActivation()
     {
         ResolvedProfile profile =
             RequireActiveProfile();
@@ -382,7 +381,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             "ui.activation.admission");
 
         EnsureNoActiveOperation();
-        OperationAccepted accepted =
+        OperationHandle accepted =
             _host.ApplicationService.StartActivation(
                 new ActivateParameters
                 {
@@ -395,11 +394,11 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return accepted;
     }
 
-    public OperationAccepted StartSynchronization()
+    public OperationHandle StartSynchronization()
     {
         ResolvedProfile profile = RequireActiveProfile();
         EnsureNoActiveOperation();
-        OperationAccepted accepted =
+        OperationHandle accepted =
             _host.ApplicationService.StartSynchronization(
                 new SynchronizeParameters
                 {
@@ -412,7 +411,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return accepted;
     }
 
-    public OperationAccepted StartTargetConfig()
+    public OperationHandle StartTargetConfig()
     {
         ResolvedProfile profile =
             RequireActiveProfile();
@@ -422,7 +421,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             "ui.target.config.admission");
 
         EnsureNoActiveOperation();
-        OperationAccepted accepted =
+        OperationHandle accepted =
             _host.ApplicationService.StartTargetConfig(
                 new TargetConfigParameters
                 {
@@ -448,20 +447,39 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void RefreshCore()
     {
-        GatewayStatusResult status =
-            _host.ApplicationService.GetStatus();
-        GatewayDiagnosticsResult diagnostics =
-            ReadRecentDiagnostics(status);
-        GatewayState = status.Gateway.State.ToString();
-        XaeStatus = status.Xae.Connected
-            ? $"Connected · {status.Xae.Version ?? "unknown version"}"
+        GatewayStateSnapshot gateway =
+            _host.ApplicationService.GetGatewayState();
+        XaeSessionSnapshot xae = _host.ReadXaeState();
+        ProfileObservationSnapshot? observations =
+            _host.ReadProfileObservations();
+        OperationEventPage eventPage =
+            _host.ApplicationService.GetOperationEvents(
+                new GetDiagnosticsParameters
+                {
+                    EventStreamId = gateway.JournalId,
+                    AfterEventCursor = Math.Max(
+                        0,
+                        gateway.LatestEventCursor - 200),
+                    MaximumEvents = 200,
+                });
+        IReadOnlyList<StoredOperation> recent =
+            _host.ApplicationService.GetRecentOperations(20);
+        OperationRecord? current = recent
+            .Select(item => item.Summary)
+            .FirstOrDefault(item => string.Equals(
+                item.OperationId,
+                gateway.CurrentOperationId,
+                StringComparison.Ordinal));
+        GatewayState = gateway.State.ToString();
+        XaeStatus = xae.DteAvailable && xae.SolutionLoaded
+            ? $"Connected · {xae.Version ?? "unknown version"}"
             : "Disconnected";
-        Solution = status.Xae.Solution ?? "No XAE solution attached";
+        Solution = xae.Solution ?? "No XAE solution attached";
         WorkspaceOwnership =
             $"Disk synchronization: "
-            + status.Xae.SynchronizationState
+            + xae.SynchronizationState
             + ". Unsaved XAE documents: "
-            + status.Xae.DirtyDocumentCount
+            + xae.DirtyDocuments.Count
                 .ToString(CultureInfo.CurrentCulture)
             + ". Automatic saving is disabled.";
         ResolvedProfile? profile = _host.ActiveProfile;
@@ -478,39 +496,47 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         ActivationPolicy = activationAllowed
             ? "Activation allowed for the exact configured target"
             : "Activation disabled";
-        CurrentOperation = status.CurrentOperation is null
+        CurrentOperation = current is null
             ? "Idle"
-            : $"{status.CurrentOperation.Kind} · {status.CurrentOperation.State}";
+            : $"{current.Kind} · {current.State}";
         CurrentStage = FormatCurrentStage(
-            status.CurrentOperation,
-            diagnostics.Events);
-        RuntimeState = FormatRuntimeState(status.TwinCat);
-        RuntimeAlert = FormatRuntimeAlert(status.TwinCat.Alert);
-        _runtimeMode = status.TwinCat.Mode;
+            current,
+            eventPage.Events);
+        TargetSystemObservation? targetObservation = observations?.Target;
+        RuntimeState = FormatTargetState(targetObservation);
+        RuntimeAlert = FormatObservationError(targetObservation?.Error);
+        _targetState = targetObservation?.State ?? TargetSystemState.Unknown;
         UnsynchronizedFilesSummary =
             FormatUnsynchronizedFilesSummary(
-                status.Xae.SynchronizationState,
-                diagnostics.Xae.UnsynchronizedFiles.Count);
-        LastBuild = FormatBuild(status.LastBuild);
-        LastActivation =
-            FormatActivation(status.LastActivation);
-        LastTest = FormatTest(status.LastTest);
-        LastIssue = FormatLastIssue(diagnostics.Events);
+                xae.SynchronizationState,
+                0);
+        XaeBuildResult? lastBuild = recent
+            .Select(item => item.Result)
+            .OfType<XaeBuildResult>()
+            .FirstOrDefault();
+        ActivationResult? lastActivation = recent
+            .Select(item => item.Result)
+            .OfType<ActivationResult>()
+            .FirstOrDefault();
+        LastBuild = FormatBuild(lastBuild);
+        LastActivation = FormatActivation(lastActivation);
+        LastTest = FormatTest(lastActivation?.Verification.Result);
+        LastIssue = FormatLastIssue(eventPage.Events);
         bool operationActive =
-            status.CurrentOperation is not null
-            && (status.CurrentOperation.State
+            current is not null
+            && (current.State
                     == OperationState.Queued
-                || status.CurrentOperation.State
+                || current.State
                     == OperationState.Running);
         CanStartOperation =
             !operationActive
-            && status.Xae.Connected
-            && status.Xae.SynchronizationState
+            && xae.DteAvailable
+            && xae.SynchronizationState
                 == SynchronizationState.Confirmed
             && profile is not null;
         CanSynchronize =
             !operationActive
-            && status.Xae.Connected
+            && xae.DteAvailable
             && profile is not null;
         CanActivate =
             CanStartOperation
@@ -518,7 +544,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         CanConfigTarget =
             IsTargetConfigAvailable(
                 operationActive,
-                status.Xae.Connected,
+                xae.DteAvailable,
                 targetConfigAllowed);
         CanReconnect =
             !operationActive
@@ -526,14 +552,14 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
         SynchronizeRecentOperations(
             RecentOperations,
-            _host.ApplicationService.GetRecentOperations(20));
+            recent);
         SynchronizeEvents(
             Events,
-            diagnostics.EventStreamId,
-            diagnostics.Events);
+            eventPage.JournalId,
+            eventPage.Events);
         SynchronizeUnsynchronizedFiles(
             UnsynchronizedFiles,
-            diagnostics.Xae.UnsynchronizedFiles);
+            Array.Empty<UnsynchronizedFileInfo>());
     }
 
     internal static void SynchronizeRecentOperations(
@@ -679,24 +705,9 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
     }
 
-    private GatewayDiagnosticsResult ReadRecentDiagnostics(
-        GatewayStatusResult status)
-    {
-        long afterCursor = Math.Max(
-            0,
-            status.LatestEventCursor - 200);
-        return _host.ApplicationService.GetDiagnostics(
-            new GetDiagnosticsParameters
-            {
-                EventStreamId = status.EventStreamId,
-                AfterEventCursor = afterCursor,
-                MaximumEvents = 200,
-            });
-    }
-
     public ResourceContent? GetPrimaryResource(string operationId)
     {
-        OperationDetails<object> operation =
+        OperationSnapshot<object> operation =
             _host.ApplicationService.GetOperation(operationId);
         ResourceReference? resource =
             operation.Operation.Resources.FirstOrDefault();
@@ -735,7 +746,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
     }
 
     private static string FormatCurrentStage(
-        OperationSummary? operation,
+        OperationRecord? operation,
         IReadOnlyList<GatewayEvent> events)
     {
         if (operation is null)
@@ -755,7 +766,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             ?? "Waiting for progress event";
     }
 
-    private static string FormatBuild(BuildSummary? build)
+    private static string FormatBuild(XaeBuildResult? build)
     {
         if (build is null)
         {
@@ -763,12 +774,12 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         return $"{(build.Ok ? "Succeeded" : "Failed")} · "
-            + $"{build.Action} · {build.Errors} errors · "
-            + $"{build.Warnings} warnings";
+            + $"{build.Action} · {build.Counts.Errors} errors · "
+            + $"{build.Counts.Warnings} warnings";
     }
 
     private static string FormatActivation(
-        ActivationSummary? activation)
+        ActivationResult? activation)
     {
         if (activation is null)
         {
@@ -780,7 +791,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
             + FormatTarget(activation.Target);
     }
 
-    private static string FormatTest(TestSummary? test)
+    private static string FormatTest(TestResult? test)
     {
         if (test is null)
         {
@@ -788,7 +799,7 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         }
 
         return $"{(test.Ok ? "Passed" : "Failed")} · "
-            + $"{test.Tests} tests · {test.Failed} failed";
+            + $"{test.Counts.Tests} tests · {test.Counts.Failed} failed";
     }
 
     private static string FormatLastIssue(
@@ -808,19 +819,25 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
         return $"{code} · {issue.Message}";
     }
 
-    private static string FormatRuntimeState(
-        TwinCatStatus status)
+    private static string FormatTargetState(
+        TargetSystemObservation? status)
     {
-        string observed = status.ObservedAtUtc.HasValue
-            ? status.ObservedAtUtc.Value.LocalDateTime.ToString(
+        if (status is null)
+        {
+            return "Unknown · direct Target observation unavailable";
+        }
+
+        string observed = status.ObservedAtUtc != default
+            ? status.ObservedAtUtc.LocalDateTime.ToString(
                 "G",
                 CultureInfo.CurrentCulture)
             : "not observed";
-        return $"{status.Mode} · system {status.SystemMode} · {observed}";
+        return $"{status.State} · {status.Freshness} · "
+            + $"port {status.Port} · {observed}";
     }
 
-    private static string FormatRuntimeAlert(
-        RuntimeAlert? alert)
+    private static string FormatObservationError(
+        ObservationError? alert)
     {
         return alert is null
             ? "No active runtime alert"
@@ -911,15 +928,13 @@ public sealed class MainWindowViewModel : INotifyPropertyChanged
 
     private void EnsureNoActiveOperation()
     {
-        OperationSummary? operation =
-            _host.ApplicationService.GetStatus()
-                .CurrentOperation;
-        if (operation is not null
-            && (operation.State == OperationState.Queued
-                || operation.State == OperationState.Running))
+        string? operationId =
+            _host.ApplicationService.GetGatewayState()
+                .CurrentOperationId;
+        if (!string.IsNullOrWhiteSpace(operationId))
         {
             throw new InvalidOperationException(
-                $"Operation '{operation.OperationId}' "
+                $"Operation '{operationId}' "
                 + "is already active.");
         }
     }
